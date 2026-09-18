@@ -64,7 +64,12 @@ echo "==> building (target: artifact) — this compiles real QEMU from source, e
 "$ENGINE" build --target artifact -t layerosx/qemu-macos:local "$WORK/qemu-macos"
 
 echo "==> extracting the built binary + GOP ROM"
-CID=$("$ENGINE" create layerosx/qemu-macos:local)
+# The final "artifact" image is FROM scratch with no CMD/ENTRYPOINT (it
+# only holds the 2 output files) — "docker create" refuses to create a
+# container with no command at all, even though we never start it, we
+# only docker-cp files out of it. Any placeholder argument satisfies
+# that check without ever actually being executed.
+CID=$("$ENGINE" create layerosx/qemu-macos:local noop)
 
 mkdir -p airootfs/opt/layerosx/bin airootfs/usr/share/qemu
 "$ENGINE" cp "$CID:/usr/bin/qemu-system-x86_64" airootfs/opt/layerosx/bin/qemu-system-x86_64
