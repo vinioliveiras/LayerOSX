@@ -7,9 +7,6 @@ to boot straight into an accelerated macOS VM (via
 see macOS boot — no visible Linux desktop, no manual steps after
 install (other than picking where macOS comes from, once).
 
-Target machine: ASUS TUF Gaming A15 (FA507NV), Ryzen 7 7735HS, RTX
-4060 Laptop, 64 GB RAM.
-
 ## Project status
 
 This has **not been tested on real hardware yet**. It's a functional,
