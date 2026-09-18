@@ -47,6 +47,19 @@ trap cleanup EXIT
 echo "==> cloning qemus/qemu-macos"
 git clone --depth 1 https://github.com/qemus/qemu-macos "$WORK/qemu-macos"
 
+# Upstream bug workaround: the Dockerfile's EOF_SOURCE step checks QEMU out
+# into /src/reims/vendor/qemu-11.1, but the very next step (EOF_PATCHES,
+# which applies patches/) still references the old /src/qemu path from
+# before that layout was refactored, so it fails with "cannot change to
+# '/src/qemu': No such file or directory". Confirmed by reading the
+# upstream Dockerfile directly and reproducing with a real (BuildKit) build.
+# Remove this once upstream fixes it (nothing to detect it automatically
+# going stale, so worth re-checking occasionally).
+sed -i \
+    -e 's#git -C /src/qemu apply#git -C /src/reims/vendor/qemu-11.1 apply#g' \
+    -e 's#git -C /src/qemu diff#git -C /src/reims/vendor/qemu-11.1 diff#g' \
+    "$WORK/qemu-macos/Dockerfile"
+
 echo "==> building (target: artifact) — this compiles real QEMU from source, expect 30-60+ minutes"
 "$ENGINE" build --target artifact -t layerosx/qemu-macos:local "$WORK/qemu-macos"
 

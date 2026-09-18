@@ -38,6 +38,24 @@ ISO build like the original plan assumed. Instead:
   binary isn't already staged.
 - Expect this single step to take 30-60+ minutes (it's compiling real
   QEMU from source) the first time you run it.
+- Needs `docker-buildx` installed alongside `docker` (`pacman -S
+  docker-buildx`), and `DOCKER_BUILDKIT=1` set — `prepare-qemu-macos.sh`
+  now sets this itself. Without it, `docker build` silently falls back
+  to the legacy builder, which treats the Dockerfile's `RUN <<EOF`
+  heredocs as a no-op instead of erroring — the whole build "succeeds"
+  without compiling anything, and the next stage fails with a confusing
+  `COPY failed: stat out/qemu-system-x86_64: file does not exist`.
+  Diagnosed this the hard way by reading a real `--progress=plain` log
+  line by line; the giveaway is `DEPRECATED: The legacy builder is
+  deprecated...` printed before step 1.
+- There's also a genuine upstream bug (as of this writing): the step
+  that checks out QEMU source places it at
+  `/src/reims/vendor/qemu-11.1`, but the very next step that applies
+  `patches/*.patch` still references the old `/src/qemu` path, so it
+  fails with `fatal: cannot change to '/src/qemu': No such file or
+  directory`. `prepare-qemu-macos.sh` patches this path in its own temp
+  clone before building — worth re-checking whether this is still
+  needed next time this script is touched.
 - `customize_airootfs.sh` now only builds `dmg2img` (a small, ordinary
   C build, fine inside the chroot) and just checks the qemu binary
   landed where expected, warning loudly if it didn't.

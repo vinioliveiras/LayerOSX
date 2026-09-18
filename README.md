@@ -97,7 +97,7 @@ that shell:
 ### Option A — native Arch/CachyOS
 
 ```sh
-sudo pacman -S archiso docker git
+sudo pacman -S archiso docker docker-buildx git
 sudo systemctl enable --now docker
 git clone https://github.com/vinioliveiras/LayerOSX.git
 cd LayerOSX/archiso
@@ -118,7 +118,7 @@ cd LayerOSX/archiso
 2. Inside that Arch Linux WSL shell:
    ```sh
    pacman -Syu --noconfirm
-   pacman -S --noconfirm archiso docker git base-devel python
+   pacman -S --noconfirm archiso docker docker-buildx git base-devel python
    systemctl enable --now docker
    ```
    (If `systemctl enable --now docker` complains that the system
@@ -173,3 +173,14 @@ the build log if this is happening. `prepare-qemu-macos.sh` now forces
 `DOCKER_BUILDKIT=1` itself, so this shouldn't bite you again, but if
 you're ever calling `docker build` on this Dockerfile by hand, always
 set that env var (or use `docker buildx build`) first.
+
+There's also a genuine bug in the upstream `qemus/qemu-macos` Dockerfile
+itself (as of this writing): the step that checks out QEMU
+(`EOF_SOURCE`) places it at `/src/reims/vendor/qemu-11.1`, but the very
+next step that applies `patches/*.patch` (`EOF_PATCHES`) still refers to
+the old `/src/qemu` path from before that was refactored, so it fails
+with `fatal: cannot change to '/src/qemu': No such file or directory`.
+`prepare-qemu-macos.sh` now patches this path in its own temp clone of
+the Dockerfile before building, so you shouldn't need to think about it —
+but if upstream fixes this later, that workaround becomes a harmless
+no-op sed (worth removing next time you touch this file).
