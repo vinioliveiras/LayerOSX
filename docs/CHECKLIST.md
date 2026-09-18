@@ -1,104 +1,107 @@
-# Checklist de build e teste
+# Build and test checklist
 
-Nada disto foi validado em hardware real ainda. Isto é o roteiro pra
-fazer isso, por ordem, e a lista dos pontos onde é mais provável
-precisar de ajuste.
+None of this has been validated on real hardware yet. This is the
+roadmap for doing that, in order, plus the list of spots most likely
+to need adjustment.
 
-## 1. Preparar a máquina de build
+## 1. Prepare the build machine
 
-Precisa de correr numa máquina Arch-based com o pacote `archiso`
-instalado (a tua CachyOS atual serve, ou podes arrancar o
-`archlinux-2026.09.01-x86_64.iso` que já tens em `D:\Downloads` como
-ambiente live e instalar o `archiso` lá dentro — o instalador oficial
-do Arch não é usado como "base" da nossa ISO, é só um Linux com
-internet onde correr o `mkarchiso`).
+Needs to run on an Arch-based machine with the `archiso` package
+installed (your current CachyOS works, or you can boot the
+`archlinux-2026.09.01-x86_64.iso` you already have in `D:\Downloads`
+as a live environment and install `archiso` there — the official Arch
+installer isn't used as a "base" for our ISO, it's just a Linux with
+internet where `mkarchiso` runs).
 
 ```sh
 sudo pacman -S archiso
-git clone <o-teu-repo> LayerOSX
+git clone <your-repo> LayerOSX
 cd LayerOSX/archiso
 ./build.sh
 ```
 
-Este passo já vai mostrar se falta algum pacote em
-`packages.x86_64` (nomes mudam, versões saem de repo, etc.).
+This step alone will already show if anything is missing from
+`packages.x86_64` (names change, versions leave the repos, etc.).
 
-## 2. `customize_airootfs.sh` — o maior ponto de incerteza
+## 2. `customize_airootfs.sh` — the biggest source of uncertainty
 
-Este script compila o `qemus/qemu-macos` (QEMU + Reims-vGPU) e o
-`dmg2img` durante o build. Antes do build "a sério":
+This script builds `qemus/qemu-macos` (QEMU + Reims-vGPU) and
+`dmg2img` during the build. Before a "real" build:
 
-- Abre https://github.com/qemus/qemu-macos e confirma o comando de
-  build atual (o script tenta `build.sh` e depois `meson`, mas isto
-  pode ter mudado).
-- Confirma que os pacotes de build (`meson`, `ninja`, `pkgconf`,
-  `glib2`, `pixman`, `sdl2`, `vulkan-headers`) chegam — o projeto pode
-  precisar de mais alguma dependência que ainda não está em
-  `packages.x86_64`.
-- Se o build falhar aqui, a ISO ainda sai (o script só avisa, não
-  trava o `mkarchiso`), mas o `/opt/layerosx/kiosk/mac-vm-launch.sh`
-  não vai ter `qemu-system-x86_64` acelerado nenhum.
+- Open https://github.com/qemus/qemu-macos and confirm the current
+  build command (the script tries `build.sh` and then `meson`, but
+  this may have changed).
+- Confirm the build packages (`meson`, `ninja`, `pkgconf`, `glib2`,
+  `pixman`, `sdl2`, `vulkan-headers`) are enough — the project may
+  need some other dependency that isn't in `packages.x86_64` yet.
+- If the build fails here, the ISO still comes out (the script only
+  warns, it doesn't stop `mkarchiso`), but
+  `/opt/layerosx/kiosk/mac-vm-launch.sh` won't have any accelerated
+  `qemu-system-x86_64` to run.
 
-## 3. Arrancar a ISO numa pen (Ventoy)
+## 3. Booting the ISO from a USB drive (Ventoy)
 
-- Confirma que arranca em UEFI e mostra o Calamares em fullscreen
-  (openbox + `.xinitrc`, autologin root na tty1).
-- Só deve aparecer: boas-vindas → partição (interativo, igual ao que
-  já fazes hoje: reaproveitar a EFI de ~200 MB, nunca formatar) →
-  resumo → a progredir sozinho → concluído.
-- Se travar num ecrã preto antes do Calamares aparecer: o problema é o
-  `.xinitrc`/`.bash_profile`/autologin da tty1, não o Calamares em si.
+- Confirm it boots in UEFI and shows Calamares fullscreen (openbox +
+  `.xinitrc`, root autologin on tty1).
+- Should only show: welcome → partition (interactive, same as today:
+  reuse the ~200 MB EFI partition, never format it) → summary →
+  proceeds on its own → done.
+- If it hangs on a black screen before Calamares shows up: the problem
+  is the `.xinitrc`/`.bash_profile`/tty1 autologin, not Calamares
+  itself.
 
-## 4. Primeiro arranque do sistema instalado
+## 4. First boot of the installed system
 
-- Devia arrancar direto no utilizador `mac`, sem pedir password, e
-  cair no `macos-source-wizard.sh` (zenity).
-- Testa as 3 opções pelo menos uma vez cada, mesmo que só pra ver que
-  abrem sem crashar: descarga automática, disco existente, `.dmg`
-  existente.
-- A opção do `.dmg` é a mais frágil (ver `kiosk/lib/extract-dmg-installer.sh`)
-  — se falhar, cai bem (mensagem de erro clara), mas ainda precisa de
-  mais trabalho pra suportar instaladores APFS de verdade.
+- Should boot straight into the `mac` user, no password prompt, and
+  land on `macos-source-wizard.sh` (zenity).
+- Test all 3 options at least once each, even just to see they open
+  without crashing: automatic download, existing disk, existing
+  `.dmg`.
+- The `.dmg` option is the most fragile (see
+  `kiosk/lib/extract-dmg-installer.sh`) — if it fails, it fails
+  gracefully (clear error message), but it still needs more work to
+  properly support real APFS installers.
 
-## 5. A VM em si
+## 5. The VM itself
 
-- Confirma que o `-display sdl,gl=on,full-screen=on` dá ecrã.
-- **O ponto mais incerto do projeto inteiro**: a flag exata que ativa
-  o dispositivo de vídeo acelerado do Reims-vGPU na linha de comando
-  do `qemu-system-x86_64` (ver o `TODO(verificar)` em
-  `kiosk/mac-vm-launch.sh`). Sem confirmar isto no README do
-  `qemus/qemu-macos`, a VM pode arrancar mas sem aceleração nenhuma
-  (só software rendering, lento).
-- Confirma teclado/rato USB a funcionar dentro da VM antes de tentares
-  instalar/configurar nada.
+- Confirm `-display sdl,gl=on,full-screen=on` actually gives you a
+  screen.
+- **The single most uncertain point in the whole project**: the exact
+  flag that turns on Reims-vGPU's accelerated video device on the
+  `qemu-system-x86_64` command line (see the `TODO(verify)` in
+  `kiosk/mac-vm-launch.sh`). Without confirming this against the
+  `qemus/qemu-macos` README, the VM might boot but with no
+  acceleration at all (software rendering only, slow).
+- Confirm USB keyboard/mouse work inside the VM before trying to
+  install/configure anything.
 
-## 6. Restart / Shutdown físicos
+## 6. Physical Restart / Shutdown
 
-- Dentro do macOS já instalado: testa "Restart" no menu Apple.
-  Esperado: a VM fecha, e a máquina física reinicia a sério
-  (`systemctl reboot`), não só relança a VM.
-- Testa "Shut Down": esperado, a máquina física desliga a sério
+- Inside an already-installed macOS: test "Restart" from the Apple
+  menu. Expected: the VM closes, and the physical machine really
+  reboots (`systemctl reboot`), not just the VM relaunching.
+- Test "Shut Down": expected, the physical machine really powers off
   (`systemctl poweroff`).
-- Se nenhum dos dois disparar (fica preso em "vm-only" e relança a
-  VM): o guest pode não estar a emitir o evento QMP `SHUTDOWN` com o
-  `reason` esperado — confirma com `journalctl` / o log em
-  `~/mac-vm.log` o que o `qmp-watch.py` recebeu.
+- If neither triggers (stuck on "vm-only" and just relaunching the
+  VM): the guest may not be emitting the QMP `SHUTDOWN` event with the
+  expected `reason` — check `journalctl` / the log at `~/mac-vm.log`
+  for what `qmp-watch.py` actually received.
 
-## 7. Limpeza automática
+## 7. Automatic cleanup
 
-- `systemctl status layerosx-cleanup.timer` deve mostrar o timer
-  ativo.
-- Corre `sudo /usr/local/bin/layerosx-cleanup.sh` manualmente uma
-  vez pra confirmar que não rebenta com nada (principalmente o
-  `paccache`, que depende do `pacman-contrib` estar mesmo instalado).
+- `systemctl status layerosx-cleanup.timer` should show the timer
+  active.
+- Run `sudo /usr/local/bin/layerosx-cleanup.sh` manually once to
+  confirm nothing breaks (mainly `paccache`, which depends on
+  `pacman-contrib` actually being installed).
 
-## Notas de licenciamento (não é conselho jurídico)
+## Licensing notes (not legal advice)
 
-- A ISO gerada por este projeto nunca contém ficheiros da Apple.
-- A imagem de recuperação e/ou o `.dmg` são sempre obtidos
-  diretamente pela Apple (ou já eram teus) no momento em que TU corres
-  o wizard, pro teu próprio disco — nunca embrulhados dentro da ISO
-  que distribuis. É a mesma abordagem que o OSX-KVM e a comunidade de
-  VMs macOS sempre seguiram.
-- Continua a ser contra o EULA da Apple correr macOS fora de hardware
-  Apple, aceleração ou não — isto não muda essa realidade.
+- The ISO this project generates never contains any Apple files.
+- The recovery image and/or the `.dmg` always come directly from Apple
+  (or were already yours) at the moment YOU run the wizard, onto your
+  own disk — never bundled inside the ISO you distribute. This is the
+  same approach OSX-KVM and the macOS-VM community have always
+  followed.
+- It's still against Apple's EULA to run macOS outside Apple hardware,
+  accelerated or not — this doesn't change that reality.

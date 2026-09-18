@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Descarrega a imagem de recuperação diretamente dos servidores da
-# Apple (fetch-macOS.py, do projeto OSX-KVM) para o disco $1. Isto
-# nunca redistribui nada da Apple — só automatiza o mesmo pedido que um
-# Mac real faz ao arrancar em modo de recuperação pela rede, desta vez
-# para o teu próprio disco.
+# Downloads the recovery image directly from Apple's servers
+# (fetch-macOS.py, from the OSX-KVM project) into disk $1. This never
+# redistributes anything from Apple — it just automates the same
+# request a real Mac makes when it boots into network recovery mode,
+# this time onto your own disk.
 set -euo pipefail
 VM_DISK="$1"
 WORK="/var/lib/layerosx/fetch-work"
@@ -19,8 +19,8 @@ python3 fetch-macOS.py
 if [ -f BaseSystem.dmg ] && command -v dmg2img >/dev/null 2>&1; then
     dmg2img BaseSystem.dmg BaseSystem.img
     qemu-img convert -O qcow2 BaseSystem.img "${VM_DISK%.qcow2}-recovery.qcow2"
-    echo "Recuperação pronta em ${VM_DISK%.qcow2}-recovery.qcow2 — o mac-vm-launch.sh precisa de a ligar como segundo disco no primeiro arranque para instalares o macOS a sério."
+    echo "Recovery ready at ${VM_DISK%.qcow2}-recovery.qcow2 — mac-vm-launch.sh needs to attach it as a second disk on first boot so you can actually install macOS."
 else
-    echo "AVISO: não encontrei BaseSystem.dmg ou dmg2img — a descarga pode ter falhado." >&2
+    echo "WARNING: couldn't find BaseSystem.dmg or dmg2img — the download may have failed." >&2
     exit 1
 fi

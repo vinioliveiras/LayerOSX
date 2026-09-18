@@ -28,9 +28,9 @@ EOF
 chmod +x "/home/${MAC_USER}/.xinitrc"
 chown "${MAC_USER}:${MAC_USER}" "/home/${MAC_USER}/.bash_profile" "/home/${MAC_USER}/.xinitrc"
 
-# systemctl reboot/poweroff sem password, só pro utilizador do kiosk —
-# é assim que o Restart/Shutdown feitos DENTRO do macOS chegam a mexer
-# na máquina física a sério (ver /opt/layerosx/kiosk/qmp-watch.py).
+# passwordless systemctl reboot/poweroff, only for the kiosk user —
+# this is how Restart/Shutdown done INSIDE macOS end up actually
+# touching the physical machine (see /opt/layerosx/kiosk/qmp-watch.py).
 cat > /etc/sudoers.d/20-mac-vm-power <<EOF
 ${MAC_USER} ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, /usr/bin/systemctl poweroff, /usr/bin/mkdir -p /var/lib/layerosx, /usr/bin/chown ${MAC_USER}\:${MAC_USER} /var/lib/layerosx
 EOF

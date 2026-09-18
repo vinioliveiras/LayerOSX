@@ -1,5 +1,5 @@
 [Unit]
-Description=layerosx — limpeza periódica (cache de pacotes, journal, tmp, core dumps)
+Description=LayerOSX — periodic cleanup (package cache, journal, tmp, core dumps)
 
 [Service]
 Type=oneshot

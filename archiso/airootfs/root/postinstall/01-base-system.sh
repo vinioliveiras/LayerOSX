@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-echo "[01] idioma, teclado, hostname, utilizador"
+echo "[01] locale, keyboard, hostname, user"
 
-# locale fixo — o layout real de teclado vem de dentro da VM do macOS,
-# isto aqui é só o suficiente pro Arch por baixo não reclamar.
+# fixed locale — the real keyboard layout comes from inside the macOS
+# VM, this is just enough for the Arch underneath to not complain.
 sed -i 's/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/locale.conf
@@ -18,9 +18,9 @@ EOF
 
 hwclock --systohc --utc 2>/dev/null || true
 
-# utilizador único da appliance — sem prompt de password interativo,
-# autologin no kiosk (ver 40-kiosk-autologin.sh). Muda a password depois
-# com `passwd mac`, isto aqui é só pra a máquina arrancar sozinha.
+# single appliance user — no interactive password prompt, autologin in
+# the kiosk (see 40-kiosk-autologin.sh). Change the password later
+# with `passwd mac`, this is just so the machine boots on its own.
 MAC_USER="mac"
 if ! id "$MAC_USER" &>/dev/null; then
     useradd -m -G wheel,kvm,video,render -s /bin/bash "$MAC_USER"

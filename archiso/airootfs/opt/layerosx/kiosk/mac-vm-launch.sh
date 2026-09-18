@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# Lançador principal do kiosk (corre em vez de desktop, autologin do
-# utilizador "mac" na tty1 — ver postinstall/40-kiosk-autologin.sh).
+# Main kiosk launcher (runs instead of a desktop, autologin of the
+# "mac" user on tty1 — see postinstall/40-kiosk-autologin.sh).
 #
-# 1. Se ainda não existe nenhuma VM, mostra o wizard de primeira
-#    execução (macos-source-wizard.sh) — só acontece uma vez.
-# 2. Lança o QEMU (build do qemus/qemu-macos, com Reims-vGPU) em
+# 1. If no VM exists yet, shows the first-run wizard
+#    (macos-source-wizard.sh) — only happens once.
+# 2. Launches QEMU (the qemus/qemu-macos build, with Reims-vGPU) in
 #    fullscreen.
-# 3. Fica à espera de um evento QMP para saber SE e COMO o macOS pediu
-#    para desligar, e traduz isso numa ação a sério na máquina física:
-#      Shut Down (dentro do macOS) -> systemctl poweroff (a sério)
-#      Restart   (dentro do macOS) -> systemctl reboot   (a sério)
-#    (decidido assim de propósito: um Restart também reinicia o Arch
-#    por baixo, para o caso de o próprio Arch estar com problemas.)
+# 3. Waits for a QMP event to find out IF and HOW macOS asked to power
+#    off, and translates that into a real action on the physical
+#    machine:
+#      Shut Down (inside macOS) -> systemctl poweroff (for real)
+#      Restart   (inside macOS) -> systemctl reboot   (for real)
+#    (decided this way on purpose: a Restart also reboots the Arch
+#    underneath, in case Arch itself is having problems.)
 set -uo pipefail
 
 STATE_DIR="/var/lib/layerosx"
@@ -26,9 +27,9 @@ sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
 
 if [ ! -f "$VM_DISK" ]; then
-    echo "Nenhuma VM encontrada — a abrir o assistente de primeira execução."
+    echo "No VM found — opening the first-run wizard."
     if ! "$KIOSK_DIR/macos-source-wizard.sh" "$VM_DISK" "$OVMF_VARS"; then
-        echo "O assistente falhou ou foi cancelado. A tentar de novo em 10s (Alt+F2/tty2 pra saíres se precisares)."
+        echo "The wizard failed or was cancelled. Retrying in 10s (switch to tty2 with Alt+F2 if you need to get out)."
         sleep 10
         exec "$0"
     fi
@@ -38,12 +39,12 @@ RETRIES=0
 while true; do
     rm -f "$QMP_SOCK"
 
-    # TODO(verificar): a flag exata de vídeo acelerado do Reims-vGPU
-    # (device/driver expostos pelo build do qemus/qemu-macos) precisa
-    # de ser confirmada no README desse projeto antes do primeiro teste
-    # a sério — o `-display sdl,gl=on` abaixo é o mínimo pra teres ecrã,
-    # mas a aceleração real do Reims pode exigir um dispositivo de vídeo
-    # próprio na linha de comando. Ver docs/CHECKLIST.md.
+    # TODO(verify): the exact accelerated-video flag for Reims-vGPU
+    # (device/driver exposed by the qemus/qemu-macos build) needs to
+    # be confirmed against that project's README before the first
+    # real test — the `-display sdl,gl=on` below is the bare minimum
+    # to get a screen, but Reims's real acceleration may require its
+    # own video device on the command line. See docs/CHECKLIST.md.
     qemu-system-x86_64 \
         -name "macOS" \
         -enable-kvm -m 8192 -smp cores=6,threads=1 -cpu host \
@@ -65,20 +66,20 @@ while true; do
 
     case "$ACTION" in
         host-poweroff)
-            echo "macOS pediu Shut Down — a desligar a máquina física."
+            echo "macOS asked to Shut Down — powering off the physical machine."
             sudo systemctl poweroff
             exit 0
             ;;
         host-reboot)
-            echo "macOS pediu Restart — a reiniciar a máquina física."
+            echo "macOS asked to Restart — rebooting the physical machine."
             sudo systemctl reboot
             exit 0
             ;;
         vm-only|*)
-            echo "QEMU saiu sem pedido claro do guest (ação: ${ACTION}) — a relançar só a VM."
+            echo "QEMU exited without a clear guest request (action: ${ACTION}) — relaunching just the VM."
             RETRIES=$((RETRIES + 1))
             if [ "$RETRIES" -ge 5 ]; then
-                echo "Demasiadas falhas seguidas — a reiniciar a máquina física como último recurso."
+                echo "Too many failures in a row — rebooting the physical machine as a last resort."
                 sudo systemctl reboot
                 exit 1
             fi

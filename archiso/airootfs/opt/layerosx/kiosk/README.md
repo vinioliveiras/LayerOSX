@@ -1,41 +1,40 @@
-# kiosk/ (fica em `/opt/layerosx/kiosk` no sistema instalado)
+# kiosk/ (lives at `/opt/layerosx/kiosk` on the installed system)
 
-- **`mac-vm-launch.sh`** — corre em vez de desktop, autologin do
-  utilizador `mac` na tty1 (ver `postinstall/40-kiosk-autologin.sh`).
-  Garante que existe uma VM (senão chama o wizard), lança o QEMU em
-  fullscreen, e fica à espera de um evento QMP `SHUTDOWN` para saber
-  se o macOS pediu Shut Down (`reason: guest-shutdown` →
-  `systemctl poweroff` a sério) ou Restart
-  (`reason: guest-reset`/`guest-panic` → `systemctl reboot` a sério —
-  de propósito, reinicia o Arch por baixo também, para o caso de ele
-  estar com problemas). Se o QEMU morrer por outro motivo, relança só
-  a VM (até 5 vezes seguidas; a partir daí reinicia a máquina física
-  por segurança).
-- **`qmp-watch.py`** — fala QMP em bruto (JSON lines) num socket Unix,
-  devolve `host-poweroff` / `host-reboot` / `vm-only` em stdout.
-- **`macos-source-wizard.sh`** — corre uma única vez, na primeira
-  execução (quando ainda não existe disco de VM). Pergunta, com uma
-  janela `zenity`, se queres: descarregar a imagem de recuperação
-  diretamente da Apple, apontar para uma VM/disco que já tens, ou
-  apontar para um `.dmg` de instalador que já tens — para poderes
-  sempre usar o mais recente que descarregaste no site da Apple / App
-  Store noutro Mac.
-- **`lib/fetch-recovery.sh`** — usa o `fetch-macOS.py` do projeto
-  OSX-KVM para descarregar a imagem de recuperação diretamente dos
-  servidores da Apple, para o teu próprio disco.
-- **`lib/extract-dmg-installer.sh`** — **experimental**. Tenta extrair
-  um instalador arrancável a partir de um `.dmg` que já tens. A parte
-  difícil é o sistema de ficheiros lá dentro (HFS+ normalmente
-  funciona, APFS em Linux ainda é limitado) — ver `docs/CHECKLIST.md`.
+- **`mac-vm-launch.sh`** — runs instead of a desktop, autologin of the
+  `mac` user on tty1 (see `postinstall/40-kiosk-autologin.sh`). Makes
+  sure a VM exists (otherwise calls the wizard), launches QEMU in
+  fullscreen, and waits for a QMP `SHUTDOWN` event to find out whether
+  macOS asked to Shut Down (`reason: guest-shutdown` → a real
+  `systemctl poweroff`) or Restart (`reason:
+  guest-reset`/`guest-panic` → a real `systemctl reboot` — on purpose,
+  this also reboots the Arch underneath, in case it's the one having
+  problems). If QEMU dies for some other reason, it just relaunches
+  the VM (up to 5 times in a row; after that it reboots the physical
+  machine as a safety net).
+- **`qmp-watch.py`** — speaks raw QMP (JSON lines) over a Unix socket,
+  returns `host-poweroff` / `host-reboot` / `vm-only` on stdout.
+- **`macos-source-wizard.sh`** — runs once, on first run (while no VM
+  disk exists yet). Asks, via a `zenity` window, whether you want to:
+  download the recovery image directly from Apple, point to a VM/disk
+  you already have, or point to an installer `.dmg` you already have —
+  so you can always use whatever's newest that you downloaded from
+  Apple's site / the App Store on another Mac.
+- **`lib/fetch-recovery.sh`** — uses OSX-KVM's `fetch-macOS.py` to
+  download the recovery image directly from Apple's servers, onto your
+  own disk.
+- **`lib/extract-dmg-installer.sh`** — **experimental**. Tries to
+  extract a bootable installer from a `.dmg` you already have. The
+  hard part is the filesystem inside it (HFS+ usually works, APFS
+  support on Linux is still limited) — see `docs/CHECKLIST.md`.
 
-## Sobre licenciamento
+## On licensing
 
-Nada aqui contém ficheiros da Apple. O que é descarregado ou usado
-(imagem de recuperação, `.dmg`) vem sempre diretamente da Apple ou do
-teu próprio ficheiro, para o teu próprio disco, no momento em que TU
-correste o wizard — nunca embrulhado dentro da ISO que este projeto
-gera. Isto é a mesma linha que o OSX-KVM e a comunidade de
-Hackintosh/VMs sempre seguiram: automatizar o download/instalação, sem
-nunca redistribuir nada da Apple. Continua a ser contra o EULA da
-Apple correr macOS fora de hardware Apple — isto não muda essa
-realidade, só automatiza os passos técnicos do lado do Linux.
+Nothing here contains any Apple files. Whatever gets downloaded or
+used (recovery image, `.dmg`) always comes directly from Apple or from
+your own file, onto your own disk, at the moment YOU run the wizard —
+never bundled inside the ISO this project generates. This is the same
+line OSX-KVM and the wider macOS-VM community has always followed:
+automate the download/install, never redistribute anything from Apple.
+It's still against Apple's EULA to run macOS outside Apple hardware —
+this doesn't change that reality, it just automates the technical
+steps on the Linux side.

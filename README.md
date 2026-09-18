@@ -1,88 +1,91 @@
 # LayerOSX
 
-Uma ISO de instalação para um Arch Linux propositadamente vazio, cujo único
-trabalho é arrancar diretamente numa VM de macOS acelerada (via
-[qemus/qemu-macos](https://github.com/qemus/qemu-macos), que embute o
-[Reims-vGPU](https://reims-vgpu.com/)). O objetivo: ligar o portátil, ver o
-macOS a arrancar — sem desktop Linux visível, sem passos manuais depois da
-instalação (exceto escolher de onde vem o macOS, uma única vez).
+An installer ISO for a deliberately empty Arch Linux whose only job is
+to boot straight into an accelerated macOS VM (via
+[qemus/qemu-macos](https://github.com/qemus/qemu-macos), which embeds
+[Reims-vGPU](https://reims-vgpu.com/)). The goal: turn the laptop on,
+see macOS boot — no visible Linux desktop, no manual steps after
+install (other than picking where macOS comes from, once).
 
-Contexto da máquina: ASUS TUF Gaming A15 (FA507NV), Ryzen 7 7735HS, RTX 4060
-Laptop, 64 GB RAM.
+Target machine: ASUS TUF Gaming A15 (FA507NV), Ryzen 7 7735HS, RTX
+4060 Laptop, 64 GB RAM.
 
-## Estado do projeto
+## Project status
 
-Isto ainda **não foi testado em hardware real**. É um esqueleto funcional,
-escrito e revisto tecnicamente, mas só se valida a arrancar de verdade numa
-pen — a primeira tentativa vai precisar de iteração, principalmente nos dois
-pontos mais incertos: o build do `qemus/qemu-macos` dentro de
-`customize_airootfs.sh`, e a flag exata de vídeo acelerado do Reims-vGPU em
-`kiosk/mac-vm-launch.sh`. Ver `docs/CHECKLIST.md` para o plano de testes
-passo a passo.
+This has **not been tested on real hardware yet**. It's a functional,
+technically-reviewed skeleton, but the archiso/Calamares side only
+gets validated by actually booting off a USB drive — the first attempt
+will need iteration, mainly around the two most uncertain points: the
+`qemus/qemu-macos` build inside `customize_airootfs.sh`, and the exact
+Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
+`docs/CHECKLIST.md` for the step-by-step test plan.
 
-## Como encaixa tudo
+## How it all fits together
 
 ```
-Instalador (ISO, arranca da pen Ventoy)
-  └── Calamares, só com UI a sério na partição (igual ao que já fazes:
-      reaproveitar a EFI de ~200 MB, nunca formatar). Tudo o resto
-      (locale=en_US, teclado=us, utilizador, GRUB) fica fixo, sem
-      perguntar nada — ver postinstall/*.sh
-        └── no fim, corre postinstall/run.sh no sistema instalado
-              ├── locale, teclado, hostname, utilizador "mac"
-              ├── driver NVIDIA + KVM
-              ├── GRUB reaproveitando a EFI existente
-              └── autologin do "mac" na tty1 + kiosk
+Installer (ISO, boots from a Ventoy USB drive)
+  └── Calamares, with real UI only for partitioning (same as you
+      already do: reuse the ~200 MB EFI partition, never format it).
+      Everything else (locale=en_US, keyboard=us, user, GRUB) is
+      fixed, no questions asked — see postinstall/*.sh
+        └── at the end, runs postinstall/run.sh on the installed
+            system
+              ├── locale, keyboard, hostname, "mac" user
+              ├── NVIDIA driver + KVM
+              ├── GRUB, reusing the existing EFI partition
+              └── autologin of "mac" on tty1 + kiosk
 
-Primeiro arranque do sistema instalado:
-  login automático → kiosk/mac-vm-launch.sh
-    └── ainda não há VM? → macos-source-wizard.sh (uma pergunta, zenity):
-          1. Descarregar a imagem de recuperação direto da Apple (padrão)
-          2. Já tenho uma VM/disco de macOS — escolher no disco
-          3. Já tenho um instalador .dmg (App Store/outro Mac) — escolher
-             no disco (experimental, ver docs/CHECKLIST.md)
-    └── QEMU em fullscreen — aqui é onde TU assumes: Disk Utility,
-        instalar o macOS, Setup Assistant — isso fica contigo, não é
-        automatizado (de propósito: é a parte pessoal, Apple ID, conta)
+First boot of the installed system:
+  automatic login → kiosk/mac-vm-launch.sh
+    └── no VM yet? → macos-source-wizard.sh (one question, zenity):
+          1. Download the recovery image directly from Apple (default)
+          2. I already have a macOS VM/disk — pick it from disk
+          3. I already have an installer .dmg (App Store/another Mac)
+             — pick it from disk (experimental, see docs/CHECKLIST.md)
+    └── QEMU in fullscreen — this is where YOU take over: Disk
+        Utility, installing macOS, Setup Assistant — that part stays
+        yours, it's not automated (on purpose: it's the personal part,
+        Apple ID, account, etc.)
 
-Depois de instalado o macOS:
-  Restart no menu Apple → a máquina física reinicia a sério
-  Shut Down no menu Apple → a máquina física desliga a sério
-  (mecanismo: QMP + `-no-reboot`, ver kiosk/README.md — decidido assim
-  porque um Restart também deve limpar qualquer problema do Arch por
-  baixo, não só da VM)
+Once macOS is installed:
+  Restart from the Apple menu → the physical machine really reboots
+  Shut Down from the Apple menu → the physical machine really powers off
+  (mechanism: QMP + `-no-reboot`, see kiosk/README.md — done this way
+  because a Restart should also clear up any problem with the Arch
+  layer underneath, not just the VM)
 ```
 
-## Sobre meter a ISO com o macOS "lá dentro" já pronto
+## About baking macOS "into" the ISO itself
 
-Não dá, e não é isso que este projeto faz. Embrulhar uma imagem/instalador
-da Apple dentro da ISO que se distribui seria redistribuir software com
-copyright da Apple — problema real, sem tornar isto mais "automático"
-nenhum. O que este projeto automatiza é o download/preparação, sempre
-correndo no teu próprio hardware, pro teu próprio disco, no momento em que
-TU o fazes: a ISO em si nunca leva nada da Apple. É a mesma linha que o
-OSX-KVM e toda a comunidade de VMs macOS sempre seguiram — e continua a ser
-contra o EULA da Apple correr macOS fora de hardware Apple, com ou sem
-aceleração; nada aqui muda essa realidade.
+Can't be done, and that's not what this project does. Bundling an
+Apple image/installer inside the ISO you distribute would mean
+redistributing Apple's copyrighted software — a real problem, and it
+wouldn't make this any more "automatic" either. What this project
+automates is the download/preparation, always running on your own
+hardware, onto your own disk, at the moment YOU do it: the ISO itself
+never carries anything from Apple. This is the same line OSX-KVM and
+the whole macOS-VM community has always followed — and it's still
+against Apple's EULA to run macOS outside Apple hardware, accelerated
+or not; nothing here changes that.
 
-A parte "navegar pelo disco e escolher um `.dmg` mais recente" que querias
-está no wizard (opção 3) — é a mais experimental das três, porque instalar
-a partir de um `.dmg` real da Apple normalmente significa lidar com uma
-imagem APFS, e o suporte a APFS em Linux ainda é limitado.
+The "browse the disk and pick a newer `.dmg`" idea you wanted is in
+the wizard (option 3) — it's the most experimental of the three,
+because installing from a real Apple `.dmg` usually means dealing with
+an APFS image, and APFS support on Linux is still limited.
 
-## Estrutura
+## Layout
 
-- `archiso/` — perfil do `mkarchiso` (vanilla Arch, não CachyOS), com o
-  Calamares reduzido a: boas-vindas, partição (UI a sério), resumo
-- `archiso/airootfs/root/postinstall/` — scripts que correm no sistema já
-  instalado, chrooted, antes do primeiro arranque real
-- `archiso/airootfs/opt/layerosx/kiosk/` — o launcher da VM, o wizard
-  de primeira execução e o vigia de shutdown/reboot via QMP
-- `archiso/airootfs/root/customize_airootfs.sh` — compila o
-  `qemus/qemu-macos` e o `dmg2img` durante o build (precisa de rede na
-  máquina de build, não na final)
-- `docs/CHECKLIST.md` — passo a passo de build e teste, com os pontos que
-  mais provavelmente vão precisar de ajuste
+- `archiso/` — the `mkarchiso` profile (vanilla Arch, not CachyOS),
+  with Calamares trimmed down to: welcome, partition (real UI), summary
+- `archiso/airootfs/root/postinstall/` — scripts that run on the
+  already-installed system, chrooted, before the first real boot
+- `archiso/airootfs/opt/layerosx/kiosk/` — the VM launcher, the
+  first-run wizard, and the shutdown/reboot watchdog via QMP
+- `archiso/airootfs/root/customize_airootfs.sh` — builds
+  `qemus/qemu-macos` and `dmg2img` at build time (needs network on the
+  build machine, not on the final one)
+- `docs/CHECKLIST.md` — step-by-step build/test plan, with the points
+  most likely to need adjusting
 
 ## Build
 
@@ -90,8 +93,8 @@ imagem APFS, e o suporte a APFS em Linux ainda é limitado.
 cd archiso && ./build.sh
 ```
 
-Precisa de correr numa máquina Arch-based com o pacote `archiso`
-instalado (a tua CachyOS serve — ou o
-`archlinux-2026.09.01-x86_64.iso` que já tens, arrancado como live
-environment, também serve só para este passo). Produz um `.iso` para
-arrastar para a pen com o Ventoy.
+Needs to run on an Arch-based machine with the `archiso` package
+installed (your CachyOS works — or the
+`archlinux-2026.09.01-x86_64.iso` you already have, booted as a live
+environment, also works just for this step). Produces a `.iso` to drag
+onto your Ventoy drive.

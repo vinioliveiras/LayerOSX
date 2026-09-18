@@ -3,7 +3,7 @@
 
 iso_name="layerosx"
 iso_label="LAYEROSX_$(date +%Y%m)"
-iso_publisher="LayerOSX <https://github.com/CHANGE-ME/LayerOSX>"
+iso_publisher="LayerOSX <https://github.com/vinioliveiras/LayerOSX>"
 iso_application="LayerOSX Live/Install medium"
 iso_version="$(date +%Y.%m.%d)"
 install_dir="layerosx"

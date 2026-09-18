@@ -1,5 +1,5 @@
 [Unit]
-Description=Corre a limpeza do layerosx uma vez por semana
+Description=Runs the LayerOSX cleanup once a week
 
 [Timer]
 OnBootSec=15min

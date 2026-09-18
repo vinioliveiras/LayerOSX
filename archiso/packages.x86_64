@@ -1,6 +1,6 @@
-# Base do sistema (fica tudo isto no ISO e é copiado tal-e-qual pelo
-# Calamares — nada disto é instalado durante o Calamares em si, unpackfs
-# só copia o rootfs do live).
+# Base system (all of this stays on the ISO and is copied as-is by
+# Calamares — none of this gets installed during Calamares itself,
+# unpackfs just copies the live rootfs).
 base
 base-devel
 linux
@@ -19,12 +19,12 @@ btrfs-progs
 e2fsprogs
 ntfs-3g
 
-# NVIDIA (mesmo pacote que já validámos no CachyOS)
+# NVIDIA (same package already validated on CachyOS)
 nvidia-open-dkms
 nvidia-utils
 nvidia-settings
 
-# KVM / QEMU / firmware de VM
+# KVM / QEMU / VM firmware
 qemu-base
 qemu-img
 edk2-ovmf
@@ -33,14 +33,14 @@ python
 python-yaml
 curl
 
-# Vulkan (backend do Reims-vGPU)
+# Vulkan (Reims-vGPU backend)
 vulkan-icd-loader
 vulkan-tools
 vulkan-headers
 
-# ferramentas de build do qemus/qemu-macos e do dmg2img (compilados em
-# build-time por customize_airootfs.sh — nada disto fica exposto no
-# sistema final além dos binários já prontos)
+# build tools for qemus/qemu-macos and dmg2img (compiled at build time
+# by customize_airootfs.sh — none of this stays exposed on the final
+# system besides the already-built binaries)
 meson
 ninja
 pkgconf
@@ -49,13 +49,13 @@ glib2
 pixman
 sdl2
 
-# limpeza automática (paccache)
+# automatic cleanup (paccache)
 pacman-contrib
 
-# wizard gráfico de primeira execução (escolher fonte do macOS)
+# graphical first-run wizard (choosing the macOS source)
 zenity
 
-# Live environment: só o suficiente pra correr o Calamares graficamente
+# live environment: just enough to run Calamares graphically
 xorg-server
 xorg-xinit
 openbox

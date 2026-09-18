@@ -9,13 +9,13 @@ strings:
     versionedName:         "LayerOSX 1.0"
     shortVersionedName:    "LayerOSX 1.0"
     bootloaderEntryName:   "LayerOSX"
-    productUrl:            "https://github.com/CHANGE-ME/LayerOSX"
-    supportUrl:            "https://github.com/CHANGE-ME/LayerOSX/issues"
-    releaseNotesUrl:       "https://github.com/CHANGE-ME/LayerOSX"
+    productUrl:            "https://github.com/vinioliveiras/LayerOSX"
+    supportUrl:            "https://github.com/vinioliveiras/LayerOSX/issues"
+    releaseNotesUrl:       "https://github.com/vinioliveiras/LayerOSX"
 
-# Sem imagens/slideshow de propósito — evita o Calamares rebentar por
-# causa de um ficheiro em falta. Dá pra acrescentar logo.png /
-# welcome.png aqui depois, sem mexer em mais nada.
+# No images/slideshow on purpose — avoids Calamares breaking over a
+# missing file. A logo.png / welcome.png can be added here later,
+# without touching anything else.
 
 style:
     sidebarBackground: "#1d1d1f"

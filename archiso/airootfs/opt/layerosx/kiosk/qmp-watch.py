@@ -1,19 +1,21 @@
 #!/usr/bin/env python3
 """
-Liga-se ao socket QMP de uma VM QEMU já a correr e fica à espera do
-evento SHUTDOWN. Imprime em stdout uma palavra que o mac-vm-launch.sh
-usa para decidir o que fazer:
+Connects to the QMP socket of an already-running QEMU VM and waits for
+a SHUTDOWN event. Prints a word to stdout that mac-vm-launch.sh uses
+to decide what to do:
 
-  host-poweroff  -> o guest (macOS) pediu para desligar
-  host-reboot    -> o guest (macOS) pediu para reiniciar (ou fez panic)
-  vm-only        -> QEMU saiu por outro motivo (morto de fora, erro do
-                     host, etc.) — não mexe na máquina física
+  host-poweroff  -> the guest (macOS) asked to shut down
+  host-reboot    -> the guest (macOS) asked to reboot (or panicked)
+  vm-only        -> QEMU exited for some other reason (killed
+                     externally, host error, etc.) — don't touch the
+                     physical machine
 
-Depende de a VM ter sido lançada com `-no-reboot`: isso faz o QEMU
-sair (em vez de reiniciar o próprio processo sozinho) quando o guest
-pede reboot, e o evento SHUTDOWN chega com reason="guest-reset" em vez
-de o processo continuar a correr como se nada fosse. Sem essa flag,
-isto não consegue distinguir um Restart de continuar ligado.
+Relies on the VM having been launched with `-no-reboot`: that makes
+QEMU exit (instead of resetting the process itself) when the guest
+asks to reboot, and the SHUTDOWN event arrives with
+reason="guest-reset" instead of the process just carrying on as if
+nothing happened. Without that flag, there's no way to tell a Restart
+apart from staying powered on.
 """
 import json
 import socket
@@ -25,7 +27,7 @@ GUEST_REBOOT_REASONS = {"guest-reset", "guest-panic"}
 
 def main() -> None:
     if len(sys.argv) != 2:
-        print("uso: qmp-watch.py <socket-qmp>", file=sys.stderr)
+        print("usage: qmp-watch.py <qmp-socket>", file=sys.stderr)
         sys.exit(2)
 
     sock_path = sys.argv[1]
@@ -35,7 +37,7 @@ def main() -> None:
         sock.settimeout(15)
         sock.connect(sock_path)
     except OSError as exc:
-        print(f"não consegui ligar ao QMP: {exc}", file=sys.stderr)
+        print(f"could not connect to QMP: {exc}", file=sys.stderr)
         print("vm-only")
         return
 
@@ -48,12 +50,12 @@ def main() -> None:
         return json.loads(line.decode("utf-8", "replace"))
 
     try:
-        read_json()  # banner de capabilities
+        read_json()  # capabilities banner
         buf.write(json.dumps({"execute": "qmp_capabilities"}).encode() + b"\n")
         buf.flush()
-        read_json()  # resposta ao qmp_capabilities
+        read_json()  # response to qmp_capabilities
     except (OSError, json.JSONDecodeError) as exc:
-        print(f"handshake QMP falhou: {exc}", file=sys.stderr)
+        print(f"QMP handshake failed: {exc}", file=sys.stderr)
         print("vm-only")
         return
 
@@ -74,8 +76,9 @@ def main() -> None:
             elif reason in GUEST_REBOOT_REASONS:
                 print("host-reboot")
             else:
-                # host-qmp-quit, host-signal, host-error, host-ui: fomos
-                # nós (ou algo externo) que matámos a VM, não o guest.
+                # host-qmp-quit, host-signal, host-error, host-ui: it
+                # was us (or something external) that killed the VM,
+                # not the guest.
                 print("vm-only")
             return
 

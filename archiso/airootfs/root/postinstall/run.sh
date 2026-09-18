@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Corre DENTRO do chroot do sistema já copiado pelo unpackfs (via
-# shellprocess do Calamares). Um log único, falha de um script não trava
-# os outros — melhor teres um sistema quase-todo pronto do que nenhum.
+# Runs INSIDE the chroot of the system just copied by unpackfs (via
+# Calamares's shellprocess). A single log; one script failing doesn't
+# block the others — better to end up with an almost-fully-ready
+# system than none at all.
 set -uo pipefail
 LOG=/var/log/layerosx-postinstall.log
 exec > >(tee -a "$LOG") 2>&1
@@ -10,11 +11,11 @@ echo "===== LayerOSX postinstall: $(date -Is) ====="
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 for step in "$SCRIPT_DIR"/[0-9][0-9]-*.sh; do
-    echo "--- a correr: $step ---"
+    echo "--- running: $step ---"
     if ! bash "$step"; then
-        echo "!!! $step falhou (ver acima) — a continuar na mesma para não travar a instalação por completo."
+        echo "!!! $step failed (see above) — continuing anyway rather than blocking the whole install."
     fi
 done
 
-echo "===== postinstall concluído: $(date -Is) ====="
-echo "Log completo em /var/log/layerosx-postinstall.log"
+echo "===== postinstall done: $(date -Is) ====="
+echo "Full log at /var/log/layerosx-postinstall.log"
