@@ -18,5 +18,15 @@ if [ ! -x airootfs/opt/layerosx/bin/qemu-system-x86_64 ]; then
     ./prepare-qemu-macos.sh
 fi
 
+# mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
+# when profiledef.sh/pacman.conf/packages.x86_64 changed — it can
+# silently skip re-copying them and build with stale config (seen
+# firsthand: it kept ignoring a newly added pacman repo). Package
+# downloads are cached separately by pacman itself (CacheDir, usually
+# /var/cache/pacman/pkg/), so clearing this directory doesn't mean
+# re-downloading everything — just a fresh airootfs assembly. Safer to
+# always start clean.
+sudo rm -rf "$WORKDIR"
+
 sudo mkarchiso -v -w "$WORKDIR" -o "$OUTDIR" .
 echo "ISO ready in $OUTDIR/ — drag it onto your Ventoy drive."
