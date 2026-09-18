@@ -4,7 +4,8 @@
 #
 # 1. If no VM exists yet, shows the first-run wizard
 #    (macos-source-wizard.sh) — only happens once.
-# 2. Launches QEMU (the qemus/qemu-macos build, with Reims-vGPU) in
+# 2. Launches our custom-built qemu-system-x86_64 (Reims-vGPU baked
+#    in, staged by ../../../prepare-qemu-macos.sh at build time) in
 #    fullscreen.
 # 3. Waits for a QMP event to find out IF and HOW macOS asked to power
 #    off, and translates that into a real action on the physical
@@ -20,11 +21,17 @@ VM_DISK="$STATE_DIR/macos.qcow2"
 OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 QMP_SOCK="/tmp/macvm-qmp.sock"
 KIOSK_DIR="/opt/layerosx/kiosk"
+QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 LOG="$HOME/mac-vm.log"
 
 exec > >(tee -a "$LOG") 2>&1
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
+
+if [ ! -x "$QEMU_BIN" ]; then
+    echo "FATAL: $QEMU_BIN is missing. The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md." >&2
+    exit 1
+fi
 
 if [ ! -f "$VM_DISK" ]; then
     echo "No VM found — opening the first-run wizard."
@@ -39,13 +46,17 @@ RETRIES=0
 while true; do
     rm -f "$QMP_SOCK"
 
-    # TODO(verify): the exact accelerated-video flag for Reims-vGPU
-    # (device/driver exposed by the qemus/qemu-macos build) needs to
-    # be confirmed against that project's README before the first
-    # real test — the `-display sdl,gl=on` below is the bare minimum
-    # to get a screen, but Reims's real acceleration may require its
-    # own video device on the command line. See docs/CHECKLIST.md.
-    qemu-system-x86_64 \
+    # reims-vgpu-pci is the real device name (confirmed by reading the
+    # qemus/qemu-macos Dockerfile's own verification step, which
+    # probes it with `-device reims-vgpu-pci,help`). The `romfile=`
+    # property below is QEMU's normal convention for a PCI device's
+    # option ROM, matching where prepare-qemu-macos.sh stages
+    # reims-vgpu-gop.rom — but the exact property names on this device
+    # still need confirming: run
+    #   sudo /opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help
+    # after the ISO is built and fix the line below if it disagrees.
+    # See docs/CHECKLIST.md.
+    "$QEMU_BIN" \
         -name "macOS" \
         -enable-kvm -m 8192 -smp cores=6,threads=1 -cpu host \
         -machine q35 \
@@ -54,6 +65,7 @@ while true; do
         -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
         -drive if=pflash,format=raw,file="$OVMF_VARS" \
         -drive if=virtio,file="$VM_DISK",format=qcow2 \
+        -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom \
         -display sdl,gl=on,full-screen=on \
         -usb -device usb-kbd -device usb-tablet \
         -netdev user,id=net0 -device virtio-net,netdev=net0 &

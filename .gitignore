@@ -3,3 +3,5 @@ archiso/out/
 *.iso
 *.log
 macos-assets/
+archiso/airootfs/opt/layerosx/bin/
+archiso/airootfs/usr/share/qemu/

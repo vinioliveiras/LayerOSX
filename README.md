@@ -81,9 +81,13 @@ an APFS image, and APFS support on Linux is still limited.
   already-installed system, chrooted, before the first real boot
 - `archiso/airootfs/opt/layerosx/kiosk/` — the VM launcher, the
   first-run wizard, and the shutdown/reboot watchdog via QMP
-- `archiso/airootfs/root/customize_airootfs.sh` — builds
-  `qemus/qemu-macos` and `dmg2img` at build time (needs network on the
-  build machine, not on the final one)
+- `archiso/prepare-qemu-macos.sh` — runs on the build host, before
+  `mkarchiso` (needs Docker): builds the custom `qemu-system-x86_64`
+  (Reims-vGPU) from `qemus/qemu-macos` and stages it into the profile.
+  This one's a real from-source QEMU build, expect 30-60+ minutes.
+- `archiso/airootfs/root/customize_airootfs.sh` — builds `dmg2img` at
+  ISO build time (a small, ordinary build, runs fine inside the
+  chroot) and checks the qemu binary above actually got staged
 - `docs/CHECKLIST.md` — step-by-step build/test plan, with the points
   most likely to need adjusting
 

@@ -19,5 +19,6 @@ file_permissions=(
   ["/root/postinstall"]="0:0:750"
   ["/root/customize_airootfs.sh"]="0:0:750"
   ["/opt/layerosx"]="0:0:755"
+  ["/opt/layerosx/bin/qemu-system-x86_64"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
 )

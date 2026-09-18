@@ -23,21 +23,43 @@ cd LayerOSX/archiso
 This step alone will already show if anything is missing from
 `packages.x86_64` (names change, versions leave the repos, etc.).
 
-## 2. `customize_airootfs.sh` — the biggest source of uncertainty
+## 2. `prepare-qemu-macos.sh` — the biggest source of uncertainty
 
-This script builds `qemus/qemu-macos` (QEMU + Reims-vGPU) and
-`dmg2img` during the build. Before a "real" build:
+Update (found by actually reading the qemus/qemu-macos repo instead of
+guessing): that project ships **no buildable source checkout** — no
+`build.sh`, no `meson.build`. It's a multi-stage `Dockerfile` +
+`patches/` only. It clones real upstream QEMU 11.1.1 plus
+steelbrain/reims-vgpu, applies Reims' display/device integration as a
+patch, builds with Rust + Vulkan dev headers, and the final stage
+(`FROM scratch AS artifact`) contains exactly two files:
+`/usr/bin/qemu-system-x86_64` and
+`/usr/share/qemu/reims-vgpu-gop.rom`.
 
-- Open https://github.com/qemus/qemu-macos and confirm the current
-  build command (the script tries `build.sh` and then `meson`, but
-  this may have changed).
-- Confirm the build packages (`meson`, `ninja`, `pkgconf`, `glib2`,
-  `pixman`, `sdl2`, `vulkan-headers`) are enough — the project may
-  need some other dependency that isn't in `packages.x86_64` yet.
-- If the build fails here, the ISO still comes out (the script only
-  warns, it doesn't stop `mkarchiso`), but
-  `/opt/layerosx/kiosk/mac-vm-launch.sh` won't have any accelerated
-  `qemu-system-x86_64` to run.
+Because that build needs a real Docker daemon (BuildKit heredoc
+syntax throughout) and mkarchiso's `customize_airootfs.sh` runs inside
+a plain chroot with no Docker available, this can't happen during the
+ISO build like the original plan assumed. Instead:
+
+- `archiso/prepare-qemu-macos.sh` runs on the **build host**, before
+  `mkarchiso` — needs Docker (or Podman) installed there. It clones
+  qemus/qemu-macos, runs `docker build --target artifact`, and copies
+  the two output files into `airootfs/opt/layerosx/bin/` and
+  `airootfs/usr/share/qemu/`. `build.sh` calls it automatically if the
+  binary isn't already staged.
+- Expect this single step to take 30-60+ minutes (it's compiling real
+  QEMU from source) the first time you run it.
+- `customize_airootfs.sh` now only builds `dmg2img` (a small, ordinary
+  C build, fine inside the chroot) and just checks the qemu binary
+  landed where expected, warning loudly if it didn't.
+- The device name is now confirmed: `reims-vgpu-pci` (found in the
+  Dockerfile's own verification step, which probes
+  `-device reims-vgpu-pci,help`). `mac-vm-launch.sh` uses
+  `-device reims-vgpu-pci,romfile=reims-vgpu-gop.rom` as a best guess
+  at the ROM property name — **still needs confirming**: run
+  `sudo /opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help`
+  once you have a built binary and fix the flag if it disagrees.
+  `prepare-qemu-macos.sh` already runs this query and prints the
+  result at the end of the build.
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
@@ -66,12 +88,10 @@ This script builds `qemus/qemu-macos` (QEMU + Reims-vGPU) and
 
 - Confirm `-display sdl,gl=on,full-screen=on` actually gives you a
   screen.
-- **The single most uncertain point in the whole project**: the exact
-  flag that turns on Reims-vGPU's accelerated video device on the
-  `qemu-system-x86_64` command line (see the `TODO(verify)` in
-  `kiosk/mac-vm-launch.sh`). Without confirming this against the
-  `qemus/qemu-macos` README, the VM might boot but with no
-  acceleration at all (software rendering only, slow).
+- The device name is confirmed (`reims-vgpu-pci`, see step 2) — what's
+  still unverified is the exact `romfile=` property name used in
+  `kiosk/mac-vm-launch.sh`. Without it being right, the VM might boot
+  but with no acceleration at all (software rendering only, slow).
 - Confirm USB keyboard/mouse work inside the VM before trying to
   install/configure anything.
 
