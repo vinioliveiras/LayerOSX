@@ -88,6 +88,27 @@ ISO build like the original plan assumed. Instead:
   whole project** — it replaced Calamares very late and has not booted
   on real hardware yet.
 
+## 3.5. Hardware detection (`postinstall/10-hardware-detect.sh`)
+
+Untested on real AMD/Intel CPU+GPU combinations — this was
+generalized from a single Ryzen+NVIDIA dev machine, and nobody has
+actually run the detection logic against real hardware yet.
+
+- Check `/var/log/layerosx-postinstall.log` (or run it manually) for
+  which CPU vendor and GPU vendor(s) it detected.
+- Confirm the right KVM module loaded: `lsmod | grep kvm_` should show
+  exactly `kvm_intel` (Intel) or `kvm_amd` (AMD), not both, not
+  neither.
+- On NVIDIA: confirm `/etc/modprobe.d/nvidia.conf` exists and
+  `nvidia-persistenced` is enabled.
+- On a laptop with hybrid graphics (Intel iGPU + NVIDIA/AMD dGPU),
+  confirm BOTH get detected and configured — the script is written to
+  handle more than one GPU, but this specific case hasn't been tried.
+- If `mac-vm-launch.sh`'s Reims-vGPU acceleration doesn't work on
+  non-NVIDIA hardware, start here: check `vulkaninfo` inside the live
+  or installed system actually lists a working AMD/Intel Vulkan
+  device (`vulkan-radeon`/`vulkan-intel` from packages.x86_64).
+
 ## 4. First boot of the installed system
 
 - Should boot straight into the `mac` user, no password prompt, and

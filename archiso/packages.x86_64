@@ -21,10 +21,25 @@ ntfs-3g
 rsync
 arch-install-scripts
 
-# NVIDIA (same package already validated on CachyOS)
+# CPU microcode — both included unconditionally (tiny, harmless): the
+# bootloader only loads the one that actually matches the CPU present.
+intel-ucode
+amd-ucode
+
+# GPU drivers for all three vendors — baked in unconditionally.
+# postinstall/10-hardware-detect.sh detects what's REALLY plugged into
+# the machine being installed and only *enables* the relevant modules
+# and services; the packages themselves don't need matching hardware
+# present at install time (mesa is vendor-neutral, nvidia-open-dkms
+# just compiles its kernel module against the kernel headers already
+# on the ISO). Reims-vGPU accelerates over Vulkan on the host, so any
+# of these three is a valid target, not just NVIDIA.
 nvidia-open-dkms
 nvidia-utils
 nvidia-settings
+mesa
+vulkan-radeon
+vulkan-intel
 
 # KVM / QEMU / VM firmware
 qemu-base

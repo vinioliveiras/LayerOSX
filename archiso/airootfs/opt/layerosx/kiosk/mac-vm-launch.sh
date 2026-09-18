@@ -28,6 +28,16 @@ exec > >(tee -a "$LOG") 2>&1
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
 
+# Leave 2 cores for the host (Arch underneath still needs to breathe),
+# minimum 1 for the VM. Was hardcoded to 6 — fine on the original dev
+# machine, wrong on anything with fewer (or a lot more) cores.
+TOTAL_CORES="$(nproc)"
+if [ "$TOTAL_CORES" -gt 2 ]; then
+    VM_CORES=$((TOTAL_CORES - 2))
+else
+    VM_CORES=1
+fi
+
 if [ ! -x "$QEMU_BIN" ]; then
     echo "FATAL: $QEMU_BIN is missing. The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md." >&2
     exit 1
@@ -58,7 +68,7 @@ while true; do
     # See docs/CHECKLIST.md.
     "$QEMU_BIN" \
         -name "macOS" \
-        -enable-kvm -m 8192 -smp cores=6,threads=1 -cpu host \
+        -enable-kvm -m 8192 -smp "cores=${VM_CORES},threads=1" -cpu host \
         -machine q35 \
         -no-reboot \
         -qmp "unix:${QMP_SOCK},server,nowait" \

@@ -7,6 +7,15 @@ to boot straight into an accelerated macOS VM (via
 see macOS boot — no visible Linux desktop, no manual steps after
 install (other than picking where macOS comes from, once).
 
+**Hardware support:** works on any Intel or AMD (Ryzen) CPU, and any
+NVIDIA, AMD or Intel GPU — Reims-vGPU accelerates over Vulkan on the
+host, it isn't tied to one vendor. `postinstall/10-hardware-detect.sh`
+detects what's actually in the machine being installed onto (CPU
+vendor for the right KVM module, GPU vendor for driver config) and
+configures only that — nothing to pick, no prompts. All the relevant
+driver packages (NVIDIA, Mesa/RADV, Mesa/ANV) ship on the ISO
+unconditionally either way.
+
 ## Project status
 
 This has **not been tested on real hardware yet**. It's a functional,
@@ -29,7 +38,7 @@ Installer (ISO, boots from a Ventoy USB drive)
         └── at the end, runs postinstall/run.sh (chrooted) on the
             installed system
               ├── locale, keyboard, hostname, "mac" user
-              ├── NVIDIA driver + KVM
+              ├── hardware detection: CPU vendor -> right KVM module, GPU vendor -> driver config
               ├── GRUB, reusing the existing EFI partition
               └── autologin of "mac" on tty1 + kiosk
 
