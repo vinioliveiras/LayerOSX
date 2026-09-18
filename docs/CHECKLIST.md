@@ -87,11 +87,18 @@ ISO build like the original plan assumed. Instead:
   it `mkarchiso` builds a normal install-target-style initramfs that
   can't find its own root). Fixed by copying that file from the
   official `releng` reference profile (see README.md for the full
-  explanation) — a rebuild after that fix should get past this. If it
-  hangs on a black screen for a different reason (never reaches this
-  emergency-mode message), the problem is more likely the
-  `.xinitrc`/`.bash_profile`/tty1 autologin, not GParted or the wizard
-  script itself.
+  explanation).
+- If, after that fix, it instead shows `running hook [memdisk]` /
+  `memdiskfind: not found` then `mounting '' on real root` and the
+  same emergency-mode dead end: also found on real hardware, one
+  rebuild later. The `mkinitcpio.conf.d/archiso.conf` hooks need the
+  `mkinitcpio-archiso` package **inside the ISO** to actually provide
+  them at build time — fixed by adding it to `packages.x86_64` (see
+  README.md). A rebuild after this fix should get past both issues.
+  If it hangs on a black screen for a different reason (never reaches
+  either of these emergency-mode messages), the problem is more likely
+  the `.xinitrc`/`.bash_profile`/tty1 autologin, not GParted or the
+  wizard script itself.
 - Calamares was dropped (it's never been in Arch's official repos,
   only the AUR, and Chaotic-AUR doesn't carry it either — see
   README.md) in favor of GParted + a plain rsync-based install script

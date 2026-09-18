@@ -216,3 +216,16 @@ but wasn't copied over when this profile was first put together. It's
 now part of the repo, so a fresh clone shouldn't hit this — but if you
 ever regenerate the profile from scratch, remember to bring this file
 along.
+
+Adding that config file alone isn't enough, though: the hooks it
+references (`archiso`, `archiso_loop_mnt`, `memdisk`, ...) — and the
+`memdiskfind` binary some of them need — are shipped by the
+`mkinitcpio-archiso` package, which has to be installed **inside the
+ISO itself** (`packages.x86_64`), not just present on the build host.
+Without it, `mkinitcpio` runs inside the airootfs during the build
+without those hooks available, and you get a related-but-different
+failure: the boot log shows `running hook [memdisk]` /
+`memdiskfind: not found`, then `mounting '' on real root` (an empty
+device) and the same emergency-mode dead end. `packages.x86_64` now
+includes `mkinitcpio-archiso`; confirmed against the same `releng`
+reference profile.

@@ -7,6 +7,15 @@ linux
 linux-firmware
 linux-headers
 mkinitcpio
+# Provides the archiso/archiso_loop_mnt/memdisk/... mkinitcpio hooks
+# (and the memdiskfind binary they need) referenced by
+# airootfs/etc/mkinitcpio.conf.d/archiso.conf. Without this package,
+# mkarchiso still builds an ISO, but its initramfs can't find its own
+# live root: it boots into a black screen, then an endless
+# `systemd-gpt-auto-generator` / emergency-mode loop (root is locked,
+# so you can't even log in to debug it). Confirmed against the
+# official releng reference profile's packages.x86_64.
+mkinitcpio-archiso
 sudo
 git
 nano
