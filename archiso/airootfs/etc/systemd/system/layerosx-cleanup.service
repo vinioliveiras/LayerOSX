@@ -1,0 +1,6 @@
+[Unit]
+Description=layerosx — limpeza periódica (cache de pacotes, journal, tmp, core dumps)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/layerosx-cleanup.sh

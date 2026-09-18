@@ -1,0 +1,4 @@
+archiso/work/
+archiso/out/
+*.iso
+*.log

@@ -1,0 +1,64 @@
+# Base do sistema (fica tudo isto no ISO e é copiado tal-e-qual pelo
+# Calamares — nada disto é instalado durante o Calamares em si, unpackfs
+# só copia o rootfs do live).
+base
+base-devel
+linux
+linux-firmware
+linux-headers
+mkinitcpio
+sudo
+git
+nano
+networkmanager
+efibootmgr
+grub
+os-prober
+dosfstools
+btrfs-progs
+e2fsprogs
+ntfs-3g
+
+# NVIDIA (mesmo pacote que já validámos no CachyOS)
+nvidia-open-dkms
+nvidia-utils
+nvidia-settings
+
+# KVM / QEMU / firmware de VM
+qemu-base
+qemu-img
+edk2-ovmf
+swtpm
+python
+python-yaml
+curl
+
+# Vulkan (backend do Reims-vGPU)
+vulkan-icd-loader
+vulkan-tools
+vulkan-headers
+
+# ferramentas de build do qemus/qemu-macos e do dmg2img (compilados em
+# build-time por customize_airootfs.sh — nada disto fica exposto no
+# sistema final além dos binários já prontos)
+meson
+ninja
+pkgconf
+cmake
+glib2
+pixman
+sdl2
+
+# limpeza automática (paccache)
+pacman-contrib
+
+# wizard gráfico de primeira execução (escolher fonte do macOS)
+zenity
+
+# Live environment: só o suficiente pra correr o Calamares graficamente
+xorg-server
+xorg-xinit
+openbox
+calamares
+qt6-svg
+kpmcore

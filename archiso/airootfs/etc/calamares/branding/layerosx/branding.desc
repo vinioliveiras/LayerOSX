@@ -1,0 +1,23 @@
+---
+componentName: layerosx
+
+strings:
+    productName:          "LayerOSX"
+    shortProductName:     "LayerOSX"
+    version:               "1.0"
+    shortVersion:          "1.0"
+    versionedName:         "LayerOSX 1.0"
+    shortVersionedName:    "LayerOSX 1.0"
+    bootloaderEntryName:   "LayerOSX"
+    productUrl:            "https://github.com/CHANGE-ME/LayerOSX"
+    supportUrl:            "https://github.com/CHANGE-ME/LayerOSX/issues"
+    releaseNotesUrl:       "https://github.com/CHANGE-ME/LayerOSX"
+
+# Sem imagens/slideshow de propósito — evita o Calamares rebentar por
+# causa de um ficheiro em falta. Dá pra acrescentar logo.png /
+# welcome.png aqui depois, sem mexer em mais nada.
+
+style:
+    sidebarBackground: "#1d1d1f"
+    sidebarText:       "#f5f5f7"
+    sidebarTextSelect:  "#0071e3"

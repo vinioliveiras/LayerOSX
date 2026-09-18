@@ -1,0 +1,10 @@
+[Unit]
+Description=Corre a limpeza do layerosx uma vez por semana
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1week
+Persistent=true
+
+[Install]
+WantedBy=timers.target
