@@ -90,9 +90,28 @@ an APFS image, and APFS support on Linux is still limited.
 
 ## Build
 
-You need an Arch-based Linux shell with the `archiso` package, plus
-Docker (or Podman) for the one-time custom QEMU build. Two ways to get
-that shell:
+You need an Arch-based Linux shell with the `archiso` package,
+Docker (or Podman) for the one-time custom QEMU build, and
+[Chaotic-AUR](https://aur.chaotic.cx/) set up (Calamares, the
+partitioning UI, isn't in Arch's official repos — only in the AUR;
+Chaotic-AUR mirrors it as a prebuilt binary so a plain archiso/pacman
+build can pull it in directly, no source compile needed). Two ways to
+get that shell:
+
+### One-time: add Chaotic-AUR to the build host
+
+Run this once on whatever machine builds the ISO (native Arch/CachyOS,
+or inside the WSL2 Arch shell from Option B below) — it installs
+Chaotic-AUR's signing key and repo config system-wide, which archiso's
+own package installer reuses when it sees `archiso/pacman.conf`'s
+`[chaotic-aur]` section:
+```sh
+sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
+sudo pacman-key --lsign-key 3056513887B78AEB
+sudo pacman -U --noconfirm \
+  'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
+  'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
+```
 
 ### Option A — native Arch/CachyOS
 
