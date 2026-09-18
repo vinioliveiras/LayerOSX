@@ -24,6 +24,21 @@ command -v "$ENGINE" >/dev/null 2>&1 || {
     exit 1
 }
 
+# The upstream Dockerfile needs BuildKit (it uses "RUN <<EOF" heredocs and
+# "ADD --keep-git-dir=true", syntax the classic/legacy docker builder does
+# not understand). On a fresh `pacman -S docker` (no buildx package),
+# `docker build` silently falls back to the legacy builder — it does NOT
+# error out on the heredoc RUN steps, it just treats them as a no-op, so
+# the whole multi-stage build "succeeds" while never actually compiling
+# anything, and the very next stage fails with a confusing
+# "COPY failed: stat out/qemu-system-x86_64: file does not exist" that
+# looks unrelated to the real cause. Forcing BuildKit here fixes this
+# whether or not the buildx plugin is installed (dockerd has had built-in
+# BuildKit support since Docker 18.09, driven by this env var).
+if [ "$ENGINE" = "docker" ]; then
+    export DOCKER_BUILDKIT=1
+fi
+
 WORK=$(mktemp -d)
 CID=""
 cleanup() { [ -n "$CID" ] && "$ENGINE" rm -f "$CID" >/dev/null 2>&1; rm -rf "$WORK"; }

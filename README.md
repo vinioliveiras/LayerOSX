@@ -160,3 +160,16 @@ has been fixed going forward, but if you ever hit it again:
 ```sh
 find . -name '*.sh' -exec chmod +x {} \;
 ```
+
+If `prepare-qemu-macos.sh` "succeeds" (no error, all 26 Docker steps
+print `Removed intermediate container`) but `build.sh` then fails to
+find the compiled binary, it's almost certainly this: a fresh
+`pacman -S docker` (or a Docker install with no `buildx` package)
+defaults `docker build` to the legacy builder, which silently treats
+the upstream Dockerfile's `RUN <<EOF ... EOF` heredocs as a no-op —
+no error, it just never runs the compile step inside them. You'll see
+`DEPRECATED: The legacy builder is deprecated...` at the very top of
+the build log if this is happening. `prepare-qemu-macos.sh` now forces
+`DOCKER_BUILDKIT=1` itself, so this shouldn't bite you again, but if
+you're ever calling `docker build` on this Dockerfile by hand, always
+set that env var (or use `docker buildx build`) first.
