@@ -199,3 +199,20 @@ with `fatal: cannot change to '/src/qemu': No such file or directory`.
 the Dockerfile before building, so you shouldn't need to think about it —
 but if upstream fixes this later, that workaround becomes a harmless
 no-op sed (worth removing next time you touch this file).
+
+If the ISO boots into a black screen and then loops in
+`systemd` emergency mode with `Timed out waiting for device
+/dev/gpt-auto-root` (and you can't even log into the emergency shell
+because "the root account is locked"), the profile is missing
+`airootfs/etc/mkinitcpio.conf.d/archiso.conf`. Without it, `mkarchiso`
+builds a normal, install-target-style initramfs (default HOOKS from
+the `linux` package's own preset) instead of one that knows how to
+find and mount the live squashfs — so the kernel falls back to
+`systemd-gpt-auto-generator`, looking for a real GPT root partition
+that doesn't exist on a live medium, and times out. This file is
+supposed to come from the official `releng` reference profile
+(`/usr/share/archiso/configs/releng/airootfs/etc/mkinitcpio.conf.d/archiso.conf`)
+but wasn't copied over when this profile was first put together. It's
+now part of the repo, so a fresh clone shouldn't hit this — but if you
+ever regenerate the profile from scratch, remember to bring this file
+along.

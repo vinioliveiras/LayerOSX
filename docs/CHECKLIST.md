@@ -78,15 +78,27 @@ ISO build like the original plan assumed. Instead:
   pickers (root, ESP) → a confirmation dialog → proceeds on its own
   (rsync copy, fstab, machine-id, chroot + postinstall) → a "reboot
   now" dialog.
-- If it hangs on a black screen before the wizard shows up: the
-  problem is the `.xinitrc`/`.bash_profile`/tty1 autologin, not
-  GParted or the wizard script itself.
+- If it hangs on a black screen and then loops in `systemd`
+  emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
+  can't even log into the emergency shell because root is locked):
+  this was a real bug, found on the first real-hardware boot attempt —
+  the profile was missing `airootfs/etc/mkinitcpio.conf.d/archiso.conf`
+  (the file that makes the live initramfs actually live-aware; without
+  it `mkarchiso` builds a normal install-target-style initramfs that
+  can't find its own root). Fixed by copying that file from the
+  official `releng` reference profile (see README.md for the full
+  explanation) — a rebuild after that fix should get past this. If it
+  hangs on a black screen for a different reason (never reaches this
+  emergency-mode message), the problem is more likely the
+  `.xinitrc`/`.bash_profile`/tty1 autologin, not GParted or the wizard
+  script itself.
 - Calamares was dropped (it's never been in Arch's official repos,
   only the AUR, and Chaotic-AUR doesn't carry it either — see
   README.md) in favor of GParted + a plain rsync-based install script
-  (`kiosk/install-wizard.sh`). This is the **least-tested part of the
-  whole project** — it replaced Calamares very late and has not booted
-  on real hardware yet.
+  (`kiosk/install-wizard.sh`). This is still one of the **least-tested
+  parts of the whole project** — the live-boot bug above was found and
+  fixed before the wizard itself was ever reached, so the GParted/rsync
+  flow specifically has still not run on real hardware yet.
 
 ## 3.5. Hardware detection (`postinstall/10-hardware-detect.sh`)
 
