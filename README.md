@@ -7,8 +7,6 @@ trabalho é arrancar diretamente numa VM de macOS acelerada (via
 macOS a arrancar — sem desktop Linux visível, sem passos manuais depois da
 instalação (exceto escolher de onde vem o macOS, uma única vez).
 
-Contexto da máquina: ASUS TUF Gaming A15 (FA507NV), Ryzen 7 7735HS, RTX 4060
-Laptop, 64 GB RAM.
 
 ## Estado do projeto
 
