@@ -71,14 +71,22 @@ ISO build like the original plan assumed. Instead:
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
-- Confirm it boots in UEFI and shows Calamares fullscreen (openbox +
-  `.xinitrc`, root autologin on tty1).
-- Should only show: welcome → partition (interactive, same as today:
-  reuse the ~200 MB EFI partition, never format it) → summary →
-  proceeds on its own → done.
-- If it hangs on a black screen before Calamares shows up: the problem
-  is the `.xinitrc`/`.bash_profile`/tty1 autologin, not Calamares
-  itself.
+- Confirm it boots in UEFI and shows the install wizard fullscreen
+  (openbox + `.xinitrc`, root autologin on tty1).
+- Should show: an info dialog → GParted (interactive, same as today:
+  reuse the ~200 MB EFI partition, never format it) → two partition
+  pickers (root, ESP) → a confirmation dialog → proceeds on its own
+  (rsync copy, fstab, machine-id, chroot + postinstall) → a "reboot
+  now" dialog.
+- If it hangs on a black screen before the wizard shows up: the
+  problem is the `.xinitrc`/`.bash_profile`/tty1 autologin, not
+  GParted or the wizard script itself.
+- Calamares was dropped (it's never been in Arch's official repos,
+  only the AUR, and Chaotic-AUR doesn't carry it either — see
+  README.md) in favor of GParted + a plain rsync-based install script
+  (`kiosk/install-wizard.sh`). This is the **least-tested part of the
+  whole project** — it replaced Calamares very late and has not booted
+  on real hardware yet.
 
 ## 4. First boot of the installed system
 

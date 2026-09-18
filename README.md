@@ -10,8 +10,8 @@ install (other than picking where macOS comes from, once).
 ## Project status
 
 This has **not been tested on real hardware yet**. It's a functional,
-technically-reviewed skeleton, but the archiso/Calamares side only
-gets validated by actually booting off a USB drive — the first attempt
+technically-reviewed skeleton, but the archiso/install-wizard side
+only gets validated by actually booting off a USB drive — the first attempt
 will need iteration, mainly around the two most uncertain points: the
 `qemus/qemu-macos` build inside `customize_airootfs.sh`, and the exact
 Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
@@ -21,12 +21,13 @@ Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 
 ```
 Installer (ISO, boots from a Ventoy USB drive)
-  └── Calamares, with real UI only for partitioning (same as you
-      already do: reuse the ~200 MB EFI partition, never format it).
-      Everything else (locale=en_US, keyboard=us, user, GRUB) is
-      fixed, no questions asked — see postinstall/*.sh
-        └── at the end, runs postinstall/run.sh on the installed
-            system
+  └── install-wizard.sh, with real UI only for partitioning (GParted —
+      same as you already do: reuse the ~200 MB EFI partition, never
+      format it) and picking which partition is root/ESP. Everything
+      else (copying the system over, fstab, machine-id, locale=en_US,
+      keyboard=us, user, GRUB) is fixed, no questions asked
+        └── at the end, runs postinstall/run.sh (chrooted) on the
+            installed system
               ├── locale, keyboard, hostname, "mac" user
               ├── NVIDIA driver + KVM
               ├── GRUB, reusing the existing EFI partition
@@ -72,8 +73,12 @@ an APFS image, and APFS support on Linux is still limited.
 
 ## Layout
 
-- `archiso/` — the `mkarchiso` profile (vanilla Arch, not CachyOS),
-  with Calamares trimmed down to: welcome, partition (real UI), summary
+- `archiso/` — the `mkarchiso` profile (vanilla Arch, not CachyOS).
+  `airootfs/root/.xinitrc` boots straight into
+  `kiosk/install-wizard.sh`: GParted for partitioning (real UI, the
+  one thing that can't be safely automated), then the script itself
+  does the rest (copy the live system over, fstab, machine-id, chroot
+  in and run postinstall/run.sh) — no other prompts
 - `archiso/airootfs/root/postinstall/` — scripts that run on the
   already-installed system, chrooted, before the first real boot
 - `archiso/airootfs/opt/layerosx/kiosk/` — the VM launcher, the
@@ -90,28 +95,10 @@ an APFS image, and APFS support on Linux is still limited.
 
 ## Build
 
-You need an Arch-based Linux shell with the `archiso` package,
-Docker (or Podman) for the one-time custom QEMU build, and
-[Chaotic-AUR](https://aur.chaotic.cx/) set up (Calamares, the
-partitioning UI, isn't in Arch's official repos — only in the AUR;
-Chaotic-AUR mirrors it as a prebuilt binary so a plain archiso/pacman
-build can pull it in directly, no source compile needed). Two ways to
-get that shell:
-
-### One-time: add Chaotic-AUR to the build host
-
-Run this once on whatever machine builds the ISO (native Arch/CachyOS,
-or inside the WSL2 Arch shell from Option B below) — it installs
-Chaotic-AUR's signing key and repo config system-wide, which archiso's
-own package installer reuses when it sees `archiso/pacman.conf`'s
-`[chaotic-aur]` section:
-```sh
-sudo pacman-key --recv-key 3056513887B78AEB --keyserver keyserver.ubuntu.com
-sudo pacman-key --lsign-key 3056513887B78AEB
-sudo pacman -U --noconfirm \
-  'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-keyring.pkg.tar.zst' \
-  'https://cdn-mirror.chaotic.cx/chaotic-aur/chaotic-mirrorlist.pkg.tar.zst'
-```
+You need an Arch-based Linux shell with the `archiso` package, plus
+Docker (or Podman) for the one-time custom QEMU build. Everything
+else (GParted, zenity, etc.) is in Arch's official repos — no
+third-party repos or AUR helpers needed. Two ways to get that shell:
 
 ### Option A — native Arch/CachyOS
 

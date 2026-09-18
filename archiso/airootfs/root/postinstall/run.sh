@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Runs INSIDE the chroot of the system just copied by unpackfs (via
-# Calamares's shellprocess). A single log; one script failing doesn't
-# block the others — better to end up with an almost-fully-ready
-# system than none at all.
+# Runs INSIDE the chroot of the system install-wizard.sh just rsync'd
+# onto the target disk (via arch-chroot). A single log; one script
+# failing doesn't block the others — better to end up with an
+# almost-fully-ready system than none at all.
 set -uo pipefail
 LOG=/var/log/layerosx-postinstall.log
 exec > >(tee -a "$LOG") 2>&1

@@ -1,6 +1,6 @@
 # Base system (all of this stays on the ISO and is copied as-is by
-# Calamares — none of this gets installed during Calamares itself,
-# unpackfs just copies the live rootfs).
+# install-wizard.sh's rsync step — none of this gets installed during
+# the live session itself).
 base
 base-devel
 linux
@@ -18,6 +18,8 @@ dosfstools
 btrfs-progs
 e2fsprogs
 ntfs-3g
+rsync
+arch-install-scripts
 
 # NVIDIA (same package already validated on CachyOS)
 nvidia-open-dkms
@@ -55,10 +57,11 @@ pacman-contrib
 # graphical first-run wizard (choosing the macOS source)
 zenity
 
-# live environment: just enough to run Calamares graphically
+# live environment: just enough to run GParted + zenity graphically
+# (Calamares would need Chaotic-AUR or an AUR source build — see
+# README.md — GParted is official and does exactly the one job we
+# actually need, partitioning)
 xorg-server
 xorg-xinit
 openbox
-calamares
-qt6-svg
-kpmcore
+gparted
