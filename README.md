@@ -229,3 +229,24 @@ failure: the boot log shows `running hook [memdisk]` /
 device) and the same emergency-mode dead end. `packages.x86_64` now
 includes `mkinitcpio-archiso`; confirmed against the same `releng`
 reference profile.
+
+If the live ISO reaches `archlinux login: root (automatic login)` and
+then the screen just flickers endlessly (X starting, dying, tty1
+autologin immediately retrying `startx`, over and over): this was
+found testing in a VM — `packages.x86_64` had no explicit X video
+driver (only `mesa`), so a virtual GPU without a working DRM/KMS
+"modesetting" driver leaves Xorg with nothing to use and it crashes on
+every attempt. `xf86-video-fbdev` is now included as a generic
+fallback (real hardware should still get a proper driver — NVIDIA via
+`nvidia-open-dkms`, AMD/Intel via `mesa`'s own modesetting — and
+shouldn't need it, but it's there either way).
+
+Related: the live root account now has a debug password (`layerosx`,
+set in `customize_airootfs.sh`, live-ISO-only — the installed system
+still ends up with root locked, same as before, via
+`postinstall/01-base-system.sh`'s own `passwd -l root`). Without this,
+there was no way to get a shell to actually debug a stuck/flickering
+live session (Ctrl+Alt+F2 refused login, and `sulogin` in emergency
+mode refuses a locked account too) — every issue had to be diagnosed
+from photos of the screen, which is exactly what forced the fixes
+above to be found the slow way.

@@ -73,6 +73,21 @@ ISO build like the original plan assumed. Instead:
 
 - Confirm it boots in UEFI and shows the install wizard fullscreen
   (openbox + `.xinitrc`, root autologin on tty1).
+- The live root account now has a debug password (`layerosx`,
+  live-ISO-only, see `customize_airootfs.sh`) — if the screen is stuck
+  or flickering, switch to another console (Ctrl+Alt+F2) and log in as
+  root with it to grab logs (`Xorg.0.log`, `dmesg`, `journalctl -xb`)
+  instead of guessing from photos of the screen.
+- If X keeps flickering / restarting right after `archlinux login: root
+  (automatic login)`: found in a VM test — no explicit X video driver
+  was in `packages.x86_64` (only `mesa`), so on a virtual GPU without a
+  working DRM/KMS "modesetting" driver, Xorg crashes, `.bash_profile`
+  immediately retries `startx` since it's still tty1, and that loop
+  looks like the screen endlessly flickering. Fixed by adding
+  `xf86-video-fbdev` as a generic fallback driver. Should also be
+  retested on real hardware (NVIDIA should get a proper driver from
+  `nvidia-open-dkms` + modesetting there, not need the fbdev fallback
+  at all) — flag it here if it still happens on bare metal.
 - Should show: an info dialog → GParted (interactive, same as today:
   reuse the ~200 MB EFI partition, never format it) → two partition
   pickers (root, ESP) → a confirmation dialog → proceeds on its own

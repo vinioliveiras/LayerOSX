@@ -50,6 +50,15 @@ mesa
 vulkan-radeon
 vulkan-intel
 
+# Generic X11 framebuffer driver — fallback for GPUs/virtual adapters
+# that don't get a working DRM/KMS "modesetting" driver on their own
+# (common in VMs without full 3D passthrough). Xorg still prefers a
+# proper driver (nvidia/modesetting) when one works; this only kicks
+# in when nothing else does, instead of Xorg crash-looping (which
+# looks like the screen endlessly flickering, because tty1 autologin
+# + .bash_profile retries `startx` every time X dies).
+xf86-video-fbdev
+
 # KVM / QEMU / VM firmware
 qemu-base
 qemu-img

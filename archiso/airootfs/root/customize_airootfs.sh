@@ -32,4 +32,13 @@ else
     echo "WARNING: /opt/layerosx/bin/qemu-system-x86_64 is missing — run ../prepare-qemu-macos.sh on the build host BEFORE mkarchiso, otherwise this ISO has no accelerated QEMU at all." >&2
 fi
 
+# By default a fresh Arch root filesystem ships with root locked
+# (no usable password) — tty1 autologin (agetty --autologin) doesn't
+# care, but anything that actually checks the password (sulogin in
+# emergency mode, a manual login on tty2/Ctrl+Alt+F2) refuses it, with
+# no way to get a debug shell if something goes wrong on the live
+# session. This is LIVE-ISO-ONLY: install-wizard.sh's rsync carries it
+# onto the installed system too, but postinstall/01-base-system.sh
+# re-locks root there with its own `passwd -l root`, same as before.
+echo "root:layerosx" | chpasswd
 echo "==> customize_airootfs: done"
