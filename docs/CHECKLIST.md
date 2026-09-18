@@ -6,19 +6,9 @@ to need adjustment.
 
 ## 1. Prepare the build machine
 
-Needs to run on an Arch-based machine with the `archiso` package
-installed (your current CachyOS works, or you can boot the
-`archlinux-2026.09.01-x86_64.iso` you already have in `D:\Downloads`
-as a live environment and install `archiso` there — the official Arch
-installer isn't used as a "base" for our ISO, it's just a Linux with
-internet where `mkarchiso` runs).
-
-```sh
-sudo pacman -S archiso
-git clone <your-repo> LayerOSX
-cd LayerOSX/archiso
-./build.sh
-```
+See the README's **Build** section for the full setup (native
+Arch/CachyOS, or Windows via WSL2 — both documented there with exact
+commands, so this file doesn't drift out of sync with it).
 
 This step alone will already show if anything is missing from
 `packages.x86_64` (names change, versions leave the repos, etc.).

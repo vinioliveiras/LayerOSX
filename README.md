@@ -90,12 +90,73 @@ an APFS image, and APFS support on Linux is still limited.
 
 ## Build
 
+You need an Arch-based Linux shell with the `archiso` package, plus
+Docker (or Podman) for the one-time custom QEMU build. Two ways to get
+that shell:
+
+### Option A — native Arch/CachyOS
+
 ```sh
-cd archiso && ./build.sh
+sudo pacman -S archiso docker git
+sudo systemctl enable --now docker
+git clone https://github.com/vinioliveiras/LayerOSX.git
+cd LayerOSX/archiso
+./build.sh
 ```
 
-Needs to run on an Arch-based machine with the `archiso` package
-installed (your CachyOS works — or the
-`archlinux-2026.09.01-x86_64.iso` you already have, booted as a live
-environment, also works just for this step). Produces a `.iso` to drag
-onto your Ventoy drive.
+### Option B — Windows, via WSL2 (no dual-boot / native Linux needed)
+
+1. Open PowerShell **as Administrator** and install an Arch WSL
+   distro:
+   ```powershell
+   wsl --install -d ArchLinux
+   ```
+   If it asks for a reboot, reboot, then open "Arch Linux" from the
+   Start menu to finish first-time setup (it'll ask you to create a
+   Linux user).
+
+2. Inside that Arch Linux WSL shell:
+   ```sh
+   pacman -Syu --noconfirm
+   pacman -S --noconfirm archiso docker git base-devel python
+   systemctl enable --now docker
+   ```
+   (If `systemctl enable --now docker` complains that the system
+   "has not been booted with systemd", your WSL distro doesn't have
+   systemd enabled — see the Arch WSL docs to turn it on, or run the
+   Docker daemon manually instead.)
+
+3. **Clone into WSL's own filesystem, not a Windows path.** Building
+   an ISO needs loop devices, sockets and other special files that
+   don't work over a `/mnt/c/...` or `/mnt/d/...` (NTFS/drvfs) path —
+   this is a well-known WSL limitation, not specific to this project:
+   ```sh
+   git clone https://github.com/vinioliveiras/LayerOSX.git ~/LayerOSX
+   cd ~/LayerOSX/archiso
+   ./build.sh
+   ```
+   Once it's done, copy the result back to the Windows side, e.g.:
+   ```sh
+   cp out/*.iso /mnt/d/Downloads/
+   ```
+
+### What actually happens
+
+`build.sh` first checks whether the custom QEMU binary
+(`airootfs/opt/layerosx/bin/qemu-system-x86_64`) already exists; if
+not, it runs `prepare-qemu-macos.sh` for you, which builds real QEMU
+from source via Docker — **this alone typically takes 30-60+ minutes**
+the first time, depending on your machine. After that, `mkarchiso`
+itself is much faster. The finished `.iso` lands in `archiso/out/` —
+drag it onto your Ventoy drive.
+
+### If you're picking up this project fresh
+
+If `git clone` gives you scripts that fail with `Permission denied`
+when you try to run them, it's not your setup — some earlier commits
+on this repo were made from a Windows machine with
+`core.filemode=false`, which silently drops the executable bit. This
+has been fixed going forward, but if you ever hit it again:
+```sh
+find . -name '*.sh' -exec chmod +x {} \;
+```
