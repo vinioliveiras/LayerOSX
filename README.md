@@ -263,3 +263,23 @@ after that, the next tty1 login just drops to a plain root shell
 instead of retrying — already logged in via autologin, no password
 needed — so there's finally a way to grab `/var/log/Xorg.0.log` and
 actually see why.
+
+Last piece of the flickering-screen saga: if `Xorg.0.log` ends with
+`Server terminated successfully (0)` and no `(EE)` lines at all, X
+isn't crashing — its only client (`.xinitrc` execs straight into
+`install-wizard.sh`) is exiting almost immediately, so X has nothing
+left to serve and shuts itself down cleanly. That's what was actually
+happening here: `install-wizard.sh` had lost its executable bit
+(`ls -la` showed `rw-r--r--`) despite git tracking it as `100755` —
+checking out this repo on a Windows-mounted drive via WSL doesn't
+reliably carry that bit onto disk (same root cause as the
+`core.filemode=false` gotcha above, just biting a different file this
+time). `profiledef.sh`'s `file_permissions` is what mkarchiso actually
+applies to the final image — a directory entry there (e.g.
+`/opt/layerosx`) only sets *that directory's* own mode, it does NOT
+recurse into files under it, so every script that needs +x has to be
+listed individually. All of them are now listed explicitly, and
+`build.sh` also does a `chmod +x` sweep over `airootfs/**/*.sh` before
+every build as a second layer, so a newly added script that forgets a
+`profiledef.sh` entry still ships executable instead of silently
+breaking the exact same way.

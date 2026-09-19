@@ -86,6 +86,22 @@ ISO build like the original plan assumed. Instead:
   just drops to a plain root shell on tty1 itself (autologin, no
   password needed there) instead of retrying — no VT switch required
   to get a usable console and grab the real Xorg log.
+- If X exits cleanly (`Server terminated successfully (0)` in
+  `Xorg.0.log`, no `(EE)` lines) instead of crashing: that's not a
+  driver problem, it means `.xinitrc`'s only client
+  (`install-wizard.sh`) exited almost immediately, so X had nothing
+  left to serve and shut down normally. Root cause found this way:
+  `install-wizard.sh` had lost its executable bit (`ls -la` showed
+  `rw-r--r--`) even though git tracks it as `100755` — checking out
+  this repo on a Windows-mounted drive via WSL doesn't reliably
+  preserve that bit on disk. Fixed at the source (every script now
+  has its own explicit entry in `profiledef.sh`'s `file_permissions`,
+  which is what mkarchiso actually applies to the final image,
+  regardless of what the checkout looks like) plus a `chmod +x`
+  sweep in `build.sh` as a second layer. If `layerosx-install.log`
+  never even gets created, this exact bug is the first thing to
+  check — `ls -la /opt/layerosx/kiosk/install-wizard.sh` from a debug
+  shell (see above) confirms it in one command.
 - If X keeps flickering / restarting right after `archlinux login: root
   (automatic login)`: found in a VM test — no explicit X video driver
   was in `packages.x86_64` (only `mesa`), so on a virtual GPU without a

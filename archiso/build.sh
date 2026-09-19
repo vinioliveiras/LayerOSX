@@ -28,5 +28,15 @@ fi
 # always start clean.
 sudo rm -rf "$WORKDIR"
 
+# Belt-and-suspenders on top of profiledef.sh's file_permissions
+# (which is what actually matters for the final ISO): if this repo is
+# checked out on a Windows-mounted drive (common under WSL), the
+# executable bit git tracked doesn't reliably survive onto disk —
+# found the hard way when install-wizard.sh landed on a built ISO as
+# 644 despite being 755 in the git index. Re-assert it on every build
+# so a newly added script that forgets a profiledef.sh entry still
+# works, instead of silently shipping non-executable.
+find airootfs -name '*.sh' -exec chmod +x {} \;
+
 sudo mkarchiso -v -w "$WORKDIR" -o "$OUTDIR" .
 echo "ISO ready in $OUTDIR/ — drag it onto your Ventoy drive."
