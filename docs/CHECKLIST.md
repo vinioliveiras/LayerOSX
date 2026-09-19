@@ -71,6 +71,12 @@ ISO build like the original plan assumed. Instead:
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
+- **Logs now auto-save to the Ventoy USB itself** (`layerosx-logs/`
+  folder at its root — see README.md) on any install failure, on a
+  successful install, on every boot of the installed system, and
+  after every QEMU session. When something goes wrong during testing,
+  check that folder from Windows (or anywhere) before reaching for a
+  tty or a photo — much faster.
 - Confirm it boots in UEFI and shows the install wizard fullscreen
   (openbox + `.xinitrc`, root autologin on tty1).
 - If it hangs mid-boot searching every partition for a

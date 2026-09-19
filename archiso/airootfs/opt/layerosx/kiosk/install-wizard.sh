@@ -57,8 +57,9 @@ CSS
 # unexpected failure, and this trap actually tells you so instead of
 # leaving you looking at a dead black screen with no explanation.
 trap 'exec 3>&- 2>/dev/null || true
+    bash /opt/layerosx/kiosk/lib/save-logs-to-usb.sh 2>/dev/null || true
     zenity --error --width=560 --title="LayerOSX — Install" \
-    --text="Something went wrong during install and it stopped (see the log for details).\n\nLog: $LOG\n\nOpen a terminal (Ctrl+Alt+F2, login: root / layerosx) to look, then reboot and try again — nothing was rebooted, so you are not stuck with a broken install." \
+    --text="Something went wrong during install and it stopped (see the log for details).\n\nLog: $LOG\n\nA copy was also just saved to the USB drive itself (layerosx-logs/ folder) if one was reachable — readable from any machine, no need to type anything here.\n\nOpen a terminal (Ctrl+Alt+F2, login: root / layerosx) to look, then reboot and try again — nothing was rebooted, so you are not stuck with a broken install." \
     2>/dev/null || true' ERR
 
 zenity --info --width=560 --title="LayerOSX — Install" \
@@ -275,6 +276,12 @@ kill $(cat "/proc/$TAIL_PID/task/$TAIL_PID/children" 2>/dev/null) 2>/dev/null ||
 wait "$TAIL_PID" 2>/dev/null || true
 
 progress 98 "Cleaning up…"
+# While /mnt is still mounted (so the postinstall log on the target
+# gets picked up too, not just this script's own live-side log) --
+# same save-logs-to-usb.sh as the ERR trap, so a *successful* install
+# also leaves a copy behind, not just a failed one.
+bash /opt/layerosx/kiosk/lib/save-logs-to-usb.sh 2>/dev/null || true
+
 # Belt-and-suspenders on top of the tail fix above: retry a few times
 # in case anything else is still settling (udev, a lingering loop
 # device, ...), and if it's STILL busy after that, lazy-unmount rather

@@ -118,6 +118,12 @@ while true; do
     ACTION=$(python3 "$KIOSK_DIR/qmp-watch.py" "$QMP_SOCK")
     wait "$QEMU_PID" 2>/dev/null
 
+    # Every QEMU session's outcome, good or bad, gets a fresh copy of
+    # this log (and a journal snapshot) onto the USB -- during testing
+    # this matters most right after a crash/black-screen exit, which
+    # is exactly when there's no other easy way to see what happened.
+    bash "$KIOSK_DIR/lib/save-logs-to-usb.sh" 2>/dev/null || true
+
     case "$ACTION" in
         host-poweroff)
             echo "macOS asked to Shut Down — powering off the physical machine."

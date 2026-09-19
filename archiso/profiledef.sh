@@ -55,5 +55,6 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/fetch-recovery.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/force-max-refresh.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/mount-removable-media.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/save-logs-to-usb.sh"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
 )

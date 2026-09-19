@@ -1,0 +1,10 @@
+[Unit]
+Description=LayerOSX — copy logs to a USB drive (Ventoy preferred) for remote debugging
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/layerosx/kiosk/lib/save-logs-to-usb.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -809,3 +809,33 @@ Also added `ttf-dejavu` to `packages.x86_64` — `xterm -fa Monospace`
 (used by `run_in_terminal()` and the new Wi-Fi setup terminal) needs
 an actual font installed to resolve that name against, and nothing
 else in the package list was pulling one in reliably.
+
+### Feature: logs auto-saved to the USB drive (Ventoy preferred)
+
+During this testing phase especially, a failure often happens exactly
+where there's no easy way to read a log — a black screen, or a reboot
+loop, leaves no tty to type commands into, and photographing a
+terminal back and forth is slow. `kiosk/lib/save-logs-to-usb.sh` is a
+best-effort script that finds a removable USB partition (preferring
+one labeled "Ventoy" — that's what's actually plugged in during
+testing, since it's the install medium itself — falling back to any
+other removable exfat/ntfs/vfat partition), mounts it if needed, and
+copies every known LayerOSX log plus a `journalctl -b` snapshot of the
+current boot into a timestamped `layerosx-logs/<UTC timestamp>-<host>/`
+folder on it — plain text files, readable from any machine (Windows
+included) with zero booting, no tty, no photo needed.
+
+Wired into every point where something can go wrong:
+- `install-wizard.sh`'s `ERR` trap (any install failure) and again
+  right before the final unmount on a *successful* install (so the
+  postinstall log on the target gets picked up too, while `/mnt` is
+  still mounted).
+- A new `layerosx-save-logs.service` (oneshot, enabled by default,
+  runs early on every boot of the *installed* system — same pattern
+  as the existing `layerosx-cleanup.timer`) — this is what covers a
+  silent boot failure with no GUI ever coming up at all.
+- `mac-vm-launch.sh`, after every QEMU session exits (crash or clean),
+  refreshing `mac-vm.log` and a fresh journal snapshot.
+
+Never fails loudly — a missing/unwritable USB just means no log copy
+that run, never a broken boot/install.

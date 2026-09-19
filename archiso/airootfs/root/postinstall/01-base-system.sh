@@ -33,6 +33,10 @@ passwd -l root || true
 
 systemctl enable NetworkManager
 systemctl enable layerosx-cleanup.timer
+# Copies logs to a USB drive (Ventoy preferred) on every boot -- see
+# kiosk/lib/save-logs-to-usb.sh for why: a black screen or a reboot
+# loop leaves no tty to read logs from, but the USB is always there.
+systemctl enable layerosx-save-logs.service
 
 # The rsync-based install (see install-wizard.sh) copies the running
 # live system's "/" onto the target disk -- but archiso deliberately
