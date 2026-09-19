@@ -300,3 +300,50 @@ however long that takes. It now sets a black background
 pulsating `zenity --progress` dialog for the duration — a generic dark
 loading look, deliberately not a recreation of Apple's actual boot
 screen/logo (trademark, not something to bundle/ship).
+
+### Gotcha: `arch-chroot` failing with "mount point does not exist" after install (and silently killing GRUB setup)
+
+The install-wizard's `rsync` step deliberately excludes `/dev`, `/proc`,
+`/sys`, `/run`, `/tmp`, `/mnt`, `/media` from the copy (they're
+pseudo-filesystems / live-only paths, not meant to be copied onto the
+target disk). What's easy to miss: `rsync --exclude` on a top-level
+entry doesn't create an empty placeholder directory on the destination
+— it skips creating the directory at all. A normal Arch root (built
+via `pacstrap`) gets these directories for free from the `filesystem`
+package; since this project rsyncs a live system instead, they simply
+didn't exist on the installed disk.
+
+The result: `arch-chroot /mnt /root/postinstall/run.sh` (the step that
+runs locale/keyboard/user setup and, critically, GRUB installation)
+failed immediately with `mount: /mnt/proc: mount point does not
+exist` / `ERROR: failed to setup chroot /mnt` — meaning postinstall,
+including `grub-install`, never ran at all. The install still appeared
+to "finish" and reboot, but the resulting disk had no bootloader
+installed, which shows up as a UEFI firmware error after reboot
+(`BdsDxe: failed to load Boot0002 ... No bootable option or device was
+found`) — VirtualBox/UEFI auto-generates a generic fallback boot entry
+for the raw disk, but it has no `\EFI\...\grubx64.efi` to actually
+load.
+
+Fixed in `install-wizard.sh`: right after the rsync completes, it now
+recreates the excluded mount-point directories (`mkdir -p /mnt/dev
+/mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media`, plus
+`chmod 1777 /mnt/tmp`) before any `arch-chroot` call.
+
+If you hit this on a disk already installed with an older build,
+there's no need to reinstall from scratch — boot the live ISO again,
+mount the real partitions, recreate the same directories by hand, and
+re-run postinstall manually (it never ran the first time, so this is
+safe):
+
+```bash
+mount /dev/sda2 /mnt        # your root partition
+mount /dev/sda1 /mnt/boot   # your ESP
+mkdir -p /mnt/dev /mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media
+chmod 1777 /mnt/tmp
+arch-chroot /mnt
+/root/postinstall/run.sh
+exit
+umount -R /mnt
+reboot
+```

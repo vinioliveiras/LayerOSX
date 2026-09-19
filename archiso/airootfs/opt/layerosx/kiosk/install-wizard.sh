@@ -86,6 +86,21 @@ RSYNC_PID=$!
     2>/dev/null || true
 wait "$RSYNC_PID"
 
+# rsync's --exclude list above (dev/proc/sys/run/tmp/mnt/media) skips
+# these directories ENTIRELY on the target, not just their contents —
+# rsync does not create an empty placeholder for an excluded top-level
+# entry. A normal Arch root (via pacstrap) gets these from the
+# `filesystem` package; since we rsync instead, we have to recreate
+# them by hand. Without this, arch-chroot fails immediately with
+# "mount point does not exist" / "ERROR: failed to setup chroot" on
+# the very next line — which also means postinstall/run.sh (GRUB
+# install, user setup, everything) never actually runs, even though
+# the script appeared to "finish" (this masked a real install failure
+# until set -e/the ERR trap above was added).
+echo "Recreating dev/proc/sys/run/tmp/mnt/media mount points (rsync skips these on purpose)..."
+mkdir -p /mnt/dev /mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media
+chmod 1777 /mnt/tmp
+
 echo "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 

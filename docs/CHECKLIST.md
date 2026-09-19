@@ -126,6 +126,48 @@ ISO build like the original plan assumed. Instead:
   script had no `set -e`/error trap before — real risk, not just a
   hypothetical, since nothing was actually checking these steps'
   exit codes).
+- If the install seems to finish and reboot fine, but the machine
+  then shows a UEFI firmware error (`BdsDxe: failed to load
+  Boot0002 "UEFI VBOX HARDDISK..."`, `No bootable option or device
+  was found`): GRUB never actually installed. Root cause found in a
+  VM test — the `rsync` step excludes `/dev /proc /sys /run /tmp
+  /mnt /media` on purpose (they're live-only pseudo-filesystems),
+  but `rsync --exclude` on a top-level path doesn't create an empty
+  placeholder on the target, it skips creating the directory
+  entirely. So `/mnt/proc` never existed on the installed disk, and
+  `arch-chroot /mnt /root/postinstall/run.sh` (locale, user, GRUB,
+  kiosk autologin — everything) failed immediately with `mount:
+  /mnt/proc: mount point does not exist` / `ERROR: failed to setup
+  chroot /mnt`, before postinstall ran a single line. Fixed:
+  `install-wizard.sh` now recreates those directories right after
+  the rsync, before any `arch-chroot` call.
+  To confirm this on a disk you already installed, or to recover one
+  without reinstalling: boot the live ISO, mount the real partitions
+  (check with `lsblk -f` — do NOT mount the live medium's own
+  `loop*`/`sr0` devices), and try to chroot in:
+  ```bash
+  mount /dev/sdaN /mnt        # your root partition, ext4
+  mount /dev/sdaM /mnt/boot   # your ESP, vfat, mounted at /mnt/boot
+  arch-chroot /mnt
+  ```
+  If that fails with the same `/mnt/proc` error, first check the
+  disk actually has a copied system (`ls /mnt` — should show `bin`,
+  `etc`, `usr`, `var`, not just `lost+found`); if it does, recreate
+  the missing mount points and retry:
+  ```bash
+  mkdir -p /mnt/dev /mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media
+  chmod 1777 /mnt/tmp
+  arch-chroot /mnt
+  /root/postinstall/run.sh   # never ran the first time, safe to run now
+  exit
+  umount -R /mnt
+  reboot
+  ```
+  `efibootmgr -v` from the live session is a good way to confirm the
+  symptom even before chrooting in: if the disk's boot entry shows
+  `{auto_created_boot_option}` with no `\EFI\...\grubx64.efi` file
+  path in its device path, that's VirtualBox/UEFI's generic disk
+  fallback, not a real GRUB entry — GRUB was never installed.
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):
