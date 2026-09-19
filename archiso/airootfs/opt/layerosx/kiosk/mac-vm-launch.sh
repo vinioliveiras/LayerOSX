@@ -52,6 +52,24 @@ if [ ! -f "$VM_DISK" ]; then
     fi
 fi
 
+# macos-source-wizard.sh's "download from Apple" and ".dmg" paths both
+# prepare a SECOND disk image (the recovery BaseSystem, or an
+# extracted installer) alongside $VM_DISK -- but until now nothing
+# ever attached it here, so the VM only ever saw the empty target
+# disk and had nothing to boot at all (black screen, no error either
+# — QEMU/OVMF just sits there with no bootable device). Attach
+# whichever one exists, every boot: harmless once macOS is actually
+# installed onto $VM_DISK (OVMF's own boot manager picks the disk
+# that's actually bootable), and it's what actually lets the first
+# boot reach the recovery/installer environment at all.
+RECOVERY_DISK=""
+for _cand in "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2"; do
+    if [ -f "$_cand" ]; then
+        RECOVERY_DISK="$_cand"
+        break
+    fi
+done
+
 RETRIES=0
 while true; do
     rm -f "$QMP_SOCK"
@@ -66,19 +84,33 @@ while true; do
     #   sudo /opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help
     # after the ISO is built and fix the line below if it disagrees.
     # See docs/CHECKLIST.md.
-    "$QEMU_BIN" \
-        -name "macOS" \
-        -enable-kvm -m 8192 -smp "cores=${VM_CORES},threads=1" -cpu host \
-        -machine q35 \
-        -no-reboot \
-        -qmp "unix:${QMP_SOCK},server,nowait" \
-        -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-        -drive if=pflash,format=raw,file="$OVMF_VARS" \
-        -drive if=virtio,file="$VM_DISK",format=qcow2 \
-        -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom \
-        -display sdl,gl=on,full-screen=on \
-        -usb -device usb-kbd -device usb-tablet \
-        -netdev user,id=net0 -device virtio-net,netdev=net0 &
+    QEMU_ARGS=(
+        -name "macOS"
+        -enable-kvm -m 8192 -smp "cores=${VM_CORES},threads=1" -cpu host
+        -machine q35
+        -no-reboot
+        -qmp "unix:${QMP_SOCK},server,nowait"
+        -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd
+        -drive if=pflash,format=raw,file="$OVMF_VARS"
+        -drive if=virtio,file="$VM_DISK",format=qcow2
+        -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom
+        -display sdl,gl=on,full-screen=on
+        -usb -device usb-kbd -device usb-tablet
+        -netdev user,id=net0 -device virtio-net,netdev=net0
+    )
+    if [ -n "$RECOVERY_DISK" ]; then
+        echo "Attaching recovery/installer disk: $RECOVERY_DISK"
+        # Same if=virtio interface as $VM_DISK, for consistency with
+        # the rest of this invocation -- if macOS's own recovery/
+        # installer environment turns out to need a real AHCI/SATA
+        # disk instead (no virtio block driver that early), swap this
+        # to `-device ahci,id=ahci -device ide-hd,bus=ahci.0,drive=rec
+        # -drive if=none,id=rec,file=...,format=qcow2`. Untested on
+        # real hardware yet — see docs/CHECKLIST.md.
+        QEMU_ARGS+=(-drive if=virtio,file="$RECOVERY_DISK",format=qcow2)
+    fi
+
+    "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done

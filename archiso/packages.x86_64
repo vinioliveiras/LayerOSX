@@ -114,4 +114,8 @@ xorg-xsetroot
 # kiosk/lib/force-max-refresh.sh) -- xrandr itself, not part of xorg-server
 xorg-xrandr
 openbox
+# a visible terminal for kiosk steps that don't have their own UI yet
+# (macos-source-wizard.sh's download step) -- a black screen with
+# something silently running behind it is worse than a plain terminal
+xterm
 gparted

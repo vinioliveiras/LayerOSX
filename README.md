@@ -690,3 +690,56 @@ background (`&`) so it never delays the actual kiosk/install UI, and
 no-ops quietly if `xrandr` is missing or a display reports nothing
 useful. Needs the `xorg-xrandr` package (added to `packages.x86_64` —
 `xorg-server` alone doesn't include the `xrandr` binary).
+
+### Gotcha: macOS VM shows a black screen forever (recovery/installer disk never actually attached)
+
+`macos-source-wizard.sh`'s "download from Apple" path (`fetch-recovery.sh`)
+and its ".dmg" path (`extract-dmg-installer.sh`) both prepare a second
+disk image next to `$VM_DISK` — `<name>-recovery.qcow2` or
+`<name>-installer.qcow2` — but `mac-vm-launch.sh` never actually
+attached either one to QEMU. So after the first-run wizard finished,
+the VM launched with only the empty target disk: nothing to boot,
+nothing to show, just a black `-display sdl` window with no error at
+all (OVMF has nowhere to go, so it just sits there).
+
+Fixed: `mac-vm-launch.sh` now looks for either file next to `$VM_DISK`
+and attaches whichever one exists as an extra `-drive` on every
+launch — harmless once macOS is actually installed onto `$VM_DISK`
+(OVMF's own boot manager should prefer the disk that's actually
+bootable), and it's what makes the first boot able to reach the
+recovery/installer environment at all. Uses the same `if=virtio`
+interface as the main disk for consistency; if macOS's own
+recovery/installer environment turns out not to have a virtio block
+driver that early (a real possibility — untested on real hardware
+yet), it'll need switching to a real AHCI/SATA drive instead — see the
+comment in `mac-vm-launch.sh`.
+
+### Feature: a visible terminal for kiosk steps that don't have their own UI yet
+
+`macos-source-wizard.sh`'s download/extract steps could take minutes
+(multi-GB download, or converting a disk image) with zero feedback of
+their own — from the outside this looked exactly like a frozen/black
+screen, indistinguishable from something actually being broken. Rather
+than build real progress UI for every such step right now,
+`run_in_terminal()` (in that script) runs the underlying command inside
+a visible `xterm` instead of silently in the background: closes itself
+a couple seconds after a successful run, or waits for Enter on failure
+so the error output stays readable before the caller's own `zenity
+--error` dialog shows. Needs the `xterm` package (added to
+`packages.x86_64`). Same idea can wrap any other not-yet-polished step
+later instead of leaving it silent.
+
+### Feature: GRUB shows other installed OSes too (os-prober)
+
+Modern GRUB ships with `os-prober` disabled by default (a past CVE:
+an unprivileged user could get `grub-mkconfig`, run as root, to act on
+another mounted OS) — but this project deliberately reuses the
+existing ESP and never touches the rest of the disk specifically so it
+can coexist with whatever else is already installed (Windows, other
+Linux distros, ...), so the whole point is defeated if GRUB never
+shows them. `os-prober` and `ntfs-3g` were already in
+`packages.x86_64`; `postinstall/50-grub.sh` now also sets
+`GRUB_DISABLE_OS_PROBER=false` in `/etc/default/grub` before
+`grub-mkconfig` (handling the line being absent, commented out, or
+already present, since that depends on the exact `grub` package
+template) so those tools actually get used.

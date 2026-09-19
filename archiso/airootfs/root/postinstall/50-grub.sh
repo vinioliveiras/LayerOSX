@@ -2,6 +2,25 @@
 set -euo pipefail
 echo "[50] GRUB (reuses the existing EFI partition — never formats it)"
 
+# GRUB stopped enabling os-prober by default a while back (security:
+# an unprivileged user could otherwise get grub-mkconfig, run as
+# root, to run arbitrary code off another mounted OS). We DO want it
+# here on purpose -- this box dual/multi-boots real hardware, and the
+# whole point of reusing (never formatting) the existing ESP is to
+# coexist with whatever else is already on the disk (Windows, other
+# Linux installs, ...). os-prober + ntfs-3g are already pulled in by
+# packages.x86_64; this just flips the one flag that actually uses
+# them. GRUB_DISABLE_OS_PROBER may be absent, commented out, or
+# already set either way depending on the package's own template, so
+# handle all three instead of assuming a fresh file.
+if grep -q '^GRUB_DISABLE_OS_PROBER=' /etc/default/grub; then
+    sed -i 's/^GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' /etc/default/grub
+elif grep -q '^#GRUB_DISABLE_OS_PROBER=' /etc/default/grub; then
+    sed -i 's/^#GRUB_DISABLE_OS_PROBER=.*/GRUB_DISABLE_OS_PROBER=false/' /etc/default/grub
+else
+    echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub
+fi
+
 # Independent lspci check rather than reading state from
 # 10-hardware-detect.sh — each postinstall script is meant to run
 # standalone (run.sh continues even if one script fails), so no

@@ -268,6 +268,15 @@ ISO build like the original plan assumed. Instead:
     grub-mkconfig -o /boot/grub/grub.cfg
     grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
     ```
+- GRUB only shows the LayerOSX entry and "UEFI Firmware Settings",
+  never other installed OSes (Windows, other Linux disks, ...) even
+  though `os-prober`/`ntfs-3g` are in `packages.x86_64` — GRUB
+  disables `os-prober` by default upstream. `postinstall/50-grub.sh`
+  now sets `GRUB_DISABLE_OS_PROBER=false` in `/etc/default/grub`
+  before `grub-mkconfig`. To fix an already-installed disk without
+  reinstalling: chroot in, edit `/etc/default/grub` (add/uncomment
+  `GRUB_DISABLE_OS_PROBER=false`), then `grub-mkconfig -o
+  /boot/grub/grub.cfg` again.
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):
@@ -347,6 +356,20 @@ actually run the detection logic against real hardware yet.
   but with no acceleration at all (software rendering only, slow).
 - Confirm USB keyboard/mouse work inside the VM before trying to
   install/configure anything.
+- If the VM window is just solid black with nothing happening at all
+  (no OVMF text, no Apple logo) right after the first-run wizard
+  finishes: `mac-vm-launch.sh` now attaches the recovery/installer
+  disk the wizard just prepared (see README.md) — if it's still black
+  after that fix, check `~/mac-vm.log` (the `mac` user's home) for
+  what QEMU itself printed, and suspect the `reims-vgpu-pci romfile=`
+  property above next.
+- The recovery/installer disk is attached with the same `if=virtio`
+  interface as the main disk — still unverified whether macOS's own
+  recovery/installer environment actually has a virtio block driver
+  that early, or needs a real AHCI/SATA drive instead. If the VM gets
+  further (OVMF boots) but can't find/boot the recovery disk itself,
+  this is the next thing to try — see the comment in
+  `kiosk/mac-vm-launch.sh`.
 
 ## 6. Physical Restart / Shutdown
 
