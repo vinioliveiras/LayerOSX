@@ -427,3 +427,24 @@ mkinitcpio -P
 grub-mkconfig -o /boot/grub/grub.cfg
 grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
 ```
+
+### Feature: real black/white progress bar during install (not just pulsating)
+
+The install's disk-copy step now shows an actual percentage instead of
+a pulsating "working…" bar. `rsync --info=progress2` prints an
+overall `NN%` that updates in place; the script normalizes that
+(`tr '\r' '\n'` + `grep -oE '[0-9]{1,3}%'`) into plain `NN` / `#text`
+lines on the fly, which is the format `zenity --progress` reads from
+stdin to drive a real bar. `set -o pipefail` (already set at the top
+of the script) means a real `rsync` failure still fails the whole
+pipeline and trips the existing `set -e`/ERR trap, even though `rsync`
+is the first stage of a long pipe.
+
+The dialogs also get a small `~/.config/gtk-3.0/gtk.css` override
+(black window background, white text, a black trough / white fill
+progress bar) so the whole install — not just the loading screen —
+keeps a consistent black-background/white-bar look instead of
+whatever the default GTK theme draws. This is a generic minimal-boot
+look (black screen, white bar), not a reproduction of Apple's actual
+boot screen — no Apple logo, wordmark, or other trademarked visual is
+drawn anywhere, just a plain rectangle.

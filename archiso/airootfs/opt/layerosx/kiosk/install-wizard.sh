@@ -64,27 +64,46 @@ mount "$ESP_PART" /mnt/boot
 
 # From here on there is real work to wait through with nothing to
 # look at otherwise (a bare black openbox desktop, no feedback at
-# all) — a plain dark background plus a progress dialog instead. This
-# is a generic dark loading look, not a recreation of Apple's actual
-# boot screen/logo.
+# all) — a plain black background with a white progress bar showing
+# the actual copy progress. A black screen with a white progress bar
+# is a generic, widely-used minimal-boot look, not a reproduction of
+# Apple's actual boot screen — no Apple logo or wordmark is drawn
+# anywhere, only a plain rectangular bar.
 xsetroot -solid "#000000" 2>/dev/null || true
 
+# GTK picks this up automatically for every zenity dialog from here
+# on (including the final "reboot now" / any error dialog), so the
+# rest of the install keeps the same black-background/white-bar look
+# instead of whatever the default GTK theme would otherwise draw.
+mkdir -p ~/.config/gtk-3.0
+cat > ~/.config/gtk-3.0/gtk.css <<'CSS'
+window { background-color: #000000; }
+label { color: #ffffff; }
+progressbar trough { background-color: #1c1c1c; border: none; min-height: 6px; border-radius: 0; }
+progressbar progress { background-color: #ffffff; border-radius: 0; }
+CSS
+
 echo "Copying the live system to $ROOT_PART (this is the 'unpackfs' step Calamares used to do)..."
+# --info=progress2 prints an overall "NN%" that updates in place;
+# turn each update into the plain "NN" (+ "#text") lines zenity
+# --progress reads from stdin to drive a real (not pulsating) bar.
 rsync -aHAX --info=progress2 \
     --exclude=/dev --exclude=/proc --exclude=/sys --exclude=/tmp \
     --exclude=/run --exclude=/mnt --exclude=/media --exclude=/lost+found \
     --exclude="$LOG" \
-    / /mnt/ &
-RSYNC_PID=$!
-(
-    while kill -0 "$RSYNC_PID" 2>/dev/null; do
-        echo "#Copying LayerOSX to disk…"
-        sleep 1
-    done
-) | zenity --progress --pulsate --no-cancel --auto-close \
-    --title="LayerOSX — Install" --text="Copying LayerOSX to disk…" --width=560 \
-    2>/dev/null || true
-wait "$RSYNC_PID"
+    / /mnt/ 2>&1 | stdbuf -oL tr '\r' '\n' | stdbuf -oL grep --line-buffered -oE '[0-9]{1,3}%' | \
+    while IFS= read -r pct; do
+        pct="${pct%\%}"
+        echo "$pct"
+        echo "#Copying LayerOSX to disk… ${pct}%"
+    done | \
+    zenity --progress --no-cancel --auto-close \
+        --title="LayerOSX — Install" --text="Copying LayerOSX to disk…" --width=560 \
+        2>/dev/null
+# set -o pipefail (top of file) makes $? here reflect rsync's own
+# exit code even though it's the first stage of a long pipe — a real
+# rsync failure still trips set -e / the ERR trap above, same as
+# every other step in this script.
 
 # rsync's --exclude list above (dev/proc/sys/run/tmp/mnt/media) skips
 # these directories ENTIRELY on the target, not just their contents —
