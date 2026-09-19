@@ -268,6 +268,17 @@ ISO build like the original plan assumed. Instead:
     grub-mkconfig -o /boot/grub/grub.cfg
     grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
     ```
+- If the install seems to finish (postinstall log shows all 4 steps
+  ran, GRUB found the kernel) but the screen never shows "Done,
+  reboot" and instead dumps you back to a bare root shell prompt: the
+  final `umount -R /mnt` failed as busy (a leaked `tail -F` from the
+  postinstall log-tailing job was holding a file open under `/mnt`)
+  and killed the install script. Fixed in `install-wizard.sh` (kills
+  tail's children too, and lazy-unmounts as a last resort instead of
+  dying) — but if you hit this on a build from before the fix, DON'T
+  just reboot from that shell: the ESP was still mounted, so check
+  `/boot` in a fresh chroot for a real kernel/grub.cfg before trusting
+  the install, and if in doubt just reinstall from a rebuilt ISO.
 - GRUB only shows the LayerOSX entry and "UEFI Firmware Settings",
   never other installed OSes (Windows, other Linux disks, ...) even
   though `os-prober`/`ntfs-3g` are in `packages.x86_64` — GRUB
@@ -331,13 +342,24 @@ actually run the detection logic against real hardware yet.
 
 - Should boot straight into the `mac` user, no password prompt, and
   land on `macos-source-wizard.sh` (zenity).
-- Test all 3 options at least once each, even just to see they open
-  without crashing: automatic download, existing disk, existing
-  `.dmg`.
-- The `.dmg` option is the most fragile (see
-  `kiosk/lib/extract-dmg-installer.sh`) — if it fails, it fails
-  gracefully (clear error message), but it still needs more work to
+- Test both options at least once each, even just to see they open
+  without crashing: automatic download, and "pick a file" (now one
+  merged picker for `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`).
+- The `.dmg`/`.iso` installer paths are the most fragile (see
+  `kiosk/lib/extract-dmg-installer.sh`) — if they fail, they fail
+  gracefully (clear error message), but still need more work to
   properly support real APFS installers.
+- If "pick a file" shows nothing to select, confirm the USB
+  drive/partition actually got auto-mounted under `/mnt/media/` (no
+  udisks2/gvfs here, so `kiosk/lib/mount-removable-media.sh` does this
+  by hand right before the file dialog opens) — `lsblk -f` from tty2
+  will show whether the partition's filesystem is even one of the
+  ones it recognizes (ext2-4, vfat, exfat, ntfs(3), hfsplus, iso9660,
+  udf).
+- If "download from Apple" is picked on a Wi-Fi-only machine with no
+  connection yet, it should now offer to open `nmtui` in a terminal —
+  confirm that actually connects (Esc/Q to close nmtui once connected)
+  and the download proceeds afterward instead of failing again.
 - On a multi-monitor machine, check every connected display for a
   corrupted/noisy image (a second monitor showing this was the
   original report) — `kiosk/lib/force-max-refresh.sh` should have

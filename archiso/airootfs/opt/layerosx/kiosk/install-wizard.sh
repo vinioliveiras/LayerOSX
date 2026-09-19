@@ -185,14 +185,32 @@ echo "Copying the real kernel from the boot medium into /mnt/boot..."
 INSTALL_DIR="layerosx"   # must match profiledef.sh's install_dir
 ARCH="x86_64"            # must match profiledef.sh's arch
 KERNEL_SRC=""
-while IFS= read -r mp; do
-    case "$mp" in /mnt|/mnt/*) continue ;; esac
-    candidate="$mp/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
-    if [ -f "$candidate" ]; then
-        KERNEL_SRC="$candidate"
-        break
-    fi
-done < <(findmnt -rno TARGET)
+
+# /run/archiso/bootmnt is where archiso's own init (the
+# archiso_loop_mnt mkinitcpio hook) mounts the medium it actually
+# booted from -- checking this FIRST (not just as one of many
+# findmnt hits) matters if more than one LayerOSX ISO ever ends up
+# reachable at once (e.g. several dated builds sitting on the same
+# Ventoy drive) — a generic scan could otherwise match a *different,
+# stale* ISO's vmlinuz-linux, one whose kernel version doesn't match
+# the /usr/lib/modules/<ver>/ this live system's rsync actually
+# carries, breaking module loading on the installed system in a way
+# that wouldn't show up until the very first real reboot.
+if [ -f "/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux" ]; then
+    KERNEL_SRC="/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+else
+    # Fallback for a different archiso version/layout -- less
+    # precise (first match wins), so this is the fallback, not the
+    # primary path, precisely for the reason above.
+    while IFS= read -r mp; do
+        case "$mp" in /mnt|/mnt/*) continue ;; esac
+        candidate="$mp/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+        if [ -f "$candidate" ]; then
+            KERNEL_SRC="$candidate"
+            break
+        fi
+    done < <(findmnt -rno TARGET)
+fi
 if [ -z "$KERNEL_SRC" ]; then
     # last resort: a broader search in case the layout ever changes
     KERNEL_SRC=$(find /run -maxdepth 6 -type f -name 'vmlinuz-linux' 2>/dev/null | head -n1)
@@ -238,11 +256,45 @@ POSTINSTALL_LOG=/mnt/var/log/layerosx-postinstall.log
 TAIL_PID=$!
 
 arch-chroot /mnt /root/postinstall/run.sh
+
+# $TAIL_PID is the subshell wrapping `tail -F | while read...` above --
+# killing just that PID does NOT reliably kill tail itself (a separate
+# child process holding the pipe's write end), so tail can linger with
+# an open file handle on $POSTINSTALL_LOG, which lives under /mnt. A
+# leaked tail here is exactly what made `umount -R /mnt` below fail
+# with "target is busy" on a real install -- and rebooting with the
+# EFI System Partition (FAT32, holding the kernel/initramfs/grub.cfg
+# we just wrote) still mounted risks losing/corrupting exactly those
+# files before they're flushed to disk, which then shows up as a
+# separate, confusing failure on the very next boot. Kill the subshell
+# AND its direct children (found via /proc, no extra package needed)
+# so nothing is left with a handle into /mnt.
 kill "$TAIL_PID" 2>/dev/null || true
+# shellcheck disable=SC2046
+kill $(cat "/proc/$TAIL_PID/task/$TAIL_PID/children" 2>/dev/null) 2>/dev/null || true
 wait "$TAIL_PID" 2>/dev/null || true
 
 progress 98 "Cleaning up…"
-umount -R /mnt
+# Belt-and-suspenders on top of the tail fix above: retry a few times
+# in case anything else is still settling (udev, a lingering loop
+# device, ...), and if it's STILL busy after that, lazy-unmount rather
+# than letting the whole install die right here at the last step and
+# strand the user at a bare root shell instead of the "Done, reboot"
+# dialog below (which is exactly what happened before this fix — the
+# ERR trap fired, but silently, since zenity has no X to talk to by
+# the time the script actually exits from under its own X session).
+UMOUNT_OK=0
+for _ in 1 2 3 4 5; do
+    if umount -R /mnt 2>/dev/null; then
+        UMOUNT_OK=1
+        break
+    fi
+    sleep 1
+done
+if [ "$UMOUNT_OK" -ne 1 ] && mountpoint -q /mnt 2>/dev/null; then
+    echo "WARNING: /mnt still busy after retries -- lazy-unmounting (umount -R -l) so the install can still finish and reboot cleanly." >&2
+    umount -R -l /mnt 2>/dev/null || true
+fi
 progress 100 "Done."
 exec 3>&-
 wait "$ZENITY_PID" 2>/dev/null || true

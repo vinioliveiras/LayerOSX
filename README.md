@@ -743,3 +743,69 @@ shows them. `os-prober` and `ntfs-3g` were already in
 `grub-mkconfig` (handling the line being absent, commented out, or
 already present, since that depends on the exact `grub` package
 template) so those tools actually get used.
+
+### Gotcha: install finishes but `umount: /mnt: target is busy` at the very end, install-wizard.sh dies to a bare root shell
+
+Real-hardware install log confirmed the kernel/GRUB fixes above
+actually worked (`Found linux image: /boot/vmlinuz-linux`) — but the
+very last step, `umount -R /mnt`, failed as "busy" and killed the
+script right there (the `ERR` trap did fire, but its `zenity --error`
+call silently no-ops once X is already gone, since the trap runs as
+the script — and with it the whole `exec`'d X session — is exiting).
+The user never sees the "Done, reboot" dialog, just lands back on the
+root autologin shell, and has to reboot manually — with the EFI System
+Partition (FAT32, holding the kernel/initramfs/grub.cfg just written)
+still mounted, risking exactly those files not being fully flushed to
+disk before a hard reboot.
+
+Root cause: the postinstall log-tailing job (`( tail -F ... | while
+read...; ) &`, `TAIL_PID=$!`) backgrounds a *subshell* wrapping a
+pipeline — killing `$TAIL_PID` kills that subshell, but not
+necessarily `tail` itself (a separate child process holding the pipe's
+write end and the actual open file handle on
+`/mnt/var/log/layerosx-postinstall.log`). A leaked `tail -F` is enough
+on its own to make `umount -R /mnt` fail as busy.
+
+Fixed in two layers: `install-wizard.sh` now also kills `$TAIL_PID`'s
+direct children (found via `/proc/$TAIL_PID/task/$TAIL_PID/children`,
+no extra package needed) so `tail` can't linger; and the final
+`umount -R /mnt` now retries a few times and, if it's still busy after
+that (anything else unexpected holding it open), falls back to a lazy
+unmount (`umount -R -l`) instead of letting the whole install die at
+the last step.
+
+### Feature: pick an existing macOS source from a USB drive, and connect to Wi-Fi to download one
+
+Two related first-run wizard gaps, both from the same cause: this is a
+minimal openbox kiosk with no desktop shell, so nothing here ever
+automounted removable media or exposed Wi-Fi setup.
+
+- **"I already have a VM/disk" showed nothing to pick.** zenity's file
+  dialog only ever browses the local filesystem tree from wherever it
+  starts — a USB drive that was never mounted anywhere is invisible to
+  it, regardless of what's actually on it. `kiosk/lib/mount-removable-media.sh`
+  now mounts every currently-unmounted partition with a recognizable
+  filesystem (read-only) under `/mnt/media/<name>` before the wizard's
+  file dialog opens, which is also pointed at `/mnt/media/` as its
+  starting directory.
+- **The "existing VM/disk" and ".dmg installer" options are now one
+  picker** that also accepts `.iso` (recovery/installer media, handled
+  the same way `.dmg` already was — via `qemu-img convert -f raw`
+  since an `.iso` is raw ISO9660 data, not a qcow2 container),
+  dispatched by the picked file's extension: `.qcow2`/`.img`/`.raw` is
+  treated as a complete, already-installed system (copied straight to
+  `$VM_DISK`); `.iso`/`.dmg`/`.app` is treated as installer/recovery
+  media (goes on the separate disk `mac-vm-launch.sh` already knows
+  how to attach, next to a freshly created blank `$VM_DISK`).
+- **No way to get online for the "download from Apple" option** on a
+  Wi-Fi-only machine — `NetworkManager` was already enabled, but
+  nothing ever exposed a way to pick a network and enter a password on
+  this panel-less kiosk. The wizard now checks connectivity first
+  (`curl` against the exact host `fetch-recovery.sh` needs) and, if
+  there's none, offers to open `nmtui` (NetworkManager's text UI, part
+  of the already-installed `networkmanager` package) in a terminal.
+
+Also added `ttf-dejavu` to `packages.x86_64` — `xterm -fa Monospace`
+(used by `run_in_terminal()` and the new Wi-Fi setup terminal) needs
+an actual font installed to resolve that name against, and nothing
+else in the package list was pulling one in reliably.

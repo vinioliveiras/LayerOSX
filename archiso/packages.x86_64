@@ -118,4 +118,10 @@ openbox
 # (macos-source-wizard.sh's download step) -- a black screen with
 # something silently running behind it is worse than a plain terminal
 xterm
+# xterm's -fa Monospace font selection (used above, and for the
+# nmtui Wi-Fi setup terminal) needs an actual font installed to
+# resolve that name against -- nothing else in this list pulls one
+# in reliably, and zenity/GTK text rendering has been getting by
+# on whatever a dependency happens to drag in, not a real guarantee
+ttf-dejavu
 gparted
