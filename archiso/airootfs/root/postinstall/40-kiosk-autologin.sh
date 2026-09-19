@@ -28,6 +28,9 @@ EOF
 
 cat > "/home/${MAC_USER}/.xinitrc" <<'EOF'
 #!/bin/sh
+# Must run BEFORE `openbox &` -- it edits openbox's config, which is
+# only read at startup (see lib/install-f2-keybind.sh).
+/opt/layerosx/kiosk/lib/install-f2-keybind.sh "$HOME/mac-vm.log"
 openbox &
 sleep 1
 /opt/layerosx/kiosk/lib/force-max-refresh.sh &

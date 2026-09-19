@@ -63,7 +63,7 @@ trap 'exec 3>&- 2>/dev/null || true
     2>/dev/null || true' ERR
 
 zenity --info --width=560 --title="LayerOSX — Install" \
-    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue." \
+    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press F2 any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
     || exit 1
 
 gparted

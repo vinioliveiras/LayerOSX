@@ -1006,3 +1006,52 @@ compression API stable across SONAME generations, and QEMU's VNC-jpeg
 usage is a narrow, simple subset of it) — worth trying, but the
 bundled-library fix above is the real one and is what any new ISO
 build will carry.
+
+### Feature: a real Wi-Fi picker instead of nmtui in a terminal
+
+The "download from Apple" path used to open `nmtui` in a raw xterm
+when no internet was detected — functional, but a text-mode tool
+needing Tab/arrow-key/Enter navigation, and looks broken to anyone
+who's never seen a TUI before. `kiosk/lib/wifi-setup.sh` replaces it
+with a zenity list of nearby networks (signal strength, whether
+they're secured) — click one, type the password if asked, done.
+Includes "Connect to a hidden network…" (prompts for an SSID that
+won't show up in a scan) and "Advanced (nmtui)…" as an escape hatch
+for anything the simple picker can't do (WPA-Enterprise/802.1X,
+captive portals) — nothing regresses, nmtui is just no longer the
+only option. `macos-source-wizard.sh` now sources this file instead
+of defining `has_internet`/`ensure_internet` inline.
+
+### Feature: F2 opens a live terminal instead of one being forced on you
+
+The install and first-run wizard show a lot of "just wait" moments —
+partitioning, copying the system, downloading macOS, converting a
+disk image — and used to handle the ones without a zenity progress
+bar of their own (`fetch-recovery.sh`, `extract-dmg-installer.sh`,
+the `.iso` conversion step) by opening a visible xterm and running
+the command directly in it. That's honest feedback, but forced on
+everyone even when they don't care to watch raw command output.
+
+Now those three steps run behind a zenity progress dialog instead
+(pulsating for the ones with no reliably-parseable progress output —
+the Apple download and `dmg2img`; a real percentage for `.iso`
+conversion, since `qemu-img convert -p` gives one easily) — no
+terminal shown by default, matching the rest of the install. Pressing
+**F2** at any time opens a plain terminal tailing whatever's actually
+happening right now, for anyone who wants to check — closing it again
+doesn't pause or affect anything, it's a read-only peek.
+
+Implementation: `kiosk/lib/install-f2-keybind.sh` runs from
+`.xinitrc`, *before* `openbox &` (openbox only reads its config file
+at startup) — it copies openbox's own stock `rc.xml` (shipped by the
+`openbox` package) into `~/.config/openbox/rc.xml` the first time,
+then idempotently injects one `<keybind key="F2">` running
+`kiosk/lib/peek-terminal.sh <log-file>`, without touching or losing
+any of openbox's own default keybindings/window behavior. Wired into
+both `.xinitrc`s: the live-ISO one tails `/var/log/layerosx-install.log`
+(what `install-wizard.sh` already writes everything to), the
+installed-system one tails `~/mac-vm.log` (which already has
+everything `macos-source-wizard.sh` and its children print too, since
+it runs as `mac-vm-launch.sh`'s subprocess and inherits that
+already-redirected output — no separate log file needed for the
+wizard's own progress-bar steps).

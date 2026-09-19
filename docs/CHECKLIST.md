@@ -71,6 +71,11 @@ ISO build like the original plan assumed. Instead:
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
+- The whole install is meant to be UI-only now (no visible
+  terminal) — press **F2** at any point during the install to
+  confirm a terminal opens tailing `/var/log/layerosx-install.log`
+  live (see README.md). Closing it again shouldn't affect the
+  install in progress.
 - **Logs now auto-save to the Ventoy USB itself** (`layerosx-logs/`
   folder at its root — see README.md) on any install failure, on a
   successful install, on every boot of the installed system, and
@@ -380,9 +385,20 @@ actually run the detection logic against real hardware yet.
   ones it recognizes (ext2-4, vfat, exfat, ntfs(3), hfsplus, iso9660,
   udf).
 - If "download from Apple" is picked on a Wi-Fi-only machine with no
-  connection yet, it should now offer to open `nmtui` in a terminal —
-  confirm that actually connects (Esc/Q to close nmtui once connected)
-  and the download proceeds afterward instead of failing again.
+  connection yet, it should now offer a zenity list of nearby networks
+  to click (`kiosk/lib/wifi-setup.sh`, see README.md) — confirm the
+  scan actually finds real networks, a password prompt shows for a
+  secured one, and the download proceeds afterward. Also try
+  "Advanced (nmtui)…" at the bottom of the list once, to confirm
+  the fallback still works.
+- The Apple download, `.dmg` extraction and `.iso` conversion steps
+  no longer open a visible terminal by default (a zenity progress bar
+  instead — pulsating for the first two, a real percentage for
+  `.iso`). Press **F2** during any of these to confirm a terminal
+  opens tailing the live output — and confirm it still shows
+  something sensible if pressed before any of these steps have
+  started yet (should just say "Nothing to show yet." rather than
+  erroring).
 - On a multi-monitor machine, check every connected display for a
   corrupted/noisy image (a second monitor showing this was the
   original report) — `kiosk/lib/force-max-refresh.sh` should have

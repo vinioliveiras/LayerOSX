@@ -9,48 +9,88 @@ OVMF_VARS="$2"
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 VM_SIZE_GB="${MAC_VM_SIZE_GB:-128}"
 
-# Runs a command inside a visible xterm instead of silently in the
-# background -- fetch-recovery.sh/extract-dmg-installer.sh can take a
-# while (a multi-GB download, or converting a disk image) with zero
-# zenity feedback of their own, which otherwise just looks like a
-# frozen/black screen. The xterm closes itself a couple seconds after
-# a successful run; on failure it waits for Enter so the error output
-# stays readable before the caller's own zenity error dialog shows.
-run_in_terminal() {
-    local title="$1"
-    shift
-    xterm -fa Monospace -fs 12 -bg black -fg white -T "$title" -e bash -c \
-        '"$@"; ec=$?; echo; if [ "$ec" -eq 0 ]; then echo "Done."; sleep 2; else echo "Failed (exit code $ec) -- press Enter to continue."; read -r _; fi; exit "$ec"' \
-        _ "$@"
+# has_internet / ensure_internet (zenity network picker, nmtui kept
+# as an "Advanced" fallback) live in here now -- shared with anything
+# else that ever needs a connectivity check/Wi-Fi picker.
+source "$LIB_DIR/wifi-setup.sh"
+
+# Everything this script (and whatever it calls) prints to
+# stdout/stderr is already flowing into ~/mac-vm.log -- mac-vm-launch.sh
+# (the parent process) redirects its own output there before running
+# this script as a regular subprocess, and a plain subprocess
+# inherits its parent's already-redirected file descriptors. So
+# there's no separate log file to manage here: F2 (see
+# lib/install-f2-keybind.sh, wired up from .xinitrc) already tails
+# that exact file, and it already has everything.
+#
+# Runs a command with a zenity progress dialog instead of a visible
+# terminal -- a download or a disk-image conversion can take a
+# while, and used to just open an xterm running the command directly
+# (correct, but exactly the kind of raw-terminal-by-default the
+# install experience is trying to get away from -- see README.md).
+# Real percentage isn't available for every command here
+# (fetch-macOS-v2.py's download and dmg2img's extraction don't print
+# anything reliably parseable), so this pulsates rather than guessing
+# -- still far better than a black screen, and F2 opens a terminal
+# tailing the exact same output live for anyone who wants to see it.
+run_with_progress() {
+    local title="$1" text="$2"
+    shift 2
+
+    echo "----- $text -----"
+
+    local fifo
+    fifo=$(mktemp -u /tmp/layerosx-wizard-progress.XXXXXX)
+    mkfifo "$fifo"
+    zenity --progress --pulsate --no-cancel --auto-close \
+        --title="$title" --text="$text" --width=520 \
+        < "$fifo" 2>/dev/null &
+    local zpid=$!
+    exec 4>"$fifo"
+    rm -f "$fifo"
+
+    "$@"
+    local rc=$?
+
+    printf '100\n' >&4
+    exec 4>&-
+    wait "$zpid" 2>/dev/null || true
+    return "$rc"
 }
 
-# Cheap connectivity probe against the exact host fetch-recovery.sh
-# needs -- good enough to decide whether to bother the user with
-# Wi-Fi setup before even trying the real download.
-has_internet() {
-    curl -fsS --max-time 5 -o /dev/null https://osrecovery.apple.com 2>/dev/null
-}
+# Same idea, but for the one case where a real percentage IS easy to
+# get: `qemu-img convert -p` prints its own progress, and this is a
+# conversion we invoke directly (not buried inside another script),
+# so it's simple to parse live -- same FIFO pattern install-wizard.sh
+# uses for rsync's progress.
+run_convert_with_progress() {
+    local title="$1" text="$2" src="$3" dst="$4"
 
-# This is a minimal openbox kiosk, no network applet in a panel
-# (there's no panel) -- NetworkManager is already enabled
-# (postinstall/01-base-system.sh) but nothing ever exposed a way to
-# actually pick a Wi-Fi network and type a password. `nmtui` (part of
-# the already-installed networkmanager package) does exactly that,
-# just needs a terminal to run in.
-ensure_internet() {
-    has_internet && return 0
-    zenity --question --width=480 --title="LayerOSX — first run" \
-        --text="No internet connection detected, and downloading macOS needs one.\n\nOpen Wi-Fi setup now?" \
-        --ok-label="Open Wi-Fi setup" --cancel-label="Cancel" || return 1
-    xterm -fa Monospace -fs 12 -bg black -fg white \
-        -T "LayerOSX — Wi-Fi setup (Esc/Q in nmtui when connected)" \
-        -e nmtui
-    if ! has_internet; then
-        zenity --error --width=480 --title="LayerOSX — first run" \
-            --text="Still no internet connection. Pick this option again once you're connected, or use the 'pick a file' option instead if you already have macOS on a disk/USB drive."
-        return 1
-    fi
-    return 0
+    echo "----- $text -----"
+
+    local fifo
+    fifo=$(mktemp -u /tmp/layerosx-wizard-progress.XXXXXX)
+    mkfifo "$fifo"
+    zenity --progress --no-cancel --auto-close \
+        --title="$title" --text="$text" --width=520 \
+        < "$fifo" 2>/dev/null &
+    local zpid=$!
+    exec 4>"$fifo"
+    rm -f "$fifo"
+
+    qemu-img convert -p -f raw -O qcow2 "$src" "$dst" 2>&1 | \
+        stdbuf -oL tr '\r' '\n' | stdbuf -oL grep --line-buffered -oE '[0-9]{1,3}(\.[0-9]+)?%' | \
+        while IFS= read -r raw; do
+            raw="${raw%\%}"; raw="${raw%.*}"
+            printf '%s\n' "$raw" >&4
+            printf '#%s (%s%%)\n' "$text" "$raw" >&4
+        done
+    local rc=${PIPESTATUS[0]}
+
+    printf '100\n' >&4
+    exec 4>&-
+    wait "$zpid" 2>/dev/null || true
+    return "$rc"
 }
 
 # No udisks2/gvfs automount daemon on this minimal kiosk, so a USB
@@ -73,10 +113,10 @@ case "$CHOICE" in
         ensure_internet || exit 1
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
         cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd "$OVMF_VARS"
-        if ! run_in_terminal "LayerOSX — downloading macOS recovery…" \
+        if ! run_with_progress "LayerOSX — first run" "Downloading macOS recovery image… (press F2 for details)" \
             bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
-                --text="Couldn't download the macOS recovery image (see the terminal output that just closed). Check your internet connection and try again."
+                --text="Couldn't download the macOS recovery image. Press F2 to see the details, check your internet connection, and try again."
             exit 1
         fi
         ;;
@@ -104,17 +144,17 @@ case "$CHOICE" in
                 # container, hence -f raw on the way in.
                 qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
                 INSTALLER_DISK="${VM_DISK%.qcow2}-installer.qcow2"
-                if ! run_in_terminal "LayerOSX — preparing installer from .iso…" \
-                    qemu-img convert -f raw -O qcow2 "$SRC" "$INSTALLER_DISK"; then
-                    zenity --error --text="Couldn't convert this .iso into a VM disk. Try the 'download directly from Apple' option instead."
+                if ! run_convert_with_progress "LayerOSX — first run" "Preparing installer from .iso… (press F2 for details)" \
+                    "$SRC" "$INSTALLER_DISK"; then
+                    zenity --error --text="Couldn't convert this .iso into a VM disk. Press F2 to see the details, or try the 'download directly from Apple' option instead."
                     exit 1
                 fi
                 ;;
             *.dmg|*.DMG|*.app|*.APP)
                 qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
-                if ! run_in_terminal "LayerOSX — preparing installer from .dmg…" \
+                if ! run_with_progress "LayerOSX — first run" "Preparing installer from .dmg… (press F2 for details)" \
                     bash "$LIB_DIR/extract-dmg-installer.sh" "$SRC" "$VM_DISK"; then
-                    zenity --error --text="Couldn't prepare an installer from this .dmg (this is the most experimental part of the project — see docs/CHECKLIST.md). Try the 'download directly from Apple' option instead."
+                    zenity --error --text="Couldn't prepare an installer from this .dmg (this is the most experimental part of the project — see docs/CHECKLIST.md). Press F2 to see the details, or try the 'download directly from Apple' option instead."
                     exit 1
                 fi
                 ;;
