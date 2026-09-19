@@ -85,6 +85,22 @@ ISO build like the original plan assumed. Instead:
   instead of its UUID — Ventoy doesn't always expose the UUID the same
   way a plain dd/Rufus write does). Rebuild after pulling this fix
   before testing on Ventoy again.
+- If that's still not enough and it now waits for
+  `/dev/disk/by-label/<label>` specifically (confirming the fix above
+  did land) but still times out — from the emergency shell, check
+  `ls /dev/loop*` and `cat /proc/partitions`. If there's no loop
+  device at all (only `/dev/loop-control`, and `/proc/partitions`
+  lists only the real physical disks), the ISO itself is never being
+  exposed as a mountable disk to begin with — see the isohybrid MBR
+  gotcha in README.md. Fixed by adding `bios.syslinux.mbr` /
+  `bios.syslinux.eltorito` to `bootmodes` in `profiledef.sh` (not to
+  add real BIOS support — this project stays UEFI-only — just to get
+  `mkarchiso` to embed the isohybrid MBR/El Torito structure tools
+  like Ventoy need to loopback-mount the ISO). Needs a `syslinux/`
+  directory with the standard archiso templates (copied from
+  `/usr/share/archiso/configs/releng/syslinux/` on a machine with the
+  `archiso` package installed) — this UEFI-only profile never had one
+  before.
 - For a faster, more standards-compliant iteration loop than
   VirtualBox (which has its own known EFI NVRAM quirks — see the GRUB
   gotcha further down), QEMU with OVMF firmware is the closest thing

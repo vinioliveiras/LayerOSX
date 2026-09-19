@@ -8,7 +8,21 @@ iso_application="LayerOSX Live/Install medium"
 iso_version="$(date +%Y.%m.%d)"
 install_dir="layerosx"
 buildmodes=('iso')
-bootmodes=('uefi.systemd-boot')
+# uefi.systemd-boot is the only mode we actually intend to support
+# (this project is UEFI-only, on purpose). The bios.syslinux modes
+# below are NOT about supporting legacy BIOS boot -- they're what
+# makes mkarchiso generate the ISO's isohybrid MBR + El Torito boot
+# catalog. Without that structure (found the hard way: booting via a
+# real Ventoy USB on physical hardware left NO /dev/loop* device at
+# all for the kernel to find, so the "search by label" fix couldn't
+# find anything either -- Ventoy needs to be able to loopback-mount
+# the whole ISO as a disk, and a UEFI-only ISO doesn't have the MBR
+# structure that makes that possible), tools like Ventoy can't
+# recognize/loopback-mount the ISO as a disk at all -- they can only
+# chainload the kernel+initrd directly out of it, which is why the
+# running system could never find its own medium afterward. This is
+# also just what every official Arch ISO does, for the same reason.
+bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi.systemd-boot')
 arch="x86_64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"

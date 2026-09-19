@@ -578,3 +578,43 @@ actual hardware. On Windows:
    `edk2-x86_64-code.fd` for `edk2-x86_64-secure-code.fd` to test with
    Secure Boot enabled (unsigned archiso images are expected to fail
    to boot in that case — see the Secure Boot note in the checklist).
+
+### Gotcha: real-hardware Ventoy boot never finds its own medium — no `/dev/loop*` at all (isohybrid MBR missing)
+
+Found on a real Ventoy USB boot on physical hardware, after the
+`archisolabel` fix above was already in place and working (the log
+clearly showed it searching `/dev/disk/by-label/LAYEROSX_<date>`, not
+by UUID anymore) — it still timed out and dropped to the archiso
+emergency shell. From there, `ls /dev/loop*` showed only
+`/dev/loop-control` (no actual loop device instantiated at all), and
+`cat /proc/partitions` listed only the real physical disks/partitions
+— nothing at all backed by the ISO's own filesystem.
+
+Root cause: `profiledef.sh` had `bootmodes=('uefi.systemd-boot')` —
+UEFI only, on purpose (this project only ever intends to support UEFI
+boot). But that bootmode alone doesn't make `mkarchiso` write an
+isohybrid MBR / El Torito boot catalog into the ISO — that structure
+only gets generated when at least one `bios.syslinux.*` bootmode is
+also enabled. Without it, tools like Ventoy can't recognize/loopback-
+mount the whole ISO as a disk; they can only chainload the kernel and
+initramfs directly out of it, so the running system's own `archiso`
+init hook — however it searches for its medium, by UUID or by label —
+has nothing to find, because the ISO's own filesystem was never made
+available as a device at all. This is also why it never showed up in
+any VM test: VirtualBox/QEMU attach the `.iso` file directly as a
+virtual CD-ROM, which sidesteps this whole problem (the VM's own
+"drive" already presents the ISO as a device, independent of whatever
+boot-catalog structure is or isn't embedded in the file).
+
+Fixed: `bootmodes` now also includes `bios.syslinux.mbr` and
+`bios.syslinux.eltorito`, alongside the existing `uefi.systemd-boot`
+(left untouched — still the only mode actually used to boot). This is
+not about adding real legacy-BIOS support; it's what gets `mkarchiso`
+to embed the isohybrid MBR structure that USB-writing tools (Ventoy
+included) rely on to treat the ISO as a proper disk image. It's also
+just what every official Arch ISO does, for the same reason. These
+modes need a `syslinux/` directory with the standard archiso
+templates, which this UEFI-only profile never had — copied verbatim
+from the local `archiso` package's own `releng` reference profile
+(`/usr/share/archiso/configs/releng/syslinux/`), the same source
+already used for the `mkinitcpio.conf.d/archiso.conf` fix earlier.
