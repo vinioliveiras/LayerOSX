@@ -78,6 +78,14 @@ ISO build like the original plan assumed. Instead:
   or flickering, switch to another console (Ctrl+Alt+F2) and log in as
   root with it to grab logs (`Xorg.0.log`, `dmesg`, `journalctl -xb`)
   instead of guessing from photos of the screen.
+- `.xinitrc`/`.bash_profile` only try `startx` **once** per boot now
+  (a `/run` flag file). If X keeps dying, a flickering-forever loop was
+  the actual symptom on real hardware — Ctrl+Alt+F2 never got a chance
+  to register because the tty1 session kept getting torn down and
+  autologin kept retrying `startx` immediately. Now the second attempt
+  just drops to a plain root shell on tty1 itself (autologin, no
+  password needed there) instead of retrying — no VT switch required
+  to get a usable console and grab the real Xorg log.
 - If X keeps flickering / restarting right after `archlinux login: root
   (automatic login)`: found in a VM test — no explicit X video driver
   was in `packages.x86_64` (only `mesa`), so on a virtual GPU without a

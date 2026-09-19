@@ -250,3 +250,16 @@ live session (Ctrl+Alt+F2 refused login, and `sulogin` in emergency
 mode refuses a locked account too) — every issue had to be diagnosed
 from photos of the screen, which is exactly what forced the fixes
 above to be found the slow way.
+
+One more layer to the flickering-screen issue above: `.bash_profile`
+used to call `exec startx` unconditionally on every tty1 login, with
+no guard. If X keeps dying, autologin retries it immediately, forever
+— which is what made this so hard to debug on real hardware, since
+there was never a stable console to Ctrl+Alt+F2 away to (the tty1
+session kept getting torn down and re-created faster than a VT switch
+could register). It now only tries once per boot (a flag file under
+`/run`, which is tmpfs and clears itself every boot); if X still fails
+after that, the next tty1 login just drops to a plain root shell
+instead of retrying — already logged in via autologin, no password
+needed — so there's finally a way to grab `/var/log/Xorg.0.log` and
+actually see why.
