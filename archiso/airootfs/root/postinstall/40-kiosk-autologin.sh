@@ -13,9 +13,16 @@ EOF
 
 chmod +x /opt/layerosx/kiosk/*.sh /opt/layerosx/kiosk/lib/*.sh 2>/dev/null || true
 
+# -nocursor (an earlier version of this file passed it to startx) hides
+# the mouse pointer for the WHOLE X session, not just once QEMU/SDL is
+# up and drawing its own cursor -- it also blanked it during
+# macos-source-wizard.sh's own zenity dialogs and file pickers (first
+# boot only, before a VM disk exists), which genuinely need a visible,
+# clickable cursor. Matches root's own live-ISO session, which never
+# had this flag and has always worked fine.
 cat > "/home/${MAC_USER}/.bash_profile" <<'EOF'
 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-    exec startx "$HOME/.xinitrc" -- -nocursor
+    exec startx "$HOME/.xinitrc"
 fi
 EOF
 

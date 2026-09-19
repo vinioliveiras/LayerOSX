@@ -347,7 +347,9 @@ actually run the detection logic against real hardware yet.
 ## 4. First boot of the installed system
 
 - Should boot straight into the `mac` user, no password prompt, and
-  land on `macos-source-wizard.sh` (zenity).
+  land on `macos-source-wizard.sh` (zenity). The mouse cursor should
+  be visible here (a real bug found and fixed: `-nocursor` was hiding
+  it for the whole session, not just inside the VM — see README.md).
 - Test both options at least once each, even just to see they open
   without crashing: automatic download, and "pick a file" (now one
   merged picker for `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`).

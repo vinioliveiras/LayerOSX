@@ -839,3 +839,23 @@ Wired into every point where something can go wrong:
 
 Never fails loudly — a missing/unwritable USB just means no log copy
 that run, never a broken boot/install.
+
+### Gotcha: mouse cursor invisible on the installed system's first boot
+
+`postinstall/40-kiosk-autologin.sh` started the `mac` user's X session
+with `startx "$HOME/.xinitrc" -- -nocursor`, which hides the mouse
+pointer for the *entire* X session — not just once QEMU/SDL is up and
+drawing its own cursor inside the VM, but also during
+`macos-source-wizard.sh`'s own zenity dialogs and file pickers on
+first boot (before any VM disk exists yet), which genuinely need a
+visible, clickable cursor. Root's own live-ISO session never had this
+flag (`startx /root/.xinitrc`, no `-nocursor`) and has always worked
+fine — so it's dropped from the installed system's session too now,
+to match.
+
+If a doubled/duplicate-looking cursor ever shows up specifically once
+a macOS VM is actually running full-screen (a real possibility with
+`-display sdl` — this wasn't the reason `-nocursor` broke anything, so
+it's untested either way), the better fix would be hiding the cursor
+right before `mac-vm-launch.sh` actually execs QEMU and restoring it
+after, not blanking it for the whole session again.
