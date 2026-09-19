@@ -53,5 +53,6 @@ file_permissions=(
   ["/opt/layerosx/kiosk/macos-source-wizard.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/extract-dmg-installer.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/fetch-recovery.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/force-max-refresh.sh"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
 )

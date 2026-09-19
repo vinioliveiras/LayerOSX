@@ -170,6 +170,42 @@ mkdir -p /mnt/dev /mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media
 chmod 1777 /mnt/tmp
 progress 72 "Preparing the new system…"
 
+# archiso never ships the kernel (vmlinuz-linux) inside the live
+# squashfs -- it only lives on the ISO's own boot media, loaded
+# directly by the bootloader before the squashfs is even mounted (see
+# the long comment in postinstall/01-base-system.sh for the full
+# story, including why a pacman-based fix doesn't work offline).
+# rsync can't restore what was never part of "/" in the first place,
+# so grab it straight from wherever the boot medium is actually
+# mounted right now -- found by matching the same
+# "<install_dir>/boot/<arch>/vmlinuz-linux" layout mkarchiso uses on
+# the ISO itself (see efiboot/loader/entries/01-layerosx.conf), across
+# every mounted filesystem except the target disk we just mounted.
+echo "Copying the real kernel from the boot medium into /mnt/boot..."
+INSTALL_DIR="layerosx"   # must match profiledef.sh's install_dir
+ARCH="x86_64"            # must match profiledef.sh's arch
+KERNEL_SRC=""
+while IFS= read -r mp; do
+    case "$mp" in /mnt|/mnt/*) continue ;; esac
+    candidate="$mp/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+    if [ -f "$candidate" ]; then
+        KERNEL_SRC="$candidate"
+        break
+    fi
+done < <(findmnt -rno TARGET)
+if [ -z "$KERNEL_SRC" ]; then
+    # last resort: a broader search in case the layout ever changes
+    KERNEL_SRC=$(find /run -maxdepth 6 -type f -name 'vmlinuz-linux' 2>/dev/null | head -n1)
+fi
+if [ -z "$KERNEL_SRC" ]; then
+    zenity --error --width=560 --title="LayerOSX — Install" \
+        --text="Could not find the kernel on the boot medium (looked for $INSTALL_DIR/boot/$ARCH/vmlinuz-linux on every mounted filesystem). Make sure you're still booted from the LayerOSX USB/ISO, then reboot and try again." \
+        2>/dev/null || true
+    exit 1
+fi
+echo "Found kernel at: $KERNEL_SRC"
+cp -v "$KERNEL_SRC" /mnt/boot/vmlinuz-linux
+
 echo "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab
 progress 74 "Writing the filesystem table…"

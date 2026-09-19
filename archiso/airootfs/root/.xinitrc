@@ -5,4 +5,5 @@
 # the installed system (see .bash_profile).
 openbox &
 sleep 1
+/opt/layerosx/kiosk/lib/force-max-refresh.sh &
 exec /opt/layerosx/kiosk/install-wizard.sh

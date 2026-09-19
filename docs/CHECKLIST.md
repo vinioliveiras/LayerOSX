@@ -234,18 +234,40 @@ ISO build like the original plan assumed. Instead:
   failing with `'/boot/vmlinuz-linux' must be readable` in
   `postinstall/01-base-system.sh`/`10-hardware-detect.sh` is the
   direct symptom, and it's why `grub-mkconfig` had no Linux entry to
-  add. Fixed: `01-base-system.sh` now forces a `pacman -S` reinstall
-  of `linux linux-firmware intel-ucode amd-ucode` before
-  `mkinitcpio -P` (pacman's rsynced local DB already "thinks" they're
-  installed, so this re-extracts the real files from the — also
-  rsynced — local package cache, normally no network needed). To
-  recover an already-installed disk, chroot in and run:
-  ```bash
-  pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
-  mkinitcpio -P
-  grub-mkconfig -o /boot/grub/grub.cfg
-  grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
-  ```
+  add.
+  - **First fix attempt didn't actually work**: forcing a `pacman -S`
+    reinstall of `linux linux-firmware intel-ucode amd-ucode` in
+    `01-base-system.sh`, on the theory that the rsynced local package
+    DB would let it re-extract from the also-rsynced package cache.
+    Confirmed wrong on real hardware: `mkarchiso` never populates the
+    live airootfs's own package cache in the first place (it's pulled
+    from the *build machine's* cache instead), and the rsynced system
+    is also missing pacman's **sync** databases — so `pacman -S`
+    couldn't even resolve the package names (`target not found:
+    linux`), online or not.
+  - **Actual fix**: skip pacman entirely. `install-wizard.sh` now
+    copies the real `vmlinuz-linux` straight out of the boot medium
+    itself (still mounted somewhere under `/run` while the live ISO
+    is running) into `/mnt/boot`, before `arch-chroot` ever runs.
+    `01-base-system.sh` then also deletes
+    `/etc/mkinitcpio.conf.d/archiso.conf` from the target (it got
+    rsynced too, and would otherwise bake the *live medium's* HOOKS —
+    `archiso`, `memdisk`, the PXE hooks — into the installed system's
+    initramfs) before running `mkinitcpio -P`, so it falls back to the
+    normal installed-system HOOKS. See README.md for the full
+    explanation. To recover an already-installed disk without
+    reinstalling from scratch: boot the live ISO, then (still outside
+    the chroot) find and copy the kernel, then finish inside the
+    chroot:
+    ```bash
+    find /run -maxdepth 6 -name vmlinuz-linux   # note the path
+    cp /run/.../vmlinuz-linux /mnt/boot/vmlinuz-linux
+    arch-chroot /mnt
+    rm -f /etc/mkinitcpio.conf.d/archiso.conf
+    mkinitcpio -P
+    grub-mkconfig -o /boot/grub/grub.cfg
+    grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
+    ```
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):
@@ -307,6 +329,13 @@ actually run the detection logic against real hardware yet.
   `kiosk/lib/extract-dmg-installer.sh`) — if it fails, it fails
   gracefully (clear error message), but it still needs more work to
   properly support real APFS installers.
+- On a multi-monitor machine, check every connected display for a
+  corrupted/noisy image (a second monitor showing this was the
+  original report) — `kiosk/lib/force-max-refresh.sh` should have
+  already forced each one to its real max refresh rate at `.xinitrc`
+  startup (see README.md). If a display is still wrong, run `xrandr
+  --query` from a tty2 shell (Ctrl+Alt+F2, login `mac`/`mac`) to see
+  what mode it actually landed on.
 
 ## 5. The VM itself
 

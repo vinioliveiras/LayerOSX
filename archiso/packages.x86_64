@@ -110,5 +110,8 @@ zenity
 xorg-server
 xorg-xinit
 xorg-xsetroot
+# forces each monitor's real max refresh rate at kiosk startup (see
+# kiosk/lib/force-max-refresh.sh) -- xrandr itself, not part of xorg-server
+xorg-xrandr
 openbox
 gparted

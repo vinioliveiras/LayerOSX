@@ -409,20 +409,61 @@ Linux entry — nothing was reported as a hard error (postinstall's
 per-step fault tolerance masked it, same as the earlier `arch-chroot`
 bug), so the install still appeared to finish.
 
-Fixed in `postinstall/01-base-system.sh`: right before `mkinitcpio -P`,
-it now forces a `pacman -S` reinstall of `linux`, `linux-firmware`,
-`intel-ucode`, `amd-ucode`. Pacman's local database already lists
-these as installed (it was rsynced along with everything else), so
-`pacman -S` (without `--needed`) re-extracts their real files from the
-local package cache — which was also rsynced, so this normally needs
-no network access at all.
+**First fix attempt (didn't work, kept for the record):**
+`postinstall/01-base-system.sh` was changed to force a `pacman -S`
+reinstall of `linux`, `linux-firmware`, `intel-ucode`, `amd-ucode`
+right before `mkinitcpio -P`, on the theory that pacman's local
+database (rsynced along with everything else) would let `pacman -S`
+re-extract the real files from the also-rsynced package cache, no
+network needed. Confirmed wrong on real hardware, on two counts:
+`mkarchiso` never populates the live airootfs's own
+`/var/cache/pacman/pkg` in the first place (packages are pulled from
+the *build machine's* own cache, not baked into the ISO), and the
+rsynced system is also missing pacman's **sync** databases
+(`/var/lib/pacman/sync/*.db` — distinct from the installed-package
+state db, which *is* present). Without those, `pacman -S` can't even
+resolve the package names (`error: target not found: linux`), so it
+failed outright, offline or not.
+
+**Actual fix:** skip pacman entirely for this. `install-wizard.sh` now
+copies the real `vmlinuz-linux` straight out of the boot medium itself
+— the same one currently booted, still mounted somewhere under `/run`
+— into `/mnt/boot`, right after recreating the pseudo-filesystem mount
+points and before `arch-chroot` ever runs. It finds it by matching the
+same `<install_dir>/boot/<arch>/vmlinuz-linux` layout `mkarchiso` uses
+on the ISO itself (see `efiboot/loader/entries/01-layerosx.conf`),
+checked against every currently mounted filesystem except the target
+disk. This needs neither pacman nor a network connection.
+`linux-firmware`'s actual files (`/usr/lib/firmware/...`) don't have
+this problem to begin with — they're part of the live `/` like
+everything else, so they arrive via the normal rsync.
+
+That still leaves the initramfs. The live ISO's own
+`/etc/mkinitcpio.conf.d/archiso.conf` (rsynced onto the target too)
+overrides `HOOKS` with archiso-specific ones (`archiso`,
+`archiso_loop_mnt`, `memdisk`, the PXE hooks…) meant for booting the
+*live medium*, not an installed system on a real disk — left in place,
+`mkinitcpio -P` would bake those into the installed system's own
+initramfs, which at best is dead weight and at worst means every real
+boot tries to find a live medium that isn't there. `01-base-system.sh`
+now deletes that file before calling `mkinitcpio -P`, so mkinitcpio
+falls back to its own package-default `/etc/mkinitcpio.conf` (`base
+udev autodetect microcode modconf kms keyboard keymap consolefont
+block filesystems fsck`) — the normal set an installed system needs.
 
 To recover a disk already installed without this fix, without
 reinstalling from scratch: boot the live ISO, mount and chroot in (see
-the gotchas above), then:
+the gotchas above), then, still on the live ISO (not yet chrooted),
+find and copy the kernel from the boot medium into the target, then
+finish inside the chroot:
 
 ```bash
-pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
+# outside the chroot, live ISO still booted from its medium:
+find /run -maxdepth 6 -name vmlinuz-linux   # note the path it prints
+cp /run/.../vmlinuz-linux /mnt/boot/vmlinuz-linux
+
+arch-chroot /mnt
+rm -f /etc/mkinitcpio.conf.d/archiso.conf
 mkinitcpio -P
 grub-mkconfig -o /boot/grub/grub.cfg
 grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
@@ -629,3 +670,23 @@ with "The 'syslinux' package is missing from the package list!", since
 it extracts the actual syslinux binaries from that package. Added
 `memtest86+`/`memtest86+-efi` too, just to quiet mkarchiso's unrelated
 informational notices about memory testing being unavailable.)
+
+### Feature: force each monitor to its real max refresh rate at kiosk startup
+
+On a multi-monitor machine, X's own EDID-based auto-detection doesn't
+always pick a display's actual best mode — seen firsthand on a second
+monitor, whose image came out visibly corrupted/noisy until forced to
+its real max refresh rate by hand with `xrandr`.
+
+Rather than hardcode a fixed mode in an `xorg.conf` (which would be
+flat-out wrong on any other monitor/setup), `kiosk/lib/force-max-refresh.sh`
+runs from both `.xinitrc` entry points (the live-ISO install session,
+and the installed system's kiosk session for the `mac` user) right
+after `openbox` starts. It re-detects every *currently connected*
+output via `xrandr --query`, and for each one, re-applies its own
+*current* resolution at the highest refresh rate that same resolution
+actually supports — no resolution changes, just the rate. Runs in the
+background (`&`) so it never delays the actual kiosk/install UI, and
+no-ops quietly if `xrandr` is missing or a display reports nothing
+useful. Needs the `xorg-xrandr` package (added to `packages.x86_64` —
+`xorg-server` alone doesn't include the `xrandr` binary).

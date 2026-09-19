@@ -36,23 +36,48 @@ systemctl enable layerosx-cleanup.timer
 
 # The rsync-based install (see install-wizard.sh) copies the running
 # live system's "/" onto the target disk -- but archiso deliberately
-# does NOT ship the kernel, initramfs, or microcode images inside the
-# live squashfs itself. mkarchiso keeps those only on the ISO's own
-# boot media (loaded directly by the bootloader before the squashfs
-# is even mounted), since the live system has no need for a redundant
-# local copy to boot itself. rsync can't restore what was never on
-# the live filesystem in the first place, so /boot lands on the
-# target with only EFI/ and grub/ -- no kernel at all. mkinitcpio -P
-# below would fail on a missing/unreadable /boot/vmlinuz-linux as a
-# symptom, and even if it didn't, GRUB would have nothing to boot.
+# does NOT ship the kernel (vmlinuz-linux) inside the live squashfs
+# itself; it only lives on the ISO's own boot media (loaded directly
+# by the bootloader before the squashfs is even mounted), since the
+# live system has no need for a redundant local copy to boot itself.
+# rsync can't restore what was never on the live filesystem in the
+# first place -- so install-wizard.sh now copies the real
+# vmlinuz-linux straight out of the boot medium into /mnt/boot BEFORE
+# this script ever runs (see its "Copying the real kernel" step). By
+# the time we get here it should already exist.
 #
-# Fix: pacman's local package database DID get rsynced (it just
-# records linux/linux-firmware/*-ucode as already installed), so
-# force a reinstall of everything that actually owns files under
-# /boot -- this re-extracts the real files from the local package
-# cache (also rsynced, so this normally needs no network at all).
-echo "Reinstalling kernel/microcode packages (archiso doesn't ship these inside the live squashfs -- see comment above)..."
-pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
+# (An earlier version of this fix instead ran `pacman -S --noconfirm
+# linux linux-firmware intel-ucode amd-ucode`, on the theory that the
+# rsynced local package database would let pacman re-extract the
+# files from the also-rsynced package cache. That was wrong on two
+# counts, confirmed on real hardware: mkarchiso never populates the
+# live airootfs's own /var/cache/pacman/pkg in the first place
+# (packages are pulled from the BUILD machine's own cache, not baked
+# into the ISO), and the rsynced system is also missing pacman's
+# *sync* databases -- /var/lib/pacman/sync/*.db, distinct from the
+# installed-package state db, which IS present -- so `pacman -S`
+# couldn't even resolve the package names ("target not found"),
+# let alone install them, without a network connection. Copying the
+# kernel binary directly needs neither pacman nor a network.
+# linux-firmware's actual files (/usr/lib/firmware/...) don't have
+# this problem -- they're part of the live "/" like everything else,
+# so they arrive via the normal rsync.)
+if [ ! -f /boot/vmlinuz-linux ]; then
+    echo "!!! /boot/vmlinuz-linux is still missing -- install-wizard.sh's kernel copy step must have failed or been skipped. GRUB will have nothing to boot until this is fixed." >&2
+fi
+
+# The live ISO's own /etc/mkinitcpio.conf.d/archiso.conf (rsynced onto
+# the target like everything else under /etc) overrides HOOKS with
+# archiso-specific ones (archiso, archiso_loop_mnt, memdisk, the PXE
+# hooks...) meant for booting the *live medium*, not an installed
+# system on a real disk. Left in place, mkinitcpio -P below would bake
+# those into the installed system's own initramfs -- at best dead
+# weight, at worst it tries to find a live boot medium on every real
+# boot and fails. Removing it falls back to mkinitcpio's own
+# package-default /etc/mkinitcpio.conf (base udev autodetect
+# microcode modconf kms keyboard keymap consolefont block filesystems
+# fsck), which is what an installed system actually needs.
+rm -f /etc/mkinitcpio.conf.d/archiso.conf
 
 echo "[01] mkinitcpio -P"
 mkinitcpio -P

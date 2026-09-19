@@ -23,6 +23,7 @@ cat > "/home/${MAC_USER}/.xinitrc" <<'EOF'
 #!/bin/sh
 openbox &
 sleep 1
+/opt/layerosx/kiosk/lib/force-max-refresh.sh &
 exec /opt/layerosx/kiosk/mac-vm-launch.sh
 EOF
 chmod +x "/home/${MAC_USER}/.xinitrc"
