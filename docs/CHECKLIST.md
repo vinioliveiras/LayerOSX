@@ -168,6 +168,21 @@ ISO build like the original plan assumed. Instead:
   `{auto_created_boot_option}` with no `\EFI\...\grubx64.efi` file
   path in its device path, that's VirtualBox/UEFI's generic disk
   fallback, not a real GRUB entry — GRUB was never installed.
+- If, after the fix above, the install completes and `grub-install`
+  itself logs no error, but the machine still boots straight to a
+  bare "UEFI Firmware Settings" menu with no OS entry at all (not even
+  the generic auto-created HARDDISK one) — this is VirtualBox's EFI
+  firmware not reliably persisting the NVRAM boot entry `grub-install
+  --bootloader-id=layerosx` registers via `efibootmgr`; GRUB is on the
+  disk, the firmware just has no record of it after reboot. Fixed:
+  `postinstall/50-grub.sh` now also runs a `--removable` install,
+  which writes to the fallback path UEFI firmware boots automatically
+  with no NVRAM entry required (`/boot/EFI/BOOT/BOOTX64.EFI`). To
+  recover an already-installed disk without reinstalling, chroot in
+  (as above) and just run:
+  ```bash
+  grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
+  ```
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):

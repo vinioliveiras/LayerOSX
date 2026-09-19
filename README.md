@@ -347,3 +347,40 @@ exit
 umount -R /mnt
 reboot
 ```
+
+### Gotcha: boot menu shows only "UEFI Firmware Settings" (no OS entry) after a successful install
+
+Even after `grub-install` runs without errors inside postinstall, the
+resulting install can still fail to boot in VirtualBox: the firmware
+menu shows nothing but "UEFI Firmware Settings", with no entry for the
+installed system at all — not even the generic auto-created HARDDISK
+fallback seen in the earlier bug above.
+
+Cause: `grub-install --bootloader-id=layerosx` (no `--removable`)
+relies on the NVRAM boot entry it registers via `efibootmgr` to
+survive across reboots. VirtualBox's EFI firmware is well known
+(Arch wiki, VirtualBox forums) for not reliably persisting guest-added
+NVRAM entries — GRUB installs correctly onto the ESP, but the entry
+pointing to it can simply be gone on next boot, leaving the firmware
+with nothing bootable to offer.
+
+Fixed in `postinstall/50-grub.sh`: it now also runs `grub-install
+--target=x86_64-efi --efi-directory=/boot --removable --recheck`
+right after the normal install. This writes GRUB to the UEFI
+"removable media" fallback path (`/boot/EFI/BOOT/BOOTX64.EFI`), which
+firmware boots automatically with no NVRAM entry needed at all — so
+the install boots reliably in VirtualBox regardless of whether the
+named `layerosx` NVRAM entry survives.
+
+To recover a disk that's already installed and stuck at this screen,
+without reinstalling: boot the live ISO, mount the real partitions and
+chroot in (see the previous gotcha above for the exact commands), then
+just run:
+
+```bash
+grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
+```
+
+That alone is enough — GRUB's own config (`grub.cfg`) was already
+generated correctly the first time; only the boot-entry lookup was
+failing.
