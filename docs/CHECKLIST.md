@@ -114,13 +114,18 @@ ISO build like the original plan assumed. Instead:
   at all) — flag it here if it still happens on bare metal.
 - Should show: an info dialog → GParted (interactive, same as today:
   reuse the ~200 MB EFI partition, never format it) → two partition
-  pickers (root, ESP) → a confirmation dialog → a black screen with a
-  progress dialog showing the real copy percentage (a black
-  window/white bar look via a small `gtk.css` override — not a
-  pulsating placeholder, and not a recreation of Apple's boot screen,
-  see README.md) while it copies the live system to disk → proceeds
-  on its own (fstab, machine-id, chroot + postinstall) → a "reboot
-  now" dialog, same black/white look.
+  pickers (root, ESP) → a confirmation dialog → a black screen with
+  ONE progress dialog that stays open and keeps moving forward for
+  the entire rest of the install — copy (0-70%, real percentage, not
+  pulsating), then fstab/machine-id/postinstall (70-100%), with the
+  label naming the current step throughout (down to postinstall's own
+  4 numbered steps) — then a "reboot now" dialog. All black
+  window/white bar (`GTK_THEME=Adwaita:dark` + a `gtk.css` override,
+  not a recreation of Apple's boot screen, see README.md). If you see
+  the bar jump backward or a new dialog pop up mid-copy looking like
+  it restarted, that's the two bugs already fixed in README.md
+  (rsync's incremental recursion revising its total downward, and the
+  old one-dialog-per-phase design) — flag it here if either recurs.
 - If something fails partway through (mount, rsync, genfstab,
   arch-chroot, ...), it now stops and shows a `zenity --error` dialog
   telling you to check the log, instead of silently continuing to the

@@ -448,3 +448,48 @@ whatever the default GTK theme draws. This is a generic minimal-boot
 look (black screen, white bar), not a reproduction of Apple's actual
 boot screen — no Apple logo, wordmark, or other trademarked visual is
 drawn anywhere, just a plain rectangle.
+
+### Fixes/tweaks to the install progress bar (theme, monotonic %, single bar for the whole install)
+
+Three follow-up issues found by actually watching the bar run in a VM
+test, all in `install-wizard.sh`:
+
+- **Dialogs stayed light-themed** even with the `gtk.css` override
+  from the previous section. A bare user `gtk.css` can silently lose
+  to the active theme's own more specific selectors. Fixed by also
+  setting `export GTK_THEME=Adwaita:dark` (Adwaita ships built into
+  GTK3, no extra package needed) as the actual baseline, plus a
+  `~/.config/gtk-3.0/settings.ini` with `gtk-application-prefer-dark-theme=1`,
+  with the `gtk.css` overrides now using `!important` on top to force
+  the exact black/white (not Adwaita-dark's default greys). All three
+  are written once, right after the log redirect near the top of the
+  script, so every dialog in the install — not just the loading
+  screen — gets it from the first one shown.
+- **The bar visibly jumped backward** during the copy (e.g. 40% then
+  back to 25%). Cause: by default modern `rsync` streams its file
+  list incrementally as it walks the tree, so `--info=progress2`'s
+  "total size" denominator keeps growing mid-copy as more files are
+  discovered, and the percentage gets revised downward when that
+  happens. Fixed by adding `--no-inc-recursive`, which makes rsync
+  build the complete file list up front — the total is known from the
+  start, so the percentage only moves forward (costs a few extra
+  seconds up front scanning the tree, worth it for a bar that
+  doesn't rewind).
+- **A new dialog per phase looked like the process restarting.**
+  Originally only the rsync copy had a progress dialog; everything
+  after it (fstab, machine-id, postinstall) ran with no visual
+  feedback at all, and the copy dialog auto-closing made the whole
+  thing look like it reset. Replaced with a single long-lived
+  `zenity --progress` fed through a named pipe (`PROGRESS_FIFO`) for
+  the entire rest of the install: a `progress() { echo "$1" >&3; echo
+  "#$2" >&3; }` helper writes percentage + a short "what's happening
+  now" label from every phase (copy scaled to 0-70%, then fstab/
+  machine-id/postinstall filling 70-100%). postinstall's own 4
+  numbered steps are surfaced too — the install-wizard tails
+  postinstall's own log file from outside the chroot and bumps the
+  label ("Setting locale, user, hostname…", "Detecting CPU/GPU
+  hardware…", etc.) each time a new step starts, so the single bar
+  keeps moving and naming the current step through the whole install,
+  including the minute or two postinstall itself takes. The ERR trap
+  now also closes the pipe's write end first, so a failure doesn't
+  leave the progress dialog stuck open behind the error dialog.
