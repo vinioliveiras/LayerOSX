@@ -12,11 +12,20 @@
 # doesn't touch anything if xrandr isn't available or a display
 # reports no modes, so it's safe to just let it fail quietly on
 # unusual setups).
+#
+# One-shot wasn't enough in practice: reported as "some screens don't
+# get forced, mostly right at the start of boot" -- right at X
+# startup, a monitor's EDID/mode list can still be settling (multi-
+# monitor setups especially), so a single xrandr pass moments after
+# openbox starts can run before every output is fully ready and just
+# never gets reapplied afterwards. Retrying for a while covers that
+# without needing to know in advance how long any given monitor takes.
 set -uo pipefail
 
 command -v xrandr >/dev/null 2>&1 || exit 0
 
-python3 - <<'PYEOF'
+apply_once() {
+    python3 - <<'PYEOF'
 import re
 import subprocess
 
@@ -49,3 +58,17 @@ for line in out.splitlines():
     )
     output = None  # one active mode per output, done with this block
 PYEOF
+}
+
+# ~20s of retries at the start (covers slow-to-settle EDID/multi-
+# monitor setups), then a couple of slower follow-up passes in case
+# something else (openbox, a login manager, a monitor waking up late)
+# resets the mode after that window.
+for _ in 1 2 3 4 5 6 7 8; do
+    apply_once
+    sleep 2.5
+done
+sleep 15
+apply_once
+sleep 30
+apply_once

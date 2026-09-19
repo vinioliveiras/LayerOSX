@@ -889,3 +889,66 @@ now dumps real diagnostics (`findmnt`, `/opt/layerosx` listing,
 via `save-logs-to-usb.sh` before showing the error — that call site is
 outside the `ERR` trap (an explicit `exit` doesn't trigger it), so
 without this it wouldn't have been auto-saved.
+
+### Gotcha: automatic log-save-to-USB silently saved nothing
+
+Confirmed on real hardware: `save-logs-to-usb.sh` never produced a
+single file on the Ventoy drive, even though it's wired into multiple
+call sites that should have fired repeatedly during a failing test
+session (every QEMU exit in `mac-vm-launch.sh`'s retry loop, the
+install-wizard's `ERR` trap and successful-install path, and
+`layerosx-save-logs.service` at boot). By design the script never
+fails loudly, which meant this failure mode itself was invisible.
+
+Root cause: `pick_partition()` required `RM="1"` (lsblk's "removable"
+column) before considering a partition at all — but that flag comes
+straight from `/sys/block/*/removable`, and a number of real USB
+enclosures/bridge chips report `0` there for drives that are
+genuinely removable (a known lsblk quirk, not a bug in lsblk itself).
+On a drive that misreports this, `pick_partition()`'s loop skipped
+every single line, both the Ventoy-labeled best match and the
+generic fallback, and returned nothing — exactly this symptom.
+
+Fixed by dropping the `RM` check entirely (the existing
+`mount-removable-media.sh`, used by the file picker, never checked it
+either and has worked fine) and instead explicitly excluding the
+parent disk(s) actually backing `/` and `/boot` (via `findmnt` +
+`lsblk -no PKNAME`) — this is the thing we actually care about never
+writing onto, and it's a much more reliable signal than a
+removable-media flag some hardware just gets wrong. Also added a
+`$STATUS_LOG` breadcrumb (`/var/log/layerosx-save-logs-status.log`,
+on the *local* disk, so it survives even when the USB step itself is
+what's failing) at every exit point of the script, so a future silent
+failure like this one can actually be diagnosed instead of guessed
+at blind. `layerosx-save-logs.service` also now waits 5s
+(`ExecStartPre=sleep 5`) before running, since `local-fs.target` alone
+can fire before udev has actually finished enumerating a just-plugged
+USB stick.
+
+### Gotcha: force-max-refresh.sh only ran once, too early for some monitors
+
+Reported as "some screens don't get the max refresh rate forced,
+mostly right at the start of boot". The script ran exactly once, 1s
+after `openbox &` in `.xinitrc` — on a multi-monitor setup a
+display's EDID/mode list can still be settling at that point, so a
+single `xrandr --query` pass can simply run before an output is fully
+ready (empty/incomplete rate list for it) and nothing reapplies the
+fix afterwards. Fixed by having the script itself retry internally:
+8 passes 2.5s apart over the first ~20s, then two more slower
+follow-up passes (at +15s and +45s) in case something else resets the
+mode after that window. Runs backgrounded from `.xinitrc` either way,
+so this doesn't delay the install wizard or the VM launcher starting.
+
+### Diagnostic finding: QEMU wasn't running at all during a reported black screen
+
+A `ps aux | grep qemu` captured on tty2 during a reported black
+screen showed no `qemu-system-x86_64` process at all — meaning the
+black screen wasn't QEMU rendering nothing, QEMU had already exited
+(or hadn't launched), consistent with `mac-vm-launch.sh`'s retry loop
+being mid-cycle (or exhausted, right before its last-resort
+`systemctl reboot`). Confirms the black-screen investigation should
+focus on why QEMU exits/crashes (check `~/mac-vm.log`, which captures
+QEMU's own stdout/stderr via `mac-vm-launch.sh`'s
+`exec > >(tee -a "$LOG") 2>&1`), not on display/rendering flags like
+`gl=on` or the `reims-vgpu-pci romfile=` property — those only matter
+once QEMU is confirmed to actually be running.

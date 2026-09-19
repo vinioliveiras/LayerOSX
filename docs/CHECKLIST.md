@@ -76,7 +76,10 @@ ISO build like the original plan assumed. Instead:
   successful install, on every boot of the installed system, and
   after every QEMU session. When something goes wrong during testing,
   check that folder from Windows (or anywhere) before reaching for a
-  tty or a photo — much faster.
+  tty or a photo — much faster. If that folder is ever empty after a
+  failure (happened once — see README.md's gotcha on this), check
+  `/var/log/layerosx-save-logs-status.log` on the machine itself
+  (tty2, `cat` it directly) for why the script gave up that run.
 - Confirm it boots in UEFI and shows the install wizard fullscreen
   (openbox + `.xinitrc`, root autologin on tty1).
 - If it hangs mid-boot searching every partition for a
@@ -384,12 +387,23 @@ actually run the detection logic against real hardware yet.
   corrupted/noisy image (a second monitor showing this was the
   original report) — `kiosk/lib/force-max-refresh.sh` should have
   already forced each one to its real max refresh rate at `.xinitrc`
-  startup (see README.md). If a display is still wrong, run `xrandr
-  --query` from a tty2 shell (Ctrl+Alt+F2, login `mac`/`mac`) to see
-  what mode it actually landed on.
+  startup (see README.md), now retrying for about a minute total to
+  cover monitors that settle slowly right at boot. If a display is
+  still wrong after that, run `xrandr --query` from a tty2 shell
+  (Ctrl+Alt+F2, login `mac`/`mac`) to see what mode it actually
+  landed on.
 
 ## 5. The VM itself
 
+- Before chasing display/rendering flags, confirm QEMU is actually
+  *running* at all: `ps aux | grep qemu` from tty2. A black screen
+  with no `qemu-system-x86_64` process means it already
+  crashed/exited (or never launched) — `mac-vm-launch.sh` will retry
+  up to 5 times, 3s apart, then reboot the physical machine as a last
+  resort, which can look like "just a black screen" if you don't
+  happen to catch it mid-retry. Check `~/mac-vm.log` (the `mac`
+  user's home) first in that case — it captures QEMU's own
+  stdout/stderr, so the actual crash reason should be right there.
 - Confirm `-display sdl,gl=on,full-screen=on` actually gives you a
   screen.
 - The device name is confirmed (`reims-vgpu-pci`, see step 2) — what's

@@ -1,9 +1,13 @@
 [Unit]
 Description=LayerOSX — copy logs to a USB drive (Ventoy preferred) for remote debugging
-After=local-fs.target
+After=local-fs.target systemd-udev-settle.service
 
 [Service]
 Type=oneshot
+# Give USB enumeration a moment to settle before we go looking for a
+# drive -- local-fs.target alone can fire before udev has finished
+# recognizing a just-plugged-in USB stick.
+ExecStartPre=/usr/bin/sleep 5
 ExecStart=/opt/layerosx/kiosk/lib/save-logs-to-usb.sh
 
 [Install]
