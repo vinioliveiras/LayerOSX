@@ -183,6 +183,28 @@ ISO build like the original plan assumed. Instead:
   ```bash
   grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
   ```
+- If, after all the above, `/boot` on the target still has only
+  `EFI/` and `grub/` with no `vmlinuz-linux`/`initramfs-linux.img` at
+  all (`ls -la /boot/` from inside the chroot confirms it) — this is
+  the actual root cause of the "no OS boot entry" symptom, not just
+  the NVRAM issue. archiso doesn't ship the kernel inside the live
+  squashfs (it lives only on the ISO's own boot media), so the
+  installer's `rsync` copy can never restore it — `mkinitcpio -P`
+  failing with `'/boot/vmlinuz-linux' must be readable` in
+  `postinstall/01-base-system.sh`/`10-hardware-detect.sh` is the
+  direct symptom, and it's why `grub-mkconfig` had no Linux entry to
+  add. Fixed: `01-base-system.sh` now forces a `pacman -S` reinstall
+  of `linux linux-firmware intel-ucode amd-ucode` before
+  `mkinitcpio -P` (pacman's rsynced local DB already "thinks" they're
+  installed, so this re-extracts the real files from the — also
+  rsynced — local package cache, normally no network needed). To
+  recover an already-installed disk, chroot in and run:
+  ```bash
+  pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
+  mkinitcpio -P
+  grub-mkconfig -o /boot/grub/grub.cfg
+  grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
+  ```
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):

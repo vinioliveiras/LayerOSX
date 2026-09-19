@@ -34,5 +34,25 @@ passwd -l root || true
 systemctl enable NetworkManager
 systemctl enable layerosx-cleanup.timer
 
+# The rsync-based install (see install-wizard.sh) copies the running
+# live system's "/" onto the target disk -- but archiso deliberately
+# does NOT ship the kernel, initramfs, or microcode images inside the
+# live squashfs itself. mkarchiso keeps those only on the ISO's own
+# boot media (loaded directly by the bootloader before the squashfs
+# is even mounted), since the live system has no need for a redundant
+# local copy to boot itself. rsync can't restore what was never on
+# the live filesystem in the first place, so /boot lands on the
+# target with only EFI/ and grub/ -- no kernel at all. mkinitcpio -P
+# below would fail on a missing/unreadable /boot/vmlinuz-linux as a
+# symptom, and even if it didn't, GRUB would have nothing to boot.
+#
+# Fix: pacman's local package database DID get rsynced (it just
+# records linux/linux-firmware/*-ucode as already installed), so
+# force a reinstall of everything that actually owns files under
+# /boot -- this re-extracts the real files from the local package
+# cache (also rsynced, so this normally needs no network at all).
+echo "Reinstalling kernel/microcode packages (archiso doesn't ship these inside the live squashfs -- see comment above)..."
+pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
+
 echo "[01] mkinitcpio -P"
 mkinitcpio -P

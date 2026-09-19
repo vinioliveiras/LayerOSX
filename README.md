@@ -384,3 +384,46 @@ grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
 That alone is enough — GRUB's own config (`grub.cfg`) was already
 generated correctly the first time; only the boot-entry lookup was
 failing.
+
+### Gotcha: `/boot` on the installed disk has no kernel at all (`EFI/` and `grub/` only, no `vmlinuz-linux`)
+
+The deepest of the boot-chain bugs found so far, and the real root
+cause behind the "only UEFI Firmware Settings, no OS entry" symptom
+above (the `--removable` GRUB fix was still correct and necessary,
+but not sufficient on its own).
+
+`install-wizard.sh` installs by `rsync`-ing the running live system's
+own `/` onto the target disk — but archiso does not put the kernel,
+initramfs, or microcode images inside the live squashfs it ships.
+`mkarchiso` keeps those only on the ISO's own boot media, loaded
+directly by the bootloader before the squashfs is even mounted as the
+live root — the live system itself has no need for a redundant local
+copy under `/boot` just to keep running. So `rsync` can't restore
+what was never there to begin with: the installed disk's `/boot` ends
+up with only `EFI/` and `grub/` (copied fine, since those really are
+regular files on the live system), no kernel at all. This is why
+`mkinitcpio -P` failed with `'/boot/vmlinuz-linux' must be readable`
+in `postinstall/01-base-system.sh` and `10-hardware-detect.sh`, and
+why `grub-mkconfig` in `50-grub.sh` produced a `grub.cfg` with no
+Linux entry — nothing was reported as a hard error (postinstall's
+per-step fault tolerance masked it, same as the earlier `arch-chroot`
+bug), so the install still appeared to finish.
+
+Fixed in `postinstall/01-base-system.sh`: right before `mkinitcpio -P`,
+it now forces a `pacman -S` reinstall of `linux`, `linux-firmware`,
+`intel-ucode`, `amd-ucode`. Pacman's local database already lists
+these as installed (it was rsynced along with everything else), so
+`pacman -S` (without `--needed`) re-extracts their real files from the
+local package cache — which was also rsynced, so this normally needs
+no network access at all.
+
+To recover a disk already installed without this fix, without
+reinstalling from scratch: boot the live ISO, mount and chroot in (see
+the gotchas above), then:
+
+```bash
+pacman -S --noconfirm linux linux-firmware intel-ucode amd-ucode
+mkinitcpio -P
+grub-mkconfig -o /boot/grub/grub.cfg
+grub-install --target=x86_64-efi --efi-directory=/boot --removable --recheck
+```
