@@ -283,3 +283,20 @@ listed individually. All of them are now listed explicitly, and
 every build as a second layer, so a newly added script that forgets a
 `profiledef.sh` entry still ships executable instead of silently
 breaking the exact same way.
+
+Two usability fixes to `install-wizard.sh`, found while it was
+actually being tested for the first time: it used to have no `set -e`
+at all, so a failure in `mount`, `rsync`, `genfstab`, or `arch-chroot`
+partway through would just get logged and the script would keep going
+regardless — silently reaching the final "Done, reboot" dialog and
+rebooting into a broken, incomplete install with no indication
+anything had gone wrong. It now has `set -e` plus an `ERR` trap that
+shows a `zenity --error` dialog pointing at the log instead. Separately,
+the long `rsync` copy step (copying the whole live system onto the
+target disk — the slowest part of the install by far) used to leave
+you looking at a bare black openbox desktop with zero feedback for
+however long that takes. It now sets a black background
+(`xsetroot -solid "#000000"`, package `xorg-xsetroot`) and shows a
+pulsating `zenity --progress` dialog for the duration — a generic dark
+loading look, deliberately not a recreation of Apple's actual boot
+screen/logo (trademark, not something to bundle/ship).

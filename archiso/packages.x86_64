@@ -96,5 +96,6 @@ zenity
 # actually need, partitioning)
 xorg-server
 xorg-xinit
+xorg-xsetroot
 openbox
 gparted

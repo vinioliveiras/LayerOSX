@@ -11,11 +11,21 @@
 # automated safely. Everything else Calamares used to do (copy the
 # live system onto the target, fstab, machine-id, chroot in and run
 # our postinstall) is done here instead, with zero further prompts.
-set -uo pipefail
+set -euo pipefail
 
 LOG=/var/log/layerosx-install.log
 exec > >(tee -a "$LOG") 2>&1
 echo "===== LayerOSX install: $(date -Is) ====="
+
+# Without this, a failure partway through (mount, rsync, genfstab,
+# arch-chroot, ...) would just get logged and the script would keep
+# going — silently reaching the "Done, reboot" dialog and rebooting
+# into a broken/incomplete install. set -e stops on the first
+# unexpected failure, and this trap actually tells you so instead of
+# leaving you looking at a dead black screen with no explanation.
+trap 'zenity --error --width=560 --title="LayerOSX — Install" \
+    --text="Something went wrong during install and it stopped (see the log for details).\n\nLog: $LOG\n\nOpen a terminal (Ctrl+Alt+F2, login: root / layerosx) to look, then reboot and try again — nothing was rebooted, so you are not stuck with a broken install." \
+    2>/dev/null || true' ERR
 
 zenity --info --width=560 --title="LayerOSX — Install" \
     --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue." \
@@ -52,12 +62,29 @@ mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
 mount "$ESP_PART" /mnt/boot
 
+# From here on there is real work to wait through with nothing to
+# look at otherwise (a bare black openbox desktop, no feedback at
+# all) — a plain dark background plus a progress dialog instead. This
+# is a generic dark loading look, not a recreation of Apple's actual
+# boot screen/logo.
+xsetroot -solid "#000000" 2>/dev/null || true
+
 echo "Copying the live system to $ROOT_PART (this is the 'unpackfs' step Calamares used to do)..."
 rsync -aHAX --info=progress2 \
     --exclude=/dev --exclude=/proc --exclude=/sys --exclude=/tmp \
     --exclude=/run --exclude=/mnt --exclude=/media --exclude=/lost+found \
     --exclude="$LOG" \
-    / /mnt/
+    / /mnt/ &
+RSYNC_PID=$!
+(
+    while kill -0 "$RSYNC_PID" 2>/dev/null; do
+        echo "#Copying LayerOSX to disk…"
+        sleep 1
+    done
+) | zenity --progress --pulsate --no-cancel --auto-close \
+    --title="LayerOSX — Install" --text="Copying LayerOSX to disk…" --width=560 \
+    2>/dev/null || true
+wait "$RSYNC_PID"
 
 echo "Generating fstab..."
 genfstab -U /mnt >> /mnt/etc/fstab

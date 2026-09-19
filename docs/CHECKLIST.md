@@ -114,9 +114,18 @@ ISO build like the original plan assumed. Instead:
   at all) — flag it here if it still happens on bare metal.
 - Should show: an info dialog → GParted (interactive, same as today:
   reuse the ~200 MB EFI partition, never format it) → two partition
-  pickers (root, ESP) → a confirmation dialog → proceeds on its own
-  (rsync copy, fstab, machine-id, chroot + postinstall) → a "reboot
-  now" dialog.
+  pickers (root, ESP) → a confirmation dialog → a black screen with a
+  pulsating progress dialog while it copies the live system to disk
+  (this used to be a bare black screen with zero feedback — fixed,
+  see README.md) → proceeds on its own (fstab, machine-id, chroot +
+  postinstall) → a "reboot now" dialog.
+- If something fails partway through (mount, rsync, genfstab,
+  arch-chroot, ...), it now stops and shows a `zenity --error` dialog
+  telling you to check the log, instead of silently continuing to the
+  "Done, reboot" dialog and rebooting into a broken install (the
+  script had no `set -e`/error trap before — real risk, not just a
+  hypothetical, since nothing was actually checking these steps'
+  exit codes).
 - If it hangs on a black screen and then loops in `systemd`
   emergency mode (`Timed out waiting for device /dev/gpt-auto-root`,
   can't even log into the emergency shell because root is locked):
