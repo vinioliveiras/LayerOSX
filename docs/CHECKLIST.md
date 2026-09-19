@@ -73,6 +73,23 @@ ISO build like the original plan assumed. Instead:
 
 - Confirm it boots in UEFI and shows the install wizard fullscreen
   (openbox + `.xinitrc`, root autologin on tty1).
+- If it hangs mid-boot searching every partition for a
+  `/boot/<uuid>.uuid` marker file and drops to a `[rootfs ~]#`
+  emergency shell with `ERROR: Device '<uuid>' not found` — this only
+  reproduced via a **real Ventoy USB boot on physical hardware**, not
+  in any VM test (VirtualBox/QEMU attach the ISO directly as a
+  virtual CD, bypassing Ventoy's boot layer entirely). Fixed: switched
+  `efiboot/loader/entries/01-layerosx.conf` from
+  `archisosearchuuid=%ARCHISO_UUID%` to
+  `archisolabel=%ARCHISO_LABEL%` (search by the ISO's volume label
+  instead of its UUID — Ventoy doesn't always expose the UUID the same
+  way a plain dd/Rufus write does). Rebuild after pulling this fix
+  before testing on Ventoy again.
+- For a faster, more standards-compliant iteration loop than
+  VirtualBox (which has its own known EFI NVRAM quirks — see the GRUB
+  gotcha further down), QEMU with OVMF firmware is the closest thing
+  to real UEFI firmware behavior short of actual hardware — see
+  "Testing with QEMU+OVMF" in README.md.
 - The live root account now has a debug password (`layerosx`,
   live-ISO-only, see `customize_airootfs.sh`) — if the screen is stuck
   or flickering, switch to another console (Ctrl+Alt+F2) and log in as

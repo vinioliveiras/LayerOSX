@@ -493,3 +493,88 @@ test, all in `install-wizard.sh`:
   including the minute or two postinstall itself takes. The ERR trap
   now also closes the pipe's write end first, so a failure doesn't
   leave the progress dialog stuck open behind the error dialog.
+
+### Gotcha: live ISO hangs at boot with "ERROR: Device '<uuid>' not found", drops to an emergency shell (Ventoy-specific)
+
+Found on a real-hardware boot via a Ventoy USB drive (the ISO booted
+fine as a VirtualBox virtual CD, which is what had been used for
+every VM test up to this point — this bug only shows up with a real
+USB boot medium prepared by Ventoy). The `archiso`/`archiso_loop_mnt`
+hooks load correctly (confirming the earlier
+`mkinitcpio.conf.d/archiso.conf` fix is in place and working), but the
+init script then searches every partition it can find
+(`/dev/sdb1`, `/dev/sdb2`, `/dev/nvme...`, ...) for a marker file
+named after the ISO's own filesystem UUID
+(`/boot/<uuid>.uuid`), fails to find it anywhere, and drops to a
+`[rootfs ~]#` emergency shell instead of finding its own medium.
+
+Root cause: `efiboot/loader/entries/01-layerosx.conf` (the
+systemd-boot entry mkarchiso builds from, inherited unmodified from
+mkarchiso's own default new-profile template) used
+`archisosearchuuid=%ARCHISO_UUID%` — search-by-UUID. This is a known
+compatibility gap with Ventoy specifically: Ventoy doesn't always
+expose the ISO's on-disk filesystem UUID to the booting kernel the
+same way a plain `dd`/Rufus-written USB does, so the UUID the archiso
+hook is told to look for is never found, even though the medium
+itself is right there.
+
+Fixed: switched to `archisolabel=%ARCHISO_LABEL%` — search by the
+ISO's volume **label** (`LAYEROSX_YYYYMM`, set by `iso_label` in
+`profiledef.sh`) instead of by UUID. Label-based search is the
+standard, more portable alternative and is what's generally
+recommended for USB-creation-tool compatibility (Ventoy included).
+`%ARCHISO_LABEL%` is filled in by `mkarchiso` at build time exactly
+like `%ARCHISO_UUID%` was — no other change needed.
+
+If you land in that `[rootfs ~]#` emergency shell before rebuilding
+with this fix: it's a dead end (the medium genuinely can't be found by
+UUID), just power off and reboot. Note this only reproduced via a real
+Ventoy USB boot — it did not show up in any VirtualBox/QEMU VM test
+where the ISO is attached directly as a virtual CD-ROM, since that
+path doesn't go through Ventoy's own boot-chain layer at all.
+
+### Testing with QEMU+OVMF (recommended over VirtualBox)
+
+VirtualBox's EFI implementation has its own known quirks (see the
+GRUB `--removable`/NVRAM gotcha above) that don't reflect real
+firmware behavior well. QEMU with OVMF firmware is much closer to
+real UEFI and is the recommended way to iterate before testing on
+actual hardware. On Windows:
+
+1. Install QEMU from `https://qemu.weilnetz.de/w64/` (default install
+   path: `C:\Program Files\qemu`).
+2. The Windows build bundles EDK2/OVMF firmware under
+   `C:\Program Files\qemu\share\`. Use `edk2-x86_64-code.fd` as the
+   CODE file. There's no separate `edk2-x86_64-vars.fd` — the VARS
+   template is shared with i386, so use `edk2-i386-vars.fd` (this is
+   correct, not a typo — it's how QEMU itself pairs them by default).
+   Copy the VARS file somewhere writable first (QEMU writes to it):
+   ```powershell
+   mkdir C:\LayerOSX-VM
+   copy "C:\Program Files\qemu\share\edk2-i386-vars.fd" "C:\LayerOSX-VM\OVMF_VARS.fd"
+   & "C:\Program Files\qemu\qemu-img.exe" create -f qcow2 C:\LayerOSX-VM\layerosx-test.qcow2 60G
+   ```
+3. Boot the ISO:
+   ```powershell
+   & "C:\Program Files\qemu\qemu-system-x86_64.exe" `
+       -machine q35,accel=whpx `
+       -cpu max `
+       -m 4096 `
+       -smp 4 `
+       -drive if=pflash,format=raw,readonly=on,file="C:\Program Files\qemu\share\edk2-x86_64-code.fd" `
+       -drive if=pflash,format=raw,file="C:\LayerOSX-VM\OVMF_VARS.fd" `
+       -drive file="C:\LayerOSX-VM\layerosx-test.qcow2",if=virtio,format=qcow2 `
+       -cdrom "path\to\layerosx.iso" `
+       -boot d `
+       -vga virtio `
+       -display sdl
+   ```
+   `accel=whpx` needs "Windows Hypervisor Platform" enabled (Control
+   Panel → Programs → Turn Windows features on or off); without it,
+   fall back to `accel=tcg` (software emulation, much slower). To test
+   the installed disk afterward, drop `-cdrom`/`-boot d` and re-run —
+   or press Esc at the OVMF splash for its own boot menu, same
+   workflow as a real machine's boot-device picker. Swap
+   `edk2-x86_64-code.fd` for `edk2-x86_64-secure-code.fd` to test with
+   Secure Boot enabled (unsigned archiso images are expected to fail
+   to boot in that case — see the Secure Boot note in the checklist).
