@@ -1055,3 +1055,49 @@ everything `macos-source-wizard.sh` and its children print too, since
 it runs as `mac-vm-launch.sh`'s subprocess and inherits that
 already-redirected output — no separate log file needed for the
 wizard's own progress-bar steps).
+
+### Gotcha: the black/white theme never actually applied (invalid CSS)
+
+Confirmed on real hardware (GParted's own GTK warnings, visible after
+pressing F2 mid-install): every rule in `~/.config/gtk-3.0/gtk.css`
+used `!important`, and this GTK3 build's CSS parser doesn't
+understand it — `Junk at end of value for color`, `Junk at end of
+value for background-color`, etc. GTK's CSS parser drops a
+declaration whole when it can't parse the value, not just the
+`!important` part, so none of the custom colors were ever actually
+applied — the "theme" was silently a no-op the entire time.
+
+Fixed by just removing `!important` everywhere (and `border: none`
+→ `border-style: none`, since the shorthand's own parsing looked
+implicated in one of the errors too). It was never actually needed:
+`~/.config/gtk-3.0/gtk.css` is loaded by GTK at
+`GTK_STYLE_PROVIDER_PRIORITY_USER`, the highest priority in its whole
+cascade by definition — it already wins over the active theme
+(`GTK_THEME=Adwaita:dark`) without forcing anything, once the
+declarations can actually be parsed.
+
+### Feature: F2 terminal is now interactive, not just a log tail
+
+`kiosk/lib/peek-terminal.sh` used to just run `tail -f` on the
+relevant log — fine for watching, but you couldn't actually run a
+command in it (check `ps`, `lsblk`, a status file, anything) without
+switching away. It now shows the last 40 lines for context, then
+drops into a real interactive shell (`$LOG` is exported, and a `logs`
+command is predefined to go back to watching live — Ctrl-C stops
+watching without affecting anything it was tailing).
+
+### Feature: logs now save to every eligible disk, not just one
+
+`save-logs-to-usb.sh` used to pick a single "best" candidate
+(Ventoy-labeled, or the first other match) and stop — which meant one
+wrong guess (a drive that looks eligible but turns out unwritable for
+a reason invisible from the outside) meant zero logs anywhere, with
+no way to tell why from outside a live session. It now tries **every**
+exfat/ntfs/vfat partition that isn't part of the system's own disk
+(Ventoy-labeled ones first), independently, and keeps going even if
+one fails — a `$STATUS_LOG` line records the outcome for each one.
+Also always does its own dedicated read-write mount now instead of
+ever reusing an existing mountpoint — the live ISO's own boot medium
+is commonly already mounted read-only somewhere (e.g.
+`/run/archiso/bootmnt`), and silently reusing that would have looked
+exactly like "nothing saved, no error" all over again.

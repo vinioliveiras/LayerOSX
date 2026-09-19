@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # Best-effort: copies every known LayerOSX log (+ a journalctl
-# snapshot of the current boot) onto a removable USB drive -- prefers
-# whichever partition is labeled "Ventoy" (that's what's actually
-# plugged in during testing, since it's the install medium itself),
-# falling back to any other exfat/ntfs/vfat partition found that
-# isn't part of the disk we're actually running from.
+# snapshot of the current boot) onto EVERY eligible disk it can find
+# -- not just one. We were burned once already by picking a single
+# "best" candidate that silently turned out to be unwritable for a
+# reason we couldn't see from the outside (see README.md); trying
+# every candidate instead of guessing which one is "the" USB drive
+# costs a few extra seconds but means a bad guess on one drive no
+# longer means zero logs anywhere. Ventoy-labeled partitions are
+# still tried first (most likely to be the one someone's actually
+# going to check), but nothing eligible is skipped.
 #
 # Point of this: during this testing phase, failures happen on real
 # hardware with no easy way to get logs back to a screen someone can
@@ -16,17 +20,15 @@
 # any machine, Windows included -- no boot, no tty, no photo needed.
 #
 # Never fails loudly: a missing/unwritable USB just means no log copy
-# this run, not a broken boot/install. Safe to call from anywhere,
-# any number of times. Every exit point (found nothing, mount
-# failed, etc.) still leaves a one-line breadcrumb in $STATUS_LOG on
-# the LOCAL disk though -- we got burned once already by this script
-# silently doing nothing with zero way to tell why from the outside
-# (see README.md), so "silent to the user" no longer means "silent
-# to the next debugging session".
+# there this run, not a broken boot/install. Safe to call from
+# anywhere, any number of times. Every outcome (found nothing, a
+# specific device's mount/write failed, a successful save) leaves a
+# one-line breadcrumb in $STATUS_LOG on the LOCAL disk, so a future
+# silent failure can actually be diagnosed instead of guessed at
+# blind.
 set -uo pipefail
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-MNT="/tmp/layerosx-logs-usb"
 STATUS_LOG="/var/log/layerosx-save-logs-status.log"
 
 status() {
@@ -38,11 +40,10 @@ status() {
 # have an NTFS/exFAT Windows partition on a dual-boot machine) -- so
 # instead of trusting lsblk's RM ("removable") column, which several
 # USB enclosures/bridge chips misreport as 0 for genuinely-removable
-# drives (seen in the wild, and the likely reason this script
-# produced zero output during a real test even though a Ventoy drive
-# was plugged in -- see README.md), we explicitly resolve and exclude
-# the parent disk(s) behind / and /boot and treat everything else as
-# fair game.
+# drives (a known quirk, and the original reason this script produced
+# zero output on real hardware the first time), we explicitly resolve
+# and exclude the parent disk(s) behind / and /boot and treat
+# everything else as fair game.
 root_disks() {
     local src pk
     for mp in / /boot; do
@@ -51,80 +52,90 @@ root_disks() {
         pk="$(lsblk -no PKNAME "$src" 2>/dev/null)"
         [ -n "$pk" ] && printf '%s\n' "$pk"
         # PKNAME is empty for a device that's already a whole disk
-        # (no partition table involved) -- fall back to its own name.
+        # (no partition table involved), or for a non-block source
+        # like a live-ISO overlay/tmpfs -- basename of a bogus source
+        # just never matches a real partition's PKNAME, harmless.
         [ -n "$pk" ] || basename "$src"
     done
 }
 
-pick_partition() {
-    local excluded best="" fallback="" mp=""
+# Every exfat/ntfs/vfat partition that isn't part of the disk we're
+# actually running from, Ventoy-labeled ones first (most likely to be
+# the one someone's actually going to check).
+candidate_partitions() {
+    local excluded
     excluded="$(root_disks)"
-
     while IFS= read -r line; do
         eval "$line"
         [ "${TYPE:-}" = "part" ] || continue
         case "${FSTYPE:-}" in exfat|ntfs|ntfs3|vfat) ;; *) continue ;; esac
         printf '%s\n' "$excluded" | grep -qxF "${PKNAME:-}" && continue
         if printf '%s' "${LABEL:-}" | grep -qi ventoy; then
-            best="$NAME"
-            mp="${MOUNTPOINT:-}"
-        elif [ -z "$fallback" ]; then
-            fallback="$NAME"
-            [ -z "$best" ] && mp="${MOUNTPOINT:-}"
+            printf '0 %s\n' "$NAME"
+        else
+            printf '1 %s\n' "$NAME"
         fi
-    done < <(lsblk -Plno NAME,LABEL,FSTYPE,TYPE,PKNAME,MOUNTPOINT 2>/dev/null)
-
-    printf '%s\t%s' "${best:-$fallback}" "$mp"
+    done < <(lsblk -Plno NAME,LABEL,FSTYPE,TYPE,PKNAME 2>/dev/null) | sort -n | cut -d' ' -f2
 }
 
-RESULT="$(pick_partition)"
-DEV="${RESULT%%$'\t'*}"
-EXISTING_MP="${RESULT#*$'\t'}"
+# Always our own dedicated read-write mount (never reuse whatever a
+# device might already be mounted as elsewhere) -- the live ISO's own
+# boot medium is commonly already mounted READ-ONLY somewhere else
+# (e.g. /run/archiso/bootmnt), and silently reusing that would look
+# exactly like "nothing saved, no error" all over again.
+save_to_one() {
+    local dev="$1" mnt we_mounted=0 dest
 
-if [ -z "$DEV" ]; then
-    status "no candidate partition found (nothing removable/exfat/ntfs/vfat besides the system disk)"
-    exit 0
-fi
+    mnt="/tmp/layerosx-logs-usb-$dev"
+    mkdir -p "$mnt" 2>/dev/null || { status "mkdir $mnt failed for /dev/$dev"; return 1; }
 
-WE_MOUNTED=0
-if [ -n "$EXISTING_MP" ]; then
-    # Already mounted somewhere (e.g. by something else) -- just use
-    # that instead of mounting a second time.
-    MNT="$EXISTING_MP"
-else
-    mkdir -p "$MNT" 2>/dev/null || { status "mkdir $MNT failed for /dev/$DEV"; exit 0; }
-    if ! mountpoint -q "$MNT" 2>/dev/null; then
-        if ! mount "/dev/$DEV" "$MNT" 2>/dev/null; then
-            status "mount /dev/$DEV -> $MNT failed"
-            exit 0
+    if ! mountpoint -q "$mnt" 2>/dev/null; then
+        if ! mount -o rw "/dev/$dev" "$mnt" 2>/dev/null; then
+            status "mount /dev/$dev -> $mnt failed"
+            rmdir "$mnt" 2>/dev/null || true
+            return 1
         fi
-        WE_MOUNTED=1
+        we_mounted=1
     fi
-fi
 
-DEST="$MNT/layerosx-logs/${STAMP}-$(hostname 2>/dev/null || echo host)"
-if ! mkdir -p "$DEST" 2>/dev/null; then
-    status "mkdir $DEST failed on /dev/$DEV"
-    [ "$WE_MOUNTED" = "1" ] && umount "$MNT" 2>/dev/null
+    dest="$mnt/layerosx-logs/${STAMP}-$(hostname 2>/dev/null || echo host)"
+    if ! mkdir -p "$dest" 2>/dev/null; then
+        status "mkdir $dest failed on /dev/$dev (read-only?)"
+        [ "$we_mounted" = "1" ] && umount "$mnt" 2>/dev/null
+        rmdir "$mnt" 2>/dev/null || true
+        return 1
+    fi
+
+    cp -f /var/log/layerosx-install.log "$dest/" 2>/dev/null || true
+    cp -f /mnt/var/log/layerosx-postinstall.log "$dest/postinstall.log" 2>/dev/null || true
+    cp -f /var/log/layerosx-postinstall.log "$dest/" 2>/dev/null || true
+    cp -f /home/mac/mac-vm.log "$dest/" 2>/dev/null || true
+    journalctl -b -0 --no-pager > "$dest/journal-current-boot.log" 2>/dev/null || true
+    lsblk -f > "$dest/lsblk.txt" 2>/dev/null || true
+    cp -f "$STATUS_LOG" "$dest/save-logs-status.log" 2>/dev/null || true
+
+    sync 2>/dev/null || true
+    status "saved to /dev/$dev at $dest"
+
+    if [ "$we_mounted" = "1" ]; then
+        umount "$mnt" 2>/dev/null || true
+    fi
+    rmdir "$mnt" 2>/dev/null || true
+    return 0
+}
+
+DEVICES=()
+while IFS= read -r d; do
+    [ -n "$d" ] && DEVICES+=("$d")
+done < <(candidate_partitions)
+
+if [ "${#DEVICES[@]}" -eq 0 ]; then
+    status "no candidate partitions found (nothing removable/exfat/ntfs/vfat besides the system disk)"
     exit 0
 fi
 
-# Live-ISO-side paths (install-wizard.sh's own log, and whatever the
-# postinstall chroot already wrote onto the target being installed).
-cp -f /var/log/layerosx-install.log "$DEST/" 2>/dev/null || true
-cp -f /mnt/var/log/layerosx-postinstall.log "$DEST/postinstall.log" 2>/dev/null || true
-
-# Installed-system-side paths (same files, different vantage point,
-# once this is running as the layerosx-save-logs.service instead).
-cp -f /var/log/layerosx-postinstall.log "$DEST/" 2>/dev/null || true
-cp -f /home/mac/mac-vm.log "$DEST/" 2>/dev/null || true
-
-journalctl -b -0 --no-pager > "$DEST/journal-current-boot.log" 2>/dev/null || true
-lsblk -f > "$DEST/lsblk.txt" 2>/dev/null || true
-cp -f "$STATUS_LOG" "$DEST/save-logs-status.log" 2>/dev/null || true
-
-sync 2>/dev/null || true
-status "saved to /dev/$DEV at $DEST"
-if [ "$WE_MOUNTED" = "1" ]; then
-    umount "$MNT" 2>/dev/null || true
-fi
+OK=0
+for dev in "${DEVICES[@]}"; do
+    save_to_one "$dev" && OK=$((OK + 1))
+done
+status "done: $OK/${#DEVICES[@]} partition(s) got a copy (${DEVICES[*]})"

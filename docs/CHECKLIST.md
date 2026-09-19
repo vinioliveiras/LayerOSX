@@ -76,15 +76,17 @@ ISO build like the original plan assumed. Instead:
   confirm a terminal opens tailing `/var/log/layerosx-install.log`
   live (see README.md). Closing it again shouldn't affect the
   install in progress.
-- **Logs now auto-save to the Ventoy USB itself** (`layerosx-logs/`
-  folder at its root — see README.md) on any install failure, on a
-  successful install, on every boot of the installed system, and
-  after every QEMU session. When something goes wrong during testing,
-  check that folder from Windows (or anywhere) before reaching for a
-  tty or a photo — much faster. If that folder is ever empty after a
-  failure (happened once — see README.md's gotcha on this), check
-  `/var/log/layerosx-save-logs-status.log` on the machine itself
-  (tty2, `cat` it directly) for why the script gave up that run.
+- **Logs now auto-save to every eligible disk found, not just the
+  Ventoy drive** (`layerosx-logs/` folder at each one's root — see
+  README.md) on any install failure, on a successful install, on
+  every boot of the installed system, and after every QEMU session.
+  When something goes wrong during testing, check that folder from
+  Windows (or anywhere) before reaching for a tty or a photo — much
+  faster. If it's ever empty everywhere (happened once — see
+  README.md's gotcha on this), press F2 (or tty2, login
+  `root`/`layerosx`) and `cat /var/log/layerosx-save-logs-status.log`
+  — it now records one line per disk it tried, so it should say
+  exactly why each one didn't work rather than nothing at all.
 - Confirm it boots in UEFI and shows the install wizard fullscreen
   (openbox + `.xinitrc`, root autologin on tty1).
 - If it hangs mid-boot searching every partition for a

@@ -1,12 +1,28 @@
 #!/usr/bin/env bash
-# What F2 opens: a plain read-only terminal tailing whatever's
-# actually happening right now. Purely a peek window -- closing it
-# (Ctrl+D, or the window's own close button) doesn't stop or affect
-# whatever it was tailing, and opening it doesn't pause anything
-# either.
+# What F2 opens: a REAL terminal, not just a read-only log tail --
+# shows the last bit of whatever's happening right now, then drops
+# into an interactive shell so commands can actually be run (ps,
+# lsblk, journalctl, cat a status file, whatever's needed) while the
+# install/wizard keeps running in the background untouched. Type
+# `logs` any time to go back to watching the log live (Ctrl-C stops
+# watching and hands the prompt back -- doesn't affect what it's
+# tailing, or anything else).
 set -uo pipefail
 LOG="${1:-/var/log/layerosx-install.log}"
 
+RCFILE=$(mktemp)
+cat > "$RCFILE" <<RCEOF
+export LOG="$LOG"
+logs() { tail -n 200 -f "\$LOG" 2>/dev/null || echo "Nothing to show yet."; }
+echo "LayerOSX -- live terminal. Last lines of \$LOG:"
+echo
+tail -n 40 "\$LOG" 2>/dev/null || echo "(nothing logged yet)"
+echo
+echo "Type 'logs' to follow it live (Ctrl-C stops watching, back to this prompt), or run any command."
+RCEOF
+
 xterm -fa Monospace -fs 12 -bg black -fg white \
-    -T "LayerOSX — what's happening right now (safe to close any time)" \
-    -e bash -c "tail -n 200 -f \"$LOG\" 2>/dev/null || echo 'Nothing to show yet.'; echo; read -r -p 'Press Enter to close...' _"
+    -T "LayerOSX — terminal (safe to close any time)" \
+    -e bash --rcfile "$RCFILE" -i
+
+rm -f "$RCFILE"

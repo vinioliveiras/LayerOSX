@@ -20,11 +20,17 @@ echo "===== LayerOSX install: $(date -Is) ====="
 # Force every zenity/GTK dialog in this script to a black/white look,
 # from the very first one. GTK_THEME=Adwaita:dark picks the theme's
 # own dark variant as a baseline (Adwaita ships built into GTK3, no
-# extra package needed) — this alone is what actually gets respected
-# reliably; a bare gtk.css override can silently lose to the active
-# theme's own more specific selectors. gtk.css on top then forces the
-# exact colors (pure black / pure white, not Adwaita-dark's default
-# greys) with !important so it wins regardless of specificity.
+# extra package needed). gtk.css on top then forces the exact colors
+# (pure black / pure white, not Adwaita-dark's default greys) --
+# confirmed on real hardware that this GTK3 build's CSS parser does
+# NOT understand `!important` at all ("Junk at end of value", every
+# single declaration silently dropped whole, not just the
+# `!important` part -- the theme never actually applied). Turns out
+# it was never needed anyway: ~/.config/gtk-3.0/gtk.css is loaded by
+# GTK at GTK_STYLE_PROVIDER_PRIORITY_USER, the highest priority in
+# its whole cascade by definition, so it already wins over the active
+# theme's own styles without any `!important` at all -- once the
+# declarations can actually be parsed.
 export GTK_THEME=Adwaita:dark
 mkdir -p ~/.config/gtk-3.0
 cat > ~/.config/gtk-3.0/settings.ini <<'INI'
@@ -33,20 +39,20 @@ gtk-application-prefer-dark-theme=1
 INI
 cat > ~/.config/gtk-3.0/gtk.css <<'CSS'
 window, window.background {
-    background-color: #000000 !important;
+    background-color: #000000;
 }
 label {
-    color: #ffffff !important;
+    color: #ffffff;
 }
 progressbar trough {
-    background-color: #1c1c1c !important;
-    border: none !important;
-    min-height: 6px !important;
-    border-radius: 0 !important;
+    background-color: #1c1c1c;
+    border-style: none;
+    min-height: 6px;
+    border-radius: 0;
 }
 progressbar progress {
-    background-color: #ffffff !important;
-    border-radius: 0 !important;
+    background-color: #ffffff;
+    border-radius: 0;
 }
 CSS
 
