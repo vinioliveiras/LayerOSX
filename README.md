@@ -952,3 +952,57 @@ QEMU's own stdout/stderr via `mac-vm-launch.sh`'s
 `exec > >(tee -a "$LOG") 2>&1`), not on display/rendering flags like
 `gl=on` or the `reims-vgpu-pci romfile=` property — those only matter
 once QEMU is confirmed to actually be running.
+
+### Root cause found: QEMU was crashing on startup every single time (missing libjpeg.so.62)
+
+The black screen and the "reboots itself after a while" behavior
+turned out to be the same bug, and `~/mac-vm.log` (captured live on
+real hardware, once the auto-log-save fix above made it reachable)
+finally showed the real error:
+
+```
+/opt/layerosx/bin/qemu-system-x86_64: error while loading shared libraries: libjpeg.so.62: cannot open shared object file: No such file or directory
+```
+
+QEMU never actually started, not even once — `mac-vm-launch.sh`'s
+5-retry-then-reboot loop was cycling on a guaranteed failure every
+time, which is exactly what looked like "black screen, then reboots
+after a while" from the outside. Confirmed why: `qemus/qemu-macos`'s
+Dockerfile builds with `--enable-vnc-jpeg` (needs libjpeg at link
+time for VNC's Tight encoding, regardless of whether `-vnc` is even
+used at runtime — the dynamic loader resolves every linked library at
+startup no matter what code path actually runs), inside a
+Debian-based build image that ships `libjpeg62-turbo`
+(`libjpeg.so.62`). Arch's own `libjpeg-turbo` package only ships
+`libjpeg.so.8` — a different, incompatible SONAME generation, not a
+missing package Arch just needs installed.
+
+Fixed at the source instead of guessing with a symlink: the
+Dockerfile's own `verify` stage (`FROM qemux/qemu:latest`) already
+`ldd`s the built binary and fails the build if anything's unresolved
+*there* — so it's a known-good, already-validated place to pull the
+exact right library from. `prepare-qemu-macos.sh` now also builds
+that `verify` stage (free — BuildKit reuses the cached layers from
+building `artifact`), `ldd`s the binary inside it, and copies every
+resolved library that isn't glibc/libstdc++-core (those have to match
+the *target* machine's kernel/loader, not the build container's, so
+they're deliberately left alone) into
+`airootfs/opt/layerosx/lib/`. `mac-vm-launch.sh` now sets
+`LD_LIBRARY_PATH` to include that directory before launching QEMU.
+Also applied the same `LD_LIBRARY_PATH` trick to
+`prepare-qemu-macos.sh`'s own `-device reims-vgpu-pci,help` sanity
+query, so it can actually succeed on a build host that's missing the
+same libraries (most non-Debian build machines) instead of always
+silently falling through to the "couldn't query on this host"
+warning.
+
+This requires re-running `prepare-qemu-macos.sh` (needs Docker) and a
+full ISO rebuild to take effect — it doesn't fix an already-installed
+system. For unblocking a live test session on hardware installed from
+an older ISO: `sudo pacman -Sy libjpeg-turbo && sudo ln -sf
+/usr/lib/libjpeg.so.8 /usr/lib/libjpeg.so.62 && sudo ldconfig` is an
+untested but plausible stopgap (libjpeg-turbo keeps its basic
+compression API stable across SONAME generations, and QEMU's VNC-jpeg
+usage is a narrow, simple subset of it) — worth trying, but the
+bundled-library fix above is the real one and is what any new ISO
+build will carry.

@@ -25,6 +25,21 @@ QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 LOG="$HOME/mac-vm.log"
 
 exec > >(tee -a "$LOG") 2>&1
+
+# The build container qemus/qemu-macos compiles this binary in
+# (Debian-based, with --enable-vnc-jpeg among other features) links
+# it against a couple of libraries whose SONAME doesn't match what
+# Arch ships -- libjpeg is the confirmed one on real hardware
+# ("error while loading shared libraries: libjpeg.so.62: cannot open
+# shared object file"), which made QEMU fail to even start at all
+# (immediately, every single launch) rather than a display/rendering
+# problem -- see README.md. prepare-qemu-macos.sh now bundles an
+# exact copy of every such library (extracted from the same verified
+# build image the binary was tested in) alongside the binary; point
+# the loader at it here so it's actually used.
+if [ -d /opt/layerosx/lib ] && [ -n "$(ls -A /opt/layerosx/lib 2>/dev/null)" ]; then
+    export LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
 

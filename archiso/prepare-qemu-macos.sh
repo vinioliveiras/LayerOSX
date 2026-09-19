@@ -41,7 +41,12 @@ fi
 
 WORK=$(mktemp -d)
 CID=""
-cleanup() { [ -n "$CID" ] && "$ENGINE" rm -f "$CID" >/dev/null 2>&1; rm -rf "$WORK"; }
+VCID=""
+cleanup() {
+    [ -n "$CID" ] && "$ENGINE" rm -f "$CID" >/dev/null 2>&1
+    [ -n "$VCID" ] && "$ENGINE" rm -f "$VCID" >/dev/null 2>&1
+    rm -rf "$WORK"
+}
 trap cleanup EXIT
 
 echo "==> cloning qemus/qemu-macos"
@@ -76,8 +81,51 @@ mkdir -p airootfs/opt/layerosx/bin airootfs/usr/share/qemu
 "$ENGINE" cp "$CID:/usr/share/qemu/reims-vgpu-gop.rom" airootfs/usr/share/qemu/reims-vgpu-gop.rom
 chmod +x airootfs/opt/layerosx/bin/qemu-system-x86_64
 
+echo "==> building the 'verify' stage too, to inspect + bundle its runtime libraries"
+# The Dockerfile's own "verify" stage (FROM qemux/qemu:latest) already
+# ldd's the built binary and fails the build outright if anything is
+# unresolved *inside that image* -- so it's a known-good source for
+# any library whose SONAME doesn't match what Arch ships (confirmed
+# on real hardware: libjpeg is one -- Arch's libjpeg-turbo only ships
+# libjpeg.so.8, this binary was built against Debian's libjpeg62-turbo
+# and needs libjpeg.so.62 specifically, see README.md). BuildKit will
+# reuse the layers already built above for --target artifact, so this
+# is effectively free.
+"$ENGINE" build --target verify -t layerosx/qemu-macos-verify:local "$WORK/qemu-macos"
+
+mkdir -p "$WORK/libs" airootfs/opt/layerosx/lib
+"$ENGINE" run --rm -v "$WORK/libs:/host-out" layerosx/qemu-macos-verify:local sh -c '
+    set -eu
+    ldd /out/qemu-system-x86_64 | while read -r line; do
+        lib=$(printf "%s\n" "$line" | sed -n "s/.* => \(\/[^ ]*\).*/\1/p")
+        [ -n "$lib" ] || continue
+        [ -f "$lib" ] || continue
+        base=$(basename "$lib")
+        case "$base" in
+            # These have to match the KERNEL/dynamic loader of whatever
+            # machine actually runs this, not the build container -- every
+            # real-hardware failure seen so far has been further down the
+            # dependency list than these, so trust the target Arch system
+            # to already provide them correctly instead of shipping a
+            # foreign copy that could silently be wrong in a much worse way.
+            libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|ld-linux*|libgcc_s.so.*|libstdc++.so.*|libresolv.so.*|libutil.so.*)
+                continue
+                ;;
+        esac
+        cp -v "$lib" "/host-out/$base"
+    done
+'
+cp -a "$WORK"/libs/. airootfs/opt/layerosx/lib/
+LIBCOUNT=$(find airootfs/opt/layerosx/lib -type f | wc -l)
+echo "==> bundled $LIBCOUNT runtime librar$([ "$LIBCOUNT" = 1 ] && echo y || echo ies) into airootfs/opt/layerosx/lib: $(ls airootfs/opt/layerosx/lib 2>/dev/null | tr '\n' ' ')"
+
 echo "==> querying reims-vgpu-pci's real options (update kiosk/mac-vm-launch.sh's -device line if these differ from what's already there)"
-airootfs/opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help || \
+# Same LD_LIBRARY_PATH trick mac-vm-launch.sh uses on the installed
+# system -- lets this actually succeed on a build host that also
+# doesn't have libjpeg.so.62 etc. (WSL/most desktop distros), instead
+# of always silently hitting the fallback warning below.
+LD_LIBRARY_PATH="$(pwd)/airootfs/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+    airootfs/opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help || \
     echo "WARNING: couldn't query it on this host — that's OK, it doesn't need KVM for a -device,help query, but worth checking why." >&2
 
 echo "==> done: $(du -h airootfs/opt/layerosx/bin/qemu-system-x86_64 | cut -f1) binary staged into the archiso profile"

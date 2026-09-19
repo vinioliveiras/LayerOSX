@@ -404,6 +404,22 @@ actually run the detection logic against real hardware yet.
   happen to catch it mid-retry. Check `~/mac-vm.log` (the `mac`
   user's home) first in that case — it captures QEMU's own
   stdout/stderr, so the actual crash reason should be right there.
+- **This was exactly what was happening on real hardware**: every
+  launch failed immediately with `error while loading shared
+  libraries: libjpeg.so.62: cannot open shared object file` —
+  `qemus/qemu-macos` is built with `--enable-vnc-jpeg` against a
+  Debian-based image's `libjpeg62-turbo`, and Arch's own
+  `libjpeg-turbo` package only ships the incompatible `libjpeg.so.8`
+  SONAME — not a missing package, a SONAME mismatch (see
+  README.md). Fixed at the source: `prepare-qemu-macos.sh` now
+  bundles the real matching libraries (extracted from the
+  Dockerfile's own already-validated `verify` stage) into
+  `airootfs/opt/layerosx/lib/`, and `mac-vm-launch.sh` points
+  `LD_LIBRARY_PATH` at it. Needs a rebuild (re-run
+  `prepare-qemu-macos.sh`, needs Docker) to take effect — on an
+  already-installed system, `sudo pacman -Sy libjpeg-turbo && sudo ln
+  -sf /usr/lib/libjpeg.so.8 /usr/lib/libjpeg.so.62 && sudo ldconfig`
+  is an untested but plausible same-day stopgap.
 - Confirm `-display sdl,gl=on,full-screen=on` actually gives you a
   screen.
 - The device name is confirmed (`reims-vgpu-pci`, see step 2) — what's
