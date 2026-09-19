@@ -12,6 +12,35 @@
 # it's actually there.
 
 set -uo pipefail
+
+# mkarchiso extracts /boot/vmlinuz-linux out to the ISO's own separate
+# boot/ directory later in the build and does NOT carry a copy inside
+# the squashfs itself -- confirmed repeatedly on real hardware: the
+# installed system's /boot only ever has EFI/ and grub/, because
+# install-wizard.sh's rsync just copies the running live system's own
+# "/", which never had it either (see the long comment in
+# postinstall/01-base-system.sh).
+#
+# install-wizard.sh used to hunt for the kernel on the live boot
+# medium at runtime instead (matching mkarchiso's own
+# <install_dir>/boot/<arch>/vmlinuz-linux layout) -- but that turned
+# out to be unreliable on real hardware via Ventoy (never confirmed
+# exactly why -- possibly the medium gets unmounted after the
+# squashfs is copied to RAM, possibly Ventoy's own mount layout just
+# doesn't match plain archiso's, hard to say without being able to
+# inspect it live). Simpler and bulletproof: stash a copy right here,
+# while it's still guaranteed to exist in this airootfs (this script
+# runs BEFORE mkarchiso's boot-extraction/squashfs-packing stages),
+# at a path mkarchiso has no reason to touch -- so it rides along
+# inside the squashfs like any other file, and install-wizard.sh can
+# just cp it, no runtime searching needed at all.
+if [ -f /boot/vmlinuz-linux ]; then
+    mkdir -p /opt/layerosx
+    cp -v /boot/vmlinuz-linux /opt/layerosx/vmlinuz-linux.stashed
+else
+    echo "WARNING: /boot/vmlinuz-linux not found during the build -- the 'linux' package may not be in packages.x86_64. The installed system will have no kernel." >&2
+fi
+
 echo "==> customize_airootfs: building dmg2img"
 
 BUILD_DIR="/tmp/build-layerosx"

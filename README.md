@@ -859,3 +859,33 @@ a macOS VM is actually running full-screen (a real possibility with
 it's untested either way), the better fix would be hiding the cursor
 right before `mac-vm-launch.sh` actually execs QEMU and restoring it
 after, not blanking it for the whole session again.
+
+### Gotcha: runtime kernel search failed on real hardware ("Could not find the kernel on the boot medium")
+
+The previous fix (searching the live boot medium at runtime for
+`<install_dir>/boot/<arch>/vmlinuz-linux`, prioritizing
+`/run/archiso/bootmnt`) failed on an actual real-hardware install via
+Ventoy — the search came up completely empty, on every mounted
+filesystem. Never pinned down the exact reason (possibly the medium
+gets unmounted once the squashfs is copied to RAM, possibly Ventoy's
+runtime mount layout just doesn't match plain archiso's — the live
+session was already closed by the time this was reported, so the
+diagnostic dump this fix now adds wasn't available yet to confirm
+either way).
+
+Rather than guess at Ventoy/archiso runtime internals a third time,
+sidestepped the problem: `customize_airootfs.sh` (build time, runs
+*before* `mkarchiso` extracts `/boot/vmlinuz-linux` out to the ISO's
+own separate boot directory and packs the squashfs) now stashes a
+copy at `/opt/layerosx/vmlinuz-linux.stashed` — a path mkarchiso has
+no reason to touch, so it rides along inside the squashfs like any
+other file under `/opt/layerosx`, and rsyncs onto the installed target
+like everything else in "/". `install-wizard.sh` now copies from
+there first — no runtime medium-searching needed at all. The old
+runtime search is kept as a fallback (for an ISO built before this
+fix), and if kernel-finding ever fails completely again, the install
+now dumps real diagnostics (`findmnt`, `/opt/layerosx` listing,
+`/run/archiso` tree) into the install log *and* pushes it to the USB
+via `save-logs-to-usb.sh` before showing the error — that call site is
+outside the `ERR` trap (an explicit `exit` doesn't trigger it), so
+without this it wouldn't have been auto-saved.

@@ -176,49 +176,65 @@ progress 72 "Preparing the new system…"
 # directly by the bootloader before the squashfs is even mounted (see
 # the long comment in postinstall/01-base-system.sh for the full
 # story, including why a pacman-based fix doesn't work offline).
-# rsync can't restore what was never part of "/" in the first place,
-# so grab it straight from wherever the boot medium is actually
-# mounted right now -- found by matching the same
-# "<install_dir>/boot/<arch>/vmlinuz-linux" layout mkarchiso uses on
-# the ISO itself (see efiboot/loader/entries/01-layerosx.conf), across
-# every mounted filesystem except the target disk we just mounted.
-echo "Copying the real kernel from the boot medium into /mnt/boot..."
+# rsync can't restore what was never part of "/" in the first place.
+#
+# customize_airootfs.sh (build time) stashes a copy at
+# /opt/layerosx/vmlinuz-linux.stashed specifically so this step never
+# has to depend on the live boot medium still being mounted/reachable
+# here -- an earlier version of this fix searched for it at runtime
+# instead (matching mkarchiso's own
+# "<install_dir>/boot/<arch>/vmlinuz-linux" layout on the medium
+# itself) and that turned out to be unreliable on real hardware via
+# Ventoy (confirmed failing on an actual install; never pinned down
+# exactly why -- possibly the medium gets unmounted once the squashfs
+# is copied to RAM, possibly Ventoy's mount layout just doesn't match
+# plain archiso's). Kept below as a fallback in case an older ISO was
+# built before the stash existed.
+echo "Copying the real kernel into /mnt/boot..."
 INSTALL_DIR="layerosx"   # must match profiledef.sh's install_dir
 ARCH="x86_64"            # must match profiledef.sh's arch
 KERNEL_SRC=""
 
-# /run/archiso/bootmnt is where archiso's own init (the
-# archiso_loop_mnt mkinitcpio hook) mounts the medium it actually
-# booted from -- checking this FIRST (not just as one of many
-# findmnt hits) matters if more than one LayerOSX ISO ever ends up
-# reachable at once (e.g. several dated builds sitting on the same
-# Ventoy drive) — a generic scan could otherwise match a *different,
-# stale* ISO's vmlinuz-linux, one whose kernel version doesn't match
-# the /usr/lib/modules/<ver>/ this live system's rsync actually
-# carries, breaking module loading on the installed system in a way
-# that wouldn't show up until the very first real reboot.
-if [ -f "/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux" ]; then
-    KERNEL_SRC="/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+if [ -f /opt/layerosx/vmlinuz-linux.stashed ]; then
+    KERNEL_SRC="/opt/layerosx/vmlinuz-linux.stashed"
 else
-    # Fallback for a different archiso version/layout -- less
-    # precise (first match wins), so this is the fallback, not the
-    # primary path, precisely for the reason above.
-    while IFS= read -r mp; do
-        case "$mp" in /mnt|/mnt/*) continue ;; esac
-        candidate="$mp/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
-        if [ -f "$candidate" ]; then
-            KERNEL_SRC="$candidate"
-            break
-        fi
-    done < <(findmnt -rno TARGET)
+    echo "WARNING: no build-time kernel stash found (older ISO build?) -- falling back to searching the live boot medium at runtime." >&2
+    if [ -f "/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux" ]; then
+        KERNEL_SRC="/run/archiso/bootmnt/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+    else
+        while IFS= read -r mp; do
+            case "$mp" in /mnt|/mnt/*) continue ;; esac
+            candidate="$mp/$INSTALL_DIR/boot/$ARCH/vmlinuz-linux"
+            if [ -f "$candidate" ]; then
+                KERNEL_SRC="$candidate"
+                break
+            fi
+        done < <(findmnt -rno TARGET)
+    fi
+    if [ -z "$KERNEL_SRC" ]; then
+        KERNEL_SRC=$(find /run -maxdepth 6 -type f -name 'vmlinuz-linux' 2>/dev/null | head -n1)
+    fi
 fi
+
 if [ -z "$KERNEL_SRC" ]; then
-    # last resort: a broader search in case the layout ever changes
-    KERNEL_SRC=$(find /run -maxdepth 6 -type f -name 'vmlinuz-linux' 2>/dev/null | head -n1)
-fi
-if [ -z "$KERNEL_SRC" ]; then
+    # Shouldn't happen with the build-time stash in place, but if it
+    # ever does again: dump real diagnostics into $LOG (this script's
+    # own stdout/stderr already tee to it) instead of guessing blind
+    # again, and push a copy to the USB right here -- this specific
+    # failure exits before reaching the ERR trap below (an explicit
+    # `exit` doesn't trigger it), so without this call nothing would
+    # get saved at all.
+    echo "=== kernel search failed -- diagnostics ===" >&2
+    echo "--- findmnt ---" >&2
+    findmnt >&2 2>&1
+    echo "--- /opt/layerosx (should contain vmlinuz-linux.stashed) ---" >&2
+    ls -la /opt/layerosx >&2 2>&1
+    echo "--- /run/archiso ---" >&2
+    find /run/archiso -maxdepth 4 >&2 2>&1
+    echo "=== end diagnostics ===" >&2
+    bash /opt/layerosx/kiosk/lib/save-logs-to-usb.sh 2>/dev/null || true
     zenity --error --width=560 --title="LayerOSX — Install" \
-        --text="Could not find the kernel on the boot medium (looked for $INSTALL_DIR/boot/$ARCH/vmlinuz-linux on every mounted filesystem). Make sure you're still booted from the LayerOSX USB/ISO, then reboot and try again." \
+        --text="Could not find the kernel anywhere (looked for the build-time stash and the boot medium). A diagnostic dump was saved to the USB drive's layerosx-logs/ folder if one was reachable.\n\nMake sure you're still booted from the LayerOSX USB/ISO, then reboot and try again." \
         2>/dev/null || true
     exit 1
 fi

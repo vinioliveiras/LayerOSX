@@ -251,10 +251,22 @@ ISO build like the original plan assumed. Instead:
     is also missing pacman's **sync** databases — so `pacman -S`
     couldn't even resolve the package names (`target not found:
     linux`), online or not.
-  - **Actual fix**: skip pacman entirely. `install-wizard.sh` now
-    copies the real `vmlinuz-linux` straight out of the boot medium
-    itself (still mounted somewhere under `/run` while the live ISO
-    is running) into `/mnt/boot`, before `arch-chroot` ever runs.
+  - **Actual fix (v1, also failed on real hardware)**: skip pacman
+    entirely -- `install-wizard.sh` copies the real `vmlinuz-linux`
+    straight out of the boot medium itself (searched for at runtime
+    under `/run`) into `/mnt/boot`, before `arch-chroot` ever runs.
+    This searching turned out to be unreliable via Ventoy on real
+    hardware (came up completely empty; never pinned down exactly
+    why).
+  - **Actual fix (v2, current)**: `customize_airootfs.sh` (build
+    time) now stashes a copy of the kernel at
+    `/opt/layerosx/vmlinuz-linux.stashed` *before* `mkarchiso` strips
+    `/boot/vmlinuz-linux` out of the airootfs -- so it just rides
+    along inside the squashfs and rsyncs onto the target like any
+    other file, no runtime medium-searching needed at all. If this
+    still somehow fails, the install now dumps `findmnt`/`/run/archiso`
+    diagnostics into the log and pushes it to the USB automatically
+    before showing the error (see the log-saving feature below).
     `01-base-system.sh` then also deletes
     `/etc/mkinitcpio.conf.d/archiso.conf` from the target (it got
     rsynced too, and would otherwise bake the *live medium's* HOOKS —

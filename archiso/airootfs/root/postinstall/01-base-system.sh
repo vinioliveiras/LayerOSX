@@ -46,9 +46,13 @@ systemctl enable layerosx-save-logs.service
 # live system has no need for a redundant local copy to boot itself.
 # rsync can't restore what was never on the live filesystem in the
 # first place -- so install-wizard.sh now copies the real
-# vmlinuz-linux straight out of the boot medium into /mnt/boot BEFORE
-# this script ever runs (see its "Copying the real kernel" step). By
-# the time we get here it should already exist.
+# vmlinuz-linux into /mnt/boot BEFORE this script ever runs (see its
+# "Copying the real kernel" step), sourced from a build-time stash at
+# /opt/layerosx/vmlinuz-linux.stashed (customize_airootfs.sh, since
+# that DOES rsync onto the target as part of "/" like everything else
+# under /opt/layerosx) rather than the live boot medium -- runtime
+# medium-searching turned out to be unreliable via Ventoy on real
+# hardware. By the time we get here it should already exist.
 #
 # (An earlier version of this fix instead ran `pacman -S --noconfirm
 # linux linux-firmware intel-ucode amd-ucode`, on the theory that the
