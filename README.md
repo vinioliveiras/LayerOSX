@@ -606,15 +606,26 @@ virtual CD-ROM, which sidesteps this whole problem (the VM's own
 "drive" already presents the ISO as a device, independent of whatever
 boot-catalog structure is or isn't embedded in the file).
 
-Fixed: `bootmodes` now also includes `bios.syslinux.mbr` and
-`bios.syslinux.eltorito`, alongside the existing `uefi.systemd-boot`
-(left untouched — still the only mode actually used to boot). This is
-not about adding real legacy-BIOS support; it's what gets `mkarchiso`
-to embed the isohybrid MBR structure that USB-writing tools (Ventoy
-included) rely on to treat the ISO as a proper disk image. It's also
-just what every official Arch ISO does, for the same reason. These
-modes need a `syslinux/` directory with the standard archiso
-templates, which this UEFI-only profile never had — copied verbatim
-from the local `archiso` package's own `releng` reference profile
+Fixed: `bootmodes` now also includes `bios.syslinux`, alongside the
+existing `uefi.systemd-boot` (left untouched — still the only mode
+actually used to boot). This is not about adding real legacy-BIOS
+support; it's what gets `mkarchiso` to embed the isohybrid MBR
+structure that USB-writing tools (Ventoy included) rely on to treat
+the ISO as a proper disk image. It's also just what every official
+Arch ISO does, for the same reason. This mode needs a `syslinux/`
+directory with the standard archiso templates, which this UEFI-only
+profile never had — copied verbatim from the local `archiso`
+package's own `releng` reference profile
 (`/usr/share/archiso/configs/releng/syslinux/`), the same source
 already used for the `mkinitcpio.conf.d/archiso.conf` fix earlier.
+
+(Note: `bios.syslinux.mbr`/`bios.syslinux.eltorito` — the mode names
+used in an earlier version of this fix — are deprecated in newer
+`archiso` releases in favor of the single combined `bios.syslinux`
+token; `mkarchiso` only warns about the old names, it still builds,
+but use the current one. Also needs the `syslinux` package itself in
+`packages.x86_64` — without it `mkarchiso` refuses to build at all
+with "The 'syslinux' package is missing from the package list!", since
+it extracts the actual syslinux binaries from that package. Added
+`memtest86+`/`memtest86+-efi` too, just to quiet mkarchiso's unrelated
+informational notices about memory testing being unavailable.)

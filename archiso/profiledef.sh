@@ -22,7 +22,7 @@ buildmodes=('iso')
 # chainload the kernel+initrd directly out of it, which is why the
 # running system could never find its own medium afterward. This is
 # also just what every official Arch ISO does, for the same reason.
-bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito' 'uefi.systemd-boot')
+bootmodes=('bios.syslinux' 'uefi.systemd-boot')
 arch="x86_64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"

@@ -16,6 +16,19 @@ mkinitcpio
 # so you can't even log in to debug it). Confirmed against the
 # official releng reference profile's packages.x86_64.
 mkinitcpio-archiso
+# Required by the bios.syslinux bootmode in profiledef.sh (mkarchiso
+# extracts the actual syslinux binaries from this package to embed in
+# the ISO's isohybrid MBR/El Torito boot catalog -- see README.md for
+# why that mode is enabled at all on a UEFI-only project). Without it,
+# mkarchiso refuses to build: "ERROR: Validating 'bios.syslinux': The
+# 'syslinux' package is missing from the package list!"
+syslinux
+# Not required, just quiets mkarchiso's informational notices about
+# memory testing being unavailable from the syslinux/systemd-boot
+# menus -- harmless either way, but keeps real errors from getting
+# lost in the noise on the next build.
+memtest86+
+memtest86+-efi
 sudo
 git
 nano
