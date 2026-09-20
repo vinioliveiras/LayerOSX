@@ -359,9 +359,10 @@ while true; do
         # Device" network-boot entry for OVMF to wander into.
         -netdev user,id=net0
         -device virtio-net-pci,netdev=net0,id=net0,romfile=
-        # OpenCore and XNU write their boot logs to the serial console. Until
-        # now nothing captured it, which made every stall a blind blue
-        # screen; this is what turns it into text.
+        # OSX-KVM's OpenCore config (ours) patches XNU to send its early boot
+        # prints and its panic string to the serial port. Until now nothing
+        # captured it, which made every stall a blind blue screen; this is
+        # what turns a kernel panic into readable text.
         -serial "file:$SERIAL_LOG"
         -display sdl,full-screen=on
     )

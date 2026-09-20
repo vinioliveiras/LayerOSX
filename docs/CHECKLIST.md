@@ -718,13 +718,17 @@ real-hardware boot stall"). Check, in this order:
   option ROM`, `memory-backend-memfd`, `-vga none` refused, unknown
   device) means the ISO was built from the wrong QEMU or without the
   GOP ROM staged.
-- **The guest's own boot log is now captured**: F2 → `serial` tails
-  `~/mac-vm-serial.log`. Expected sequence: OpenCore's own log lines
-  (`OC: ...`), then XNU (`Darwin Kernel Version ...`, verbose boot).
-  Nothing at all after `OC:` lines → OpenCore never handed off (check
-  the picker on screen); XNU lines ending in `panic(` → read the panic
-  text, that's the actual bug now; `Still waiting for root device` →
-  the recovery disk isn't visible to the kernel (SATA layout drifted?).
+- **The guest kernel's own output is now captured**: F2 → `serial`
+  tails `~/mac-vm-serial.log`. OSX-KVM's OpenCore (ours) carries kernel
+  patches "Send early prints to serial port" / "Send panic string to
+  serial port" / "Enable early serial output on RELEASE kernel" — so
+  this file holds XNU's early boot prints and, above all, the full
+  text of any kernel panic. OpenCore itself does *not* log here
+  (`Misc/Debug/Target` is 0 in that config), so: empty file → XNU never
+  started at all, the problem is at the OVMF/OpenCore stage (look at the
+  screen: is the picker there?); XNU lines then `panic(` → read the
+  panic text, that's the actual bug now; `Still waiting for root device`
+  → the recovery disk isn't visible to the kernel (SATA layout drifted?).
 - A guest reset < 180 s after launch is logged as `treating it as a
   boot failure` and relaunched (not a physical reboot). Five in a row →
   `FATAL: QEMU exited 5 times in a row` and a 60 s pause, never a

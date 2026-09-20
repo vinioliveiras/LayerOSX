@@ -1805,9 +1805,9 @@ at 8 and rounded down to a power of two (Reims caps its guest at 8 with
 `reims-vgpu-pci`; macOS misbehaves on odd topologies), `romfile=` on
 the NIC (no PXE option ROM, so no "UEFI Misc Device" network-boot entry
 for OVMF to wander into), and `-serial file:~/mac-vm-serial.log` --
-OpenCore and XNU write their boot logs to the serial console, so what
-used to be a blind blue screen is now text (`serial` in the F2
-terminal).
+OSX-KVM's OpenCore config carries kernel patches that send XNU's early
+boot prints and its panic string to the serial port, so what used to be
+a blind blue screen is now text (`serial` in the F2 terminal).
 
 Two behaviours of the retry loop changed with it, because the old ones
 actively hid this bug: a guest "reset" within 180 s of launch is now
