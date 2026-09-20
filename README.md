@@ -1947,7 +1947,15 @@ straight to the screen instead of hiding behind the logo — the fastest way
 to see exactly where a boot hangs or panics on real hardware. It patches the
 `config.plist` inside the pinned OpenCore image *after* the sha256 check (the
 integrity check still guards the download; only our known `-v` edit is added
-on top), editing the FAT EFI partition in place with `mtools`. The build host needs
+on top), This is its own script, `patch-opencore-verbose.sh`, that `build.sh` runs on
+**every** build — not just inside `prepare-opencore.sh`'s download path.
+That matters: `build.sh` only re-downloads OpenCore when the image is missing,
+so a machine that already built once reuses its existing (non-verbose) image;
+baking `-v` only into the download path silently shipped a non-verbose ISO on
+every rebuild. The standalone patcher is idempotent (skips if `-v` is already
+there) and always runs, so a reused image gets patched too.
+
+It edits the FAT EFI partition in place with `mtools`. The build host needs
 `qemu-img` and `mtools`; `build.sh` auto-installs them via pacman if missing
 (best-effort — on a non-pacman host, or with no network, install by hand). If
 either is still missing the patch step is skipped with a warning rather than

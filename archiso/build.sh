@@ -56,6 +56,12 @@ if [ ! -s airootfs/opt/layerosx/opencore/OpenCore.qcow2 ]; then
     ./prepare-opencore.sh
 fi
 
+# Always (re)apply verbose boot (-v) to the OpenCore image, even when the
+# check above reused an existing OpenCore.qcow2 from an earlier build -- that
+# reuse is exactly why baking -v only inside prepare-opencore.sh's download
+# path silently shipped a non-verbose ISO. Idempotent: skips if already -v.
+./patch-opencore-verbose.sh
+
 # mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
 # when profiledef.sh/pacman.conf/packages.x86_64 changed — it can
 # silently skip re-copying them and build with stale config (seen

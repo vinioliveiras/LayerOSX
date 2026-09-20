@@ -96,59 +96,12 @@ sys.exit(0 if magic == b'QFI\xfb' else 1)
     exit 1
 fi
 
-# --- Enable verbose boot (-v) by default -----------------------------------
-# XNU shows only the Apple logo by default; -v makes it print its boot log to
-# the screen, which is the one way to see WHERE a boot stalls or panics on
-# real hardware (learned the hard way -- see README.md). This patches the
-# pinned image AFTER its checksum was verified above, so the integrity check
-# still guards the download and we only add our own known, minimal edit on
-# top. boot-args is in this config's NVRAM/Delete list as well as Add, so
-# OpenCore rewrites it every boot and -v wins even over a cached NVRAM.
-#
-# Edits the FAT EFI System Partition in place with mtools (no mount, no root)
-# after a qemu-img qcow2->raw round-trip. If qemu-img or mtools is missing on
-# the build host this is SKIPPED with a warning rather than failing the build
-# -- verbose is a diagnostic aid, not required to boot. Install them
-# (e.g. `sudo pacman -S qemu-img mtools`) and re-run to bake -v in.
-if command -v qemu-img >/dev/null 2>&1 && command -v mcopy >/dev/null 2>&1; then
-    echo "==> enabling verbose boot (-v) in OpenCore config.plist"
-    export MTOOLS_SKIP_CHECK=1
-    _raw="$(mktemp)"
-    qemu-img convert -O raw "$TMP" "$_raw"
-    # The pinned image is GPT with its EFI System Partition (FAT) at 1 MiB.
-    _esp="${_raw}@@1048576"
-    _plist="$(mktemp)"
-    if mdir -i "$_esp" ::/EFI/OC/ >/dev/null 2>&1 && \
-       mcopy -n -i "$_esp" ::/EFI/OC/config.plist "$_plist" 2>/dev/null; then
-        if grep -q 'keepsyms=1 -v' "$_plist"; then
-            echo "    (already verbose)"
-        elif python3 - "$_plist" <<'PYV'
-import re, sys
-p = sys.argv[1]; s = open(p, encoding="utf-8").read()
-def add_v(m):
-    cur = m.group(2)
-    return m.group(1) + (cur + (" " if cur else "") + "-v") + m.group(3)
-s2 = re.sub(r'(<key>boot-args</key>\s*<string>)([^<]*)(</string>)', add_v, s, count=1)
-sys.exit(0 if (s2 != s and "-v" in s2 and (open(p, "w", encoding="utf-8").write(s2) or True)) else 1)
-PYV
-        then
-            mcopy -o -n -i "$_esp" "$_plist" ::/EFI/OC/config.plist
-            qemu-img convert -O qcow2 "$_raw" "$TMP"
-            echo "    verbose boot (-v) enabled"
-        else
-            echo "    WARNING: couldn't patch boot-args in config.plist -- shipping without -v." >&2
-        fi
-    else
-        echo "    WARNING: couldn't read the OpenCore ESP -- shipping without -v." >&2
-    fi
-    rm -f "$_raw" "$_plist"
-else
-    echo "==> NOTE: qemu-img and/or mtools missing on the build host -- NOT enabling verbose boot." >&2
-    echo "    Install them (e.g. 'sudo pacman -S qemu-img mtools') and re-run to bake -v in." >&2
-fi
-
 mv "$TMP" "$DEST"
 trap - EXIT
 chmod 644 "$DEST"
+
+# Bake verbose boot (-v) into the freshly-staged image (idempotent; build.sh
+# also runs this every build to catch a reused image). See that script.
+"./patch-opencore-verbose.sh" "$DEST"
 
 echo "==> done: OpenCore boot image staged at $DEST ($(du -h "$DEST" | cut -f1))"
