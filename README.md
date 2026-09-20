@@ -1937,3 +1937,22 @@ reliably reachable. The machine is recoverable: switch to a text console,
 apply the fix, `sudo reboot`. The transient-crash retry loop (a QEMU that
 exits *without* a fatal-class cause, fewer than 5 times) is unchanged; only
 the give-up path stopped nuking the session.
+
+## Verbose macOS boot enabled by default
+
+macOS boots to the Apple logo + progress bar by default, which tells you
+nothing when it stalls. `prepare-opencore.sh` now bakes `-v` (verbose) into
+the OpenCore config's `boot-args` at build time, so XNU prints its boot log
+straight to the screen instead of hiding behind the logo — the fastest way
+to see exactly where a boot hangs or panics on real hardware. It patches the
+`config.plist` inside the pinned OpenCore image *after* the sha256 check (the
+integrity check still guards the download; only our known `-v` edit is added
+on top), editing the FAT EFI partition in place with `mtools` — so the build
+host needs `qemu-img` and `mtools` (`sudo pacman -S qemu-img mtools`). If
+either is missing the step is skipped with a warning rather than failing the
+build. `boot-args` is in this config's `NVRAM/Delete` list as well as `Add`,
+so OpenCore rewrites it every boot and `-v` applies even over a cached NVRAM.
+
+To go back to the quiet Apple-logo boot later, drop the `-v` from
+`boot-args` (a per-install `verbose on/off` toggle command, like `gpu`, is
+easy to add if that's wanted — it's not wired up yet).

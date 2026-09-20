@@ -6,6 +6,11 @@ to need adjustment.
 
 ## 1. Prepare the build machine
 
+- Build-host tools for the OpenCore verbose-boot patch (see README.md):
+  `qemu-img` and `mtools`. Without them the build still succeeds but ships
+  the non-verbose Apple-logo boot (a warning is printed). Install with
+  `sudo pacman -S qemu-img mtools`.
+
 See the README's **Build** section for the full setup (native
 Arch/CachyOS, or Windows via WSL2 — both documented there with exact
 commands, so this file doesn't drift out of sync with it).
