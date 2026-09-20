@@ -569,6 +569,27 @@ actually run the detection logic against real hardware yet.
   (Ctrl+Alt+F2, login `mac`/`mac`) to see what mode it actually
   landed on.
 
+## 4.5. Validate the QEMU command line before building (no hardware needed)
+
+- `archiso/validate-qemu-args.sh` runs the launcher's exact QEMU command
+  line through a real `qemu-system-x86_64` on any Linux box (no KVM, no
+  macOS, no test machine) and fails if QEMU rejects any argument. This
+  catches the single most time-consuming class of bug this project hit --
+  a rejected `-device`/`-drive`/`-global` (bootindex misrouting,
+  "Unsupported PCI slot 0", a wrong device name like `vmware-svga` vs
+  `vmvga`) -- because those are startup argument errors QEMU raises before
+  it needs KVM or a guest. Run it after any edit to `mac-vm-launch.sh`:
+
+      archiso/validate-qemu-args.sh        # uses stock qemu + auto-swaps
+      QEMU_BIN=/opt/layerosx/bin/qemu-system-x86_64 archiso/validate-qemu-args.sh
+
+  With a stock QEMU it swaps the two build-specific display devices
+  (`vmvga` -> `vmware-svga`, `reims-vgpu-pci` -> `VGA`) so the shared
+  machine/drive/bus topology is still fully checked; point `QEMU_BIN` at
+  the real bundled binary to validate the exact device names too. A
+  built-in drift guard fails if the launcher's key device lines change
+  without the validator being updated to match.
+
 ## 5. The VM itself
 
 - Before chasing display/rendering flags, confirm QEMU is actually
