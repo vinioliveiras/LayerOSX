@@ -1164,3 +1164,36 @@ any partial recovery/installer disk + `$OVMF_VARS` it may have
 created, so the very next boot shows the setup options again instead
 of a stuck black screen. A clean, successful run exits 0 and the trap
 does nothing.
+
+### Bug: `build.sh` kept shipping the old broken qemu-macos binary
+
+Confirmed on real hardware: after the `libjpeg.so.62` bundling fix
+landed (see above), a fresh ISO was built and run, and the VM still
+crashed with the exact same `error while loading shared libraries:
+libjpeg.so.62: cannot open shared object file` — the fix hadn't
+actually taken effect. Root cause: `build.sh` only re-runs
+`prepare-qemu-macos.sh` (the Docker build that produces the binary
+*and* bundles its matching runtime libraries) when
+`airootfs/opt/layerosx/bin/qemu-system-x86_64` doesn't exist yet. A
+binary built *before* the libjpeg fix already existed on disk from an
+earlier session, so that check passed, `prepare-qemu-macos.sh` never
+ran again, and every subsequent `build.sh` just repackaged the same
+stale binary with no bundled libraries — indefinitely, with no error
+or warning.
+
+Fixed: `build.sh` now also checks that
+`airootfs/opt/layerosx/lib/` exists and isn't empty, and re-runs
+`prepare-qemu-macos.sh` if either check fails. If you already hit
+this, delete `airootfs/opt/layerosx/bin/qemu-system-x86_64` once (or
+just run `./prepare-qemu-macos.sh` directly) before your next build to
+force a clean rebuild.
+
+### `out/` no longer accumulates old ISOs
+
+`profiledef.sh` names each ISO after today's date
+(`layerosx-YYYY.MM.DD-x86_64.iso`), so nothing was ever overwritten —
+building on three different days left three different ISOs sitting in
+`out/` side by side, and it's easy to grab a stale one by mistake
+without noticing. `build.sh` now clears `$OUTDIR` at the start of
+every build, the same way it already clears `$WORKDIR`, so `out/`
+always has exactly one ISO: the one from the build that just ran.

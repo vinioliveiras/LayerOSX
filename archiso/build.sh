@@ -13,8 +13,17 @@ command -v mkarchiso >/dev/null 2>&1 || {
     exit 1
 }
 
-if [ ! -x airootfs/opt/layerosx/bin/qemu-system-x86_64 ]; then
-    echo "No pre-built qemu-system-x86_64 yet — building it now (Docker, real QEMU source build, 30-60+ min)."
+# Checking just the binary isn't enough: confirmed on real hardware
+# that an ISO built from an already-existing qemu-system-x86_64 (from
+# before the libjpeg.so.62 bundling fix, see README.md) kept shipping
+# the old broken binary forever, since this check never noticed
+# anything was missing and never re-ran prepare-qemu-macos.sh. The
+# bundled runtime libraries are just as required as the binary itself
+# now, so check for both.
+if [ ! -x airootfs/opt/layerosx/bin/qemu-system-x86_64 ] || \
+   [ ! -d airootfs/opt/layerosx/lib ] || \
+   [ -z "$(ls -A airootfs/opt/layerosx/lib 2>/dev/null)" ]; then
+    echo "No pre-built qemu-system-x86_64 (or its bundled runtime libraries) yet — building it now (Docker, real QEMU source build, 30-60+ min)."
     ./prepare-qemu-macos.sh
 fi
 
@@ -27,6 +36,15 @@ fi
 # re-downloading everything — just a fresh airootfs assembly. Safer to
 # always start clean.
 sudo rm -rf "$WORKDIR"
+
+# Old ISOs otherwise just pile up in here forever: profiledef.sh names
+# each one after today's date (iso_version), so nothing ever gets
+# overwritten and it's easy to run a stale ISO by mistake without
+# noticing (confirmed in practice: three different days' ISOs sitting
+# side by side, only the newest actually had the latest fixes). Clean
+# it the same way $WORKDIR already is, so $OUTDIR only ever has the
+# ISO from the build that just ran.
+sudo rm -rf "$OUTDIR"
 
 # Belt-and-suspenders on top of profiledef.sh's file_permissions
 # (which is what actually matters for the final ISO): if this repo is

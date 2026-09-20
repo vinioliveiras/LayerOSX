@@ -34,8 +34,17 @@ ISO build like the original plan assumed. Instead:
   `mkarchiso` — needs Docker (or Podman) installed there. It clones
   qemus/qemu-macos, runs `docker build --target artifact`, and copies
   the two output files into `airootfs/opt/layerosx/bin/` and
-  `airootfs/usr/share/qemu/`. `build.sh` calls it automatically if the
-  binary isn't already staged.
+  `airootfs/usr/share/qemu/`, then bundles its matching runtime
+  libraries (see the `libjpeg.so.62` note in section 5) into
+  `airootfs/opt/layerosx/lib/`. `build.sh` calls it automatically if
+  the binary or the bundled libraries aren't already staged —
+  confirmed on real hardware that checking just the binary wasn't
+  enough: a binary built *before* the libjpeg bundling fix existed
+  already made `build.sh` skip re-running this step forever, silently
+  shipping the old broken binary on every build after that (see
+  README.md). If you're not sure whether your local `airootfs/opt/`
+  is stale, just delete `airootfs/opt/layerosx/bin/qemu-system-x86_64`
+  and let `build.sh` rebuild it from scratch.
 - Expect this single step to take 30-60+ minutes (it's compiling real
   QEMU from source) the first time you run it.
 - Needs `docker-buildx` installed alongside `docker` (`pacman -S
@@ -68,6 +77,12 @@ ISO build like the original plan assumed. Instead:
   once you have a built binary and fix the flag if it disagrees.
   `prepare-qemu-macos.sh` already runs this query and prints the
   result at the end of the build.
+- `build.sh` now clears `out/` (the ISO output dir) at the start of
+  every build, same as it already does for `work/` — confirmed in
+  practice that without this, ISOs from different days just pile up
+  there (named after today's date, so nothing overwrites) and it's
+  easy to accidentally test a stale one. After a build, `out/` should
+  contain exactly one ISO.
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
