@@ -22,6 +22,55 @@ if [ ! -f fetch-macOS-v2.py ]; then
     curl -fsSLo fetch-macOS-v2.py \
         https://raw.githubusercontent.com/kholia/OSX-KVM/master/fetch-macOS-v2.py
 fi
+
+# Upstream bug, confirmed on real hardware: verify_image()'s per-chunk
+# terminal-width probe (a bare os.get_terminal_size(), no fallback)
+# isn't guarded the same way the download progress bar's own
+# identical call a few lines above it is. The download itself always
+# completed fine here (its call falls back to a width of 80 on
+# OSError), but "Verifying image with chunklist..." crashed
+# immediately afterward with "OSError: [Errno 25] Inappropriate ioctl
+# for device" -- this whole install pipeline redirects stdout through
+# a log file the entire way (never a real tty), which is exactly the
+# condition that call was never guarded against. Patch in the same
+# try/except the download path already uses, idempotent (a second run
+# reusing the cached file is a no-op; silently does nothing if
+# upstream ever restructures this function so the anchor no longer
+# matches, rather than breaking the whole script over a cosmetic
+# progress counter).
+python3 - <<'PYEOF'
+import pathlib
+
+path = pathlib.Path("fetch-macOS-v2.py")
+text = path.read_text()
+
+old = (
+    "def verify_image(dmgpath, cnkpath):\n"
+    "    print('Verifying image with chunklist...')\n"
+    "\n"
+    "    with open(dmgpath, 'rb') as dmgf:\n"
+    "        for cnkcount, (cnksize, cnkhash) in enumerate(verify_chunklist(cnkpath), 1):\n"
+    "            terminalsize = max(os.get_terminal_size().columns - TERMINAL_MARGIN, 0)\n"
+)
+new = (
+    "def verify_image(dmgpath, cnkpath):\n"
+    "    print('Verifying image with chunklist...')\n"
+    "\n"
+    "    with open(dmgpath, 'rb') as dmgf:\n"
+    "        for cnkcount, (cnksize, cnkhash) in enumerate(verify_chunklist(cnkpath), 1):\n"
+    "            try:\n"
+    "                terminalsize = max(os.get_terminal_size().columns - TERMINAL_MARGIN, 0)\n"
+    "            except OSError:\n"
+    "                terminalsize = 80\n"
+)
+
+if old in text:
+    path.write_text(text.replace(old, new, 1))
+    print("patched verify_image()'s terminal-size probe")
+else:
+    print("WARNING: fetch-macOS-v2.py's verify_image() didn't match the expected shape -- skipped patching it, upstream may have changed.", flush=True)
+PYEOF
+
 python3 fetch-macOS-v2.py --action download -o recovery
 
 DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)

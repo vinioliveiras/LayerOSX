@@ -9,6 +9,25 @@ OVMF_VARS="$2"
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 VM_SIZE_GB="${MAC_VM_SIZE_GB:-128}"
 
+# A failed attempt here used to leave the user permanently stuck on a
+# black screen: qemu-img create below makes $VM_DISK before the step
+# that can actually fail (download/conversion), and mac-vm-launch.sh
+# only shows this wizard again when $VM_DISK doesn't exist yet -- so
+# an empty/partial $VM_DISK left behind by a failed attempt silently
+# hid the "pick where macOS comes from" screen forever, even across a
+# full reboot, with no obvious way back in. This cleans up any
+# partial output whenever the wizard exits non-zero (any zenity
+# --error + exit 1 path below, or an unhandled crash) so the next
+# boot shows the options again instead of a black screen.
+cleanup_failed_attempt() {
+    local ec=$?
+    if [ "$ec" -ne 0 ]; then
+        echo "Wizard failed (exit $ec) -- removing any partial VM disk so the options are shown again on the next boot instead of a stuck black screen." >&2
+        rm -f "$VM_DISK" "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2" "$OVMF_VARS" 2>/dev/null || true
+    fi
+}
+trap cleanup_failed_attempt EXIT
+
 # has_internet / ensure_internet (zenity network picker, nmtui kept
 # as an "Advanced" fallback) live in here now -- shared with anything
 # else that ever needs a connectivity check/Wi-Fi picker.
@@ -93,6 +112,28 @@ run_convert_with_progress() {
     return "$rc"
 }
 
+# Confirmed on real hardware: this used to point at
+# /usr/share/edk2-ovmf/x64/OVMF_VARS.fd, which doesn't exist --
+# Arch's edk2-ovmf package actually installs to /usr/share/edk2/x64/
+# (not .../edk2-ovmf/x64/), and the files themselves are named
+# OVMF_CODE.4m.fd / OVMF_VARS.4m.fd (the "4m" 4MiB-flash variant), not
+# the plain names assumed here. This `cp` failing was silent (no
+# `set -e` in this script) -- it printed an error and just kept going
+# straight into an 800MB+ download that was doomed from the start,
+# since mac-vm-launch.sh's own OVMF_CODE.fd reference was equally
+# wrong (fixed there too, see README.md). Centralized into one
+# function that actually fails loudly instead, so a future path
+# change like this doesn't waste a download again before anyone
+# notices.
+copy_ovmf_vars() {
+    if ! cp /usr/share/edk2/x64/OVMF_VARS.4m.fd "$OVMF_VARS"; then
+        zenity --error --width=520 --title="LayerOSX — first run" \
+            --text="Couldn't find the OVMF firmware (edk2-ovmf package) at the expected path -- this is a LayerOSX bug, not something wrong with your setup. Please report it." \
+            2>/dev/null || true
+        exit 1
+    fi
+}
+
 # No udisks2/gvfs automount daemon on this minimal kiosk, so a USB
 # drive plugged in with the file on it is otherwise completely
 # invisible to zenity's file-selection dialog -- mount whatever's
@@ -112,7 +153,7 @@ case "$CHOICE" in
     *recommended*)
         ensure_internet || exit 1
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
-        cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd "$OVMF_VARS"
+        copy_ovmf_vars
         if ! run_with_progress "LayerOSX — first run" "Downloading macOS recovery image… (press F2 for details)" \
             bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
@@ -127,7 +168,7 @@ case "$CHOICE" in
             --file-filter="All files | *")
         [ -n "$SRC" ] || exit 1
 
-        cp /usr/share/edk2-ovmf/x64/OVMF_VARS.fd "$OVMF_VARS"
+        copy_ovmf_vars
 
         case "$SRC" in
             *.qcow2|*.img|*.raw|*.IMG|*.RAW)

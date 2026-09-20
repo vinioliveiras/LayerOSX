@@ -1101,3 +1101,66 @@ ever reusing an existing mountpoint — the live ISO's own boot medium
 is commonly already mounted read-only somewhere (e.g.
 `/run/archiso/bootmnt`), and silently reusing that would have looked
 exactly like "nothing saved, no error" all over again.
+
+### Bug: OVMF firmware path was wrong the whole time
+
+Confirmed on real hardware (F2 terminal showed `cp: cannot stat
+'/usr/share/edk2-ovmf/x64/OVMF_VARS.fd': No such file or directory`
+right before a doomed 800MB+ macOS download): both `mac-vm-launch.sh`
+and `macos-source-wizard.sh` assumed Arch's `edk2-ovmf` package
+installs to `/usr/share/edk2-ovmf/x64/OVMF_CODE.fd` /
+`OVMF_VARS.fd`. It actually installs to `/usr/share/edk2/x64/`
+(no `-ovmf` in the path) and the files themselves are the 4MiB-flash
+variant, named `OVMF_CODE.4m.fd` / `OVMF_VARS.4m.fd` — confirmed
+against Arch's own package file listing. This had been broken from
+the start; it was masked by `macos-source-wizard.sh` not using
+`set -e` (the failing `cp` printed an error and kept going anyway)
+and, on top of that, by the `libjpeg.so.62` crash (see above)
+happening earlier in QEMU's own startup, so nobody had gotten far
+enough to notice the OVMF copy itself failing.
+
+Fixed both references to the correct path, and centralized the
+`macos-source-wizard.sh` copy into a `copy_ovmf_vars()` function that
+now actually fails loudly (a `zenity --error` + `exit 1`) instead of
+silently continuing into a download that was never going to boot.
+
+### Bug: macOS download crashed right after finishing ("Inappropriate ioctl for device")
+
+Confirmed on real hardware (F2 terminal): the recovery image
+downloaded successfully (843MB), then immediately failed with
+`Image verification failed. ([Errno 25] Inappropriate ioctl for
+device)`. Root cause is upstream, in `fetch-macOS-v2.py` (from the
+OSX-KVM project, fetched at build/run time): its `verify_image()`
+function calls `os.get_terminal_size()` directly, with no fallback,
+to size a per-chunk progress line. The identical call a few lines
+earlier, in the download loop, IS wrapped in `try/except OSError` —
+this one just wasn't. This whole install pipeline pipes its output
+through a log file the entire way (`tee`, process substitution),
+never a real terminal, so that raw call hits `OSError: [Errno 25]`
+(ENOTTY) every single time, right as verification starts.
+
+Fixed in `kiosk/lib/fetch-recovery.sh`: after downloading
+`fetch-macOS-v2.py`, an idempotent Python patch wraps that one call
+in the same `try/except OSError: terminalsize = 80` pattern the
+download path already uses. Safe if upstream ever changes that
+function's shape — the patch just no-ops with a warning instead of
+breaking the script.
+
+### Bug: a failed first-run attempt permanently hid the setup screen
+
+Reported on real hardware: after any failure during first-run setup
+(download failed, disk conversion failed, etc.), even a full restart
+left the machine stuck on a black screen — no way back to the "where
+should macOS come from" screen. Root cause: `macos-source-wizard.sh`
+creates `$VM_DISK` (via `qemu-img create`) *before* the step that can
+actually fail (the download or conversion), and `mac-vm-launch.sh`
+only shows this wizard when `$VM_DISK` doesn't exist yet. A failed
+attempt left behind an empty/partial `$VM_DISK`, which satisfied that
+check forever after — the wizard would never run again on its own.
+
+Fixed with a `trap ... EXIT` in `macos-source-wizard.sh`: whenever the
+wizard exits non-zero for any reason, it now removes `$VM_DISK` and
+any partial recovery/installer disk + `$OVMF_VARS` it may have
+created, so the very next boot shows the setup options again instead
+of a stuck black screen. A clean, successful run exits 0 and the trap
+does nothing.

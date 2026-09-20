@@ -105,7 +105,7 @@ while true; do
         -machine q35
         -no-reboot
         -qmp "unix:${QMP_SOCK},server,nowait"
-        -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2-ovmf/x64/OVMF_CODE.fd
+        -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
         -drive if=pflash,format=raw,file="$OVMF_VARS"
         -drive if=virtio,file="$VM_DISK",format=qcow2
         -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom

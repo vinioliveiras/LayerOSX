@@ -401,6 +401,35 @@ actually run the detection logic against real hardware yet.
   something sensible if pressed before any of these steps have
   started yet (should just say "Nothing to show yet." rather than
   erroring).
+- Confirmed on real hardware: the Apple download used to succeed
+  (800MB+) and then immediately fail with `Image verification
+  failed. ([Errno 25] Inappropriate ioctl for device)` — an unguarded
+  `os.get_terminal_size()` call inside upstream `fetch-macOS-v2.py`'s
+  `verify_image()`, tripped by this pipeline's output never being a
+  real terminal. Fixed with an idempotent patch applied in
+  `kiosk/lib/fetch-recovery.sh` after the script is downloaded (see
+  README.md) — confirm the download now proceeds past "Verifying
+  image with chunklist..." instead of crashing right after the
+  download bar finishes.
+- Confirmed on real hardware: `cp: cannot stat
+  '/usr/share/edk2-ovmf/x64/OVMF_VARS.fd'` right at the start of
+  first-run setup — Arch's `edk2-ovmf` package actually installs to
+  `/usr/share/edk2/x64/OVMF_CODE.4m.fd` / `OVMF_VARS.4m.fd`, not the
+  path both `mac-vm-launch.sh` and `macos-source-wizard.sh` assumed
+  (see README.md). Fixed in both places — confirm first-run setup no
+  longer prints this error (check via F2) and that the VM actually
+  gets a NVRAM file at `/var/lib/layerosx/OVMF_VARS.fd`.
+- Confirmed on real hardware: a failed first-run attempt (download
+  error, conversion error, etc.) used to leave the machine stuck on a
+  black screen permanently, even after a full restart, because a
+  half-created `$VM_DISK` from the failed attempt satisfied
+  `mac-vm-launch.sh`'s "has a VM already been set up?" check. Fixed
+  with an EXIT trap in `macos-source-wizard.sh` that removes any
+  partial `$VM_DISK`/recovery/installer disk/`$OVMF_VARS` whenever the
+  wizard exits non-zero (see README.md) — to test, deliberately fail
+  a first-run attempt (e.g. disconnect Wi-Fi mid-download) and confirm
+  the *next* boot shows the "where should macOS come from" screen
+  again instead of a black screen.
 - On a multi-monitor machine, check every connected display for a
   corrupted/noisy image (a second monitor showing this was the
   original report) — `kiosk/lib/force-max-refresh.sh` should have
