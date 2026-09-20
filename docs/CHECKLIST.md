@@ -689,6 +689,81 @@ report back from this exact point:
   fastest way to rule out a typo/missing flag versus a deeper
   OpenCore/config problem.
 
+### 5.2. The launch profile (CPU / memfd / display / SATA / USB)
+
+`mac-vm-launch.sh` now mirrors Reims' own `vm/boot-x86.sh` and
+OSX-KVM's `OpenCore-Boot.sh` (see README.md, "Root cause of the
+real-hardware boot stall"). Check, in this order:
+
+- `~/mac-vm.log` (F2 → `logs`) shows a `Launch profile:` line before
+  each launch: `cpu=Skylake-Client-v4` (Intel host, or AMD + Sonoma or
+  newer) or `cpu=Haswell-noTSX` (AMD + Ventura or older), `smp=` a
+  power of two ≤ 8, `gfx=reims-vgpu-pci`, `macos=<shortname>`. If
+  `macos=unknown` on a VM made by the "download from Apple" path, the
+  wizard didn't write `/var/lib/layerosx/macos-version` — check for a
+  wizard error earlier in the log. (A VM made before this change has no
+  marker; `erasevm` + redo the wizard, or write the shortname into that
+  file by hand.)
+- `ps aux | grep qemu-system` from tty2 must show `-cpu <model>,...`
+  (never `host`), `-object memory-backend-memfd,...,share=on`,
+  `-machine q35,memory-backend=reims-ram`, `-vga none`, `ich9-ahci` +
+  three `ide-hd` on `sata.2/.3/.4`, `qemu-xhci`. If any of those is
+  missing, the launcher on the machine is stale (rebuild/reinstall, or
+  edit `/opt/layerosx/kiosk/mac-vm-launch.sh` in place + `sudo pkill
+  Xorg`).
+- Every QEMU warning at launch lands in `~/mac-vm.log` right after the
+  `Launch profile:` line. `warning: host doesn't support requested
+  feature: ...` lines are expected on older hosts (`check` is on so they
+  warn instead of failing) — a hard error there (`could not load PCI
+  option ROM`, `memory-backend-memfd`, `-vga none` refused, unknown
+  device) means the ISO was built from the wrong QEMU or without the
+  GOP ROM staged.
+- **The guest's own boot log is now captured**: F2 → `serial` tails
+  `~/mac-vm-serial.log`. Expected sequence: OpenCore's own log lines
+  (`OC: ...`), then XNU (`Darwin Kernel Version ...`, verbose boot).
+  Nothing at all after `OC:` lines → OpenCore never handed off (check
+  the picker on screen); XNU lines ending in `panic(` → read the panic
+  text, that's the actual bug now; `Still waiting for root device` →
+  the recovery disk isn't visible to the kernel (SATA layout drifted?).
+- A guest reset < 180 s after launch is logged as `treating it as a
+  boot failure` and relaunched (not a physical reboot). Five in a row →
+  `FATAL: QEMU exited 5 times in a row` and a 60 s pause, never a
+  physical reboot. If you see the physical machine rebooting on its
+  own, something regressed here.
+- **A/B the display without a rebuild**: `echo vmware >
+  /var/lib/layerosx/gfx && sudo pkill Xorg` from tty2. If macOS boots
+  to the installer on VMware SVGA but not on Reims, the problem is the
+  Reims path (GOP ROM, Vulkan on the host, driver maturity) — check
+  `vulkaninfo --summary` on the host and `~/mac-vm.log` for Reims/Vulkan
+  errors. If it fails the same way on both, it isn't Reims. `rm
+  /var/lib/layerosx/gfx` to go back.
+
+### 5.3. Reaching the installer (what "working" looks like from here)
+
+- OpenCore's boot picker appears (text/icon menu, ~5 s timeout). With
+  only a blank `MacHDD` plus the recovery disk attached, the entry to
+  boot is the recovery ("macOS Base System" / "Install macOS ...").
+- macOS Recovery comes up (Apple logo → progress bar → the Utilities
+  window). This is the milestone: from here nothing needs a host-side
+  DMG conversion at all. This is also exactly how upstream OSX-KVM and
+  dockur/macos install: recovery first, then the guest fetches the
+  full installer itself.
+- In Recovery: Disk Utility → select the 128 GB QEMU disk (`MacHDD`) →
+  Erase as APFS (GUID). Then "Reinstall macOS" — the guest downloads
+  the full installer from Apple over its own network (virtio-net, user
+  mode) and installs onto the disk it just formatted. Expect several
+  reboots; each one goes back through OpenCore and should now pick the
+  installed disk automatically (`bootindex=0` is on the OpenCore drive,
+  OpenCore itself picks the newest bootable volume).
+- If Recovery shows no network / the reinstall fails to download:
+  virtio-net is only supported by the guest on Ventura+ (older macOS
+  needs `vmxnet3` or `e1000-82545em`) — swap the NIC model in
+  `mac-vm-launch.sh` for older versions.
+- Once installed and booted to the desktop: Restart from the Apple menu
+  should reboot the physical machine, Shut Down should power it off
+  (section 6) — those paths are unchanged, only gated behind the 180 s
+  uptime check now.
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

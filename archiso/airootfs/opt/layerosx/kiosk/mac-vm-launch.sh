@@ -23,9 +23,19 @@ QMP_SOCK="/tmp/macvm-qmp.sock"
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 OPENCORE_IMG="/opt/layerosx/opencore/OpenCore.qcow2"
+GOP_ROM="/usr/share/qemu/reims-vgpu-gop.rom"
+MACOS_VERSION_FILE="$STATE_DIR/macos-version"   # written by macos-source-wizard.sh
+GFX_FILE="$STATE_DIR/gfx"                       # optional: "vmware" to bypass Reims
+VM_RAM_MB=8192
+MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
+SERIAL_LOG="$HOME/mac-vm-serial.log"
 
-exec > >(tee -a "$LOG") 2>&1
+# Every line gets a timestamp on its way into the log. This log is append-only
+# across every boot (tee -a), so without one there is no telling which of two
+# "Attaching recovery disk" lines belongs to which attempt -- confirmed on
+# real hardware, that ambiguity cost a whole debugging session.
+exec > >(while IFS= read -r _l || [ -n "$_l" ]; do printf '%(%H:%M:%S)T %s\n' -1 "$_l"; done | tee -a "$LOG") 2>&1
 
 # Common landing spot for a condition nothing below would ever fix by
 # itself (missing binary/image from an incomplete build, or missing
@@ -85,16 +95,6 @@ if [ -d /opt/layerosx/lib ] && [ -n "$(ls -A /opt/layerosx/lib 2>/dev/null)" ]; 
 fi
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
-
-# Leave 2 cores for the host (Arch underneath still needs to breathe),
-# minimum 1 for the VM. Was hardcoded to 6 — fine on the original dev
-# machine, wrong on anything with fewer (or a lot more) cores.
-TOTAL_CORES="$(nproc)"
-if [ "$TOTAL_CORES" -gt 2 ]; then
-    VM_CORES=$((TOTAL_CORES - 2))
-else
-    VM_CORES=1
-fi
 
 # QEMU_BIN/OPENCORE_IMG/KVM are all only needed once we actually try to
 # LAUNCH the accelerated VM below -- none of them are needed just to
@@ -194,99 +194,187 @@ if [ ! -e /dev/kvm ]; then
         "nested KVM is unreliable even with 'nested virtualization' enabled there."
 fi
 
+# ---------------------------------------------------------------------------
+# Everything from here down mirrors the two upstream references this project
+# is built from, deliberately and closely, after a long real-hardware detour
+# (see README.md, "Root cause of the boot stall"):
+#   - Reims' own vm/boot-x86.sh (github.com/steelbrain/reims-vgpu) -- THE
+#     validated invocation for the reims-vgpu-pci device on x86/KVM.
+#   - kholia/OSX-KVM's OpenCore-Boot.sh -- the launcher the OpenCore.qcow2
+#     we ship (prepare-opencore.sh) was configured against.
+# Where the two agree, that's what's here. Where this file used to differ
+# from both, it was wrong: `-cpu host`, no shared memfd RAM, a default VGA
+# next to the Reims GPU, virtio-blk disks, ICH9 USB. Each one alone is
+# enough to explain a blue/black screen followed by QEMU exiting and
+# relaunching in a loop, which is exactly what was observed.
+# ---------------------------------------------------------------------------
+
+# --- CPU model: never `-cpu host` -------------------------------------------
+# macOS's kernel (XNU) only boots on CPUs it recognises as Intel, and only
+# calibrates its clock through the `vmware-cpuid-freq` leaf on a hypervisor.
+# `-cpu host` breaks both: on an AMD host it hands XNU an AuthenticAMD vendor
+# (instant early panic unless OpenCore carries AMD kernel patches -- ours
+# doesn't), and on any host it omits vmware-cpuid-freq (XNU hangs before it
+# ever draws anything). Every working macOS-on-KVM setup masks the CPU as a
+# named Intel model instead. Model choice follows dockur/macos (same QEMU
+# build family as ours): a conservative Haswell for AMD hosts running Ventura
+# or older, Skylake-Client otherwise. The version comes from the file the
+# first-run wizard writes ($MACOS_VERSION_FILE); unknown falls through to
+# Skylake-Client, dockur's own default.
+CPU_VENDOR="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+HOST_CPU_FLAGS=" $(awk -F': ' '/^flags/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true) "
+host_has_flag() { case "$HOST_CPU_FLAGS" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+MACOS_SHORTNAME="$(cat "$MACOS_VERSION_FILE" 2>/dev/null || true)"
+
+CPU_FLAGS="kvm=on,vendor=GenuineIntel,vmware-cpuid-freq=on,vmx=off,-pdpe1gb,-hle,-rtm"
+# Invariant TSC: Reims' script always asks for it, dockur only when the host
+# really has one (a constant, nonstop TSC) -- requesting it on a host without
+# one is refused by KVM. Detect, don't assume.
+if host_has_flag constant_tsc && host_has_flag nonstop_tsc; then
+    CPU_FLAGS+=",+invtsc"
+else
+    CPU_FLAGS+=",-invtsc"
+fi
+if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+    case "$MACOS_SHORTNAME" in
+        high-sierra|mojave|catalina|big-sur|monterey|ventura) CPU_MODEL="Haswell-noTSX" ;;
+        *) CPU_MODEL="Skylake-Client-v4"; CPU_FLAGS+=",-spec-ctrl" ;;
+    esac
+    # An AMD host can't pass a real Intel model through unchanged: mirror the
+    # handful of optional features the model advertises that this particular
+    # host may or may not have, then spell out the instruction sets macOS
+    # expects from that model. `check` makes QEMU warn (not fail) about any
+    # remaining mismatch, so the warning lands in the log instead of a boot
+    # silently degrading.
+    for _f in pcid invpcid xsavec xsaves; do
+        if host_has_flag "$_f"; then CPU_FLAGS+=",+$_f"; else CPU_FLAGS+=",-$_f"; fi
+    done
+    CPU_FLAGS+=",-tsc-deadline,+ssse3,+sse4.2,+popcnt,+avx,+avx2,+aes,+fma,+bmi1,+bmi2,+smep,+xsave,+xsaveopt,+xgetbv1,+movbe,+rdrand,check"
+else
+    CPU_MODEL="Skylake-Client-v4"
+    CPU_FLAGS+=",+ssse3,+sse4.2,+popcnt,+avx,+avx2,+aes,+xsave,+xsaveopt,check"
+fi
+
+# --- SMP: a power of two, at most 8 ----------------------------------------
+# macOS is picky about CPU topology (odd core counts misbehave; dockur maps 6
+# to 3 sockets x 2 cores, etc.), and Reims' own script caps the guest at 8
+# vCPUs with reims-vgpu-pci. Simplest topology that satisfies both: the
+# largest power of two <= min(8, host cores - 2), on one socket.
+TOTAL_CORES="$(nproc)"
+VM_CORES=$((TOTAL_CORES - 2))
+[ "$VM_CORES" -gt 8 ] && VM_CORES=8
+[ "$VM_CORES" -lt 1 ] && VM_CORES=1
+_p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
+VM_CORES=$_p
+
+# --- Graphics device --------------------------------------------------------
+# reims-vgpu-pci is the whole point of this project, but it is alpha software
+# on an alpha driver stack. $GFX_FILE lets a tester switch the guest to the
+# plain VMware SVGA adapter (the same VMVGA build dockur/macos runs on, no
+# acceleration, but boring and known-good) WITHOUT a rebuild: write
+# `vmware` into it from tty2, `sudo pkill Xorg`, and the next launch uses
+# that. Anything else (or no file) means reims. This is the single most
+# useful A/B switch for telling "Reims can't draw yet" apart from "macOS
+# isn't booting at all".
+GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
+case "$GFX" in
+    vmware|vmware-svga) GFX="vmware-svga" ;;
+    *) GFX="reims-vgpu-pci" ;;
+esac
+GFX_ARGS=()
+if [ "$GFX" = "reims-vgpu-pci" ]; then
+    # Straight from Reims' boot-x86.sh: `-vga none` because the UEFI GOP lives
+    # on this same PCI device (its option ROM, rombar=1) and must never share
+    # the guest with a second display; the device itself sits behind a
+    # conventional pci-bridge (their default attach, "IOFBIntegrated=No; OVMF
+    # maps BAR0"). romfile is an absolute path on purpose -- a bare name only
+    # works if QEMU's firmware search path happens to include where
+    # prepare-qemu-macos.sh staged it.
+    if [ ! -s "$GOP_ROM" ]; then
+        fatal "$GOP_ROM is missing." "The ISO was built without prepare-qemu-macos.sh staging the Reims GOP ROM — see docs/CHECKLIST.md. (Or write 'vmware' into $GFX_FILE to boot without Reims.)"
+    fi
+    GFX_ARGS=(
+        -vga none
+        -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0
+        -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
+    )
+else
+    GFX_ARGS=(-vga none -device vmware-svga)
+fi
+
+echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
+echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the F2 terminal)."
+
 RETRIES=0
 while true; do
     rm -f "$QMP_SOCK"
 
-    # reims-vgpu-pci is the real device name (confirmed by reading the
-    # qemus/qemu-macos Dockerfile's own verification step, which
-    # probes it with `-device reims-vgpu-pci,help`). The `romfile=`
-    # property below is QEMU's normal convention for a PCI device's
-    # option ROM, matching where prepare-qemu-macos.sh stages
-    # reims-vgpu-gop.rom — but the exact property names on this device
-    # still need confirming: run
-    #   sudo /opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help
-    # after the ISO is built and fix the line below if it disagrees.
-    # See docs/CHECKLIST.md.
     QEMU_ARGS=(
         -name "macOS"
-        -enable-kvm -m 8192 -smp "cores=${VM_CORES},threads=1" -cpu host
-        -machine q35
+        -nodefaults
+        -enable-kvm
         -no-reboot
         -rtc base=utc
         -qmp "unix:${QMP_SOCK},server,nowait"
+        # Reims requirement, not a preference: the GPU command stream is
+        # decoded out of guest RAM on the host side, which only works when
+        # that RAM is a shared memfd mapping. Plain `-m` (what this used to
+        # be) leaves the device unable to see guest memory at all.
+        -m "${VM_RAM_MB}M"
+        -object "memory-backend-memfd,id=reims-ram,size=${VM_RAM_MB}M,share=on"
+        -machine q35,memory-backend=reims-ram
+        -cpu "${CPU_MODEL},${CPU_FLAGS}"
+        -smp "${VM_CORES},sockets=1,cores=${VM_CORES},threads=1"
         -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
         -drive if=pflash,format=raw,file="$OVMF_VARS"
-        # Apple-hardware emulation macOS's kernel actually checks for at
-        # boot -- confirmed by reading dockur/macos's own boot.sh, which
-        # every working QEMU-macOS setup does some version of. Without
-        # these, XNU never gets past very early boot regardless of what
-        # OpenCore below supplies.
-        #   - isa-applesmc: emulates the real Apple SMC chip; osk= is the
-        #     well-known public "Apple SMC key" (ROT13-encoded here only
-        #     to avoid it being flagged by naive string scanners -- it is
-        #     not a secret, it's been public for well over a decade and
-        #     is shared by essentially every macOS-on-QEMU/Hackintosh
-        #     project, OSX-KVM and dockur/macos included).
-        #   - smbios type=2: baseline "Apple Inc." system info at the
-        #     firmware level (OpenCore's own config.plist below adds the
-        #     actual per-machine model/serial/UUID identity on top).
-        #   - the ICH9-LPC globals disable ACPI sleep states (S3/S4) and
-        #     bridge hotplug, both of which macOS handles unreliably on
-        #     the emulated ICH9 chipset q35 provides.
+        # Apple-hardware emulation XNU checks for at boot (see dockur/macos'
+        # boot.sh; every working QEMU-macOS setup does some version of this).
+        # osk= is the well-known public "Apple SMC key", ROT13'd here only so
+        # naive string scanners don't flag it -- it is not a secret.
         -device "isa-applesmc,osk=$(echo 'bheuneqjbexolgurfrjbeqfthneqrqcyrnfrqbagfgrny(p)NccyrPbzchgreVap' | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
         -smbios type=2
         -global ICH9-LPC.disable_s3=1
         -global ICH9-LPC.disable_s4=1
         -global ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off
-        # OpenCore is what actually makes the above enough for XNU to
-        # boot: it supplies the per-machine SMBIOS identity (model,
-        # serial, UUID, board serial) plus the small set of ACPI/kernel
-        # patches (via Lilu and friends) that stock OVMF+QEMU alone don't
-        # provide. bootindex=0 makes OVMF's boot manager always try this
-        # disk first; OpenCore then does its own scan of every other
-        # attached disk to find the real macOS system to chainload into
-        # (see prepare-opencore.sh and README.md) -- $VM_DISK and
-        # $RECOVERY_DISK below intentionally get no bootindex of their
-        # own, same as upstream dockur/macos does it. Read-only: nothing
-        # here is meant to write to this image at runtime, only to the
-        # separate $OVMF_VARS NVRAM store, which is what actually
-        # remembers OpenCore's boot choice across restarts.
-        #
-        # Confirmed on real hardware: the shorthand `-drive
-        # if=virtio,...,bootindex=0` this used to be fails outright --
-        # `Block format 'qcow2' does not support the option 'bootindex'`
-        # -- because that shorthand's implicit device creation routes
-        # `bootindex` into the qcow2 block-layer options instead of the
-        # virtio-blk device's own properties (didn't happen to $VM_DISK/
-        # $RECOVERY_DISK below only because neither of them sets
-        # bootindex at all). Split into the explicit two-flag form
-        # instead: `-drive if=none` just opens the image with no device
-        # attached, and the separate `-device virtio-blk-pci` is what
-        # actually attaches it to the bus -- `bootindex` unambiguously
-        # belongs to that -device, not the block layer, so there's
-        # nothing left to misroute it. This is the same explicit pattern
-        # already used for the AHCI/SATA fallback further down.
-        -drive if=none,id=opencore,file="$OPENCORE_IMG",format=qcow2,readonly=on
-        -device virtio-blk-pci,drive=opencore,bootindex=0
-        -drive if=virtio,file="$VM_DISK",format=qcow2
-        -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom
-        -display sdl,gl=on,full-screen=on
-        -usb -device usb-kbd -device usb-tablet
-        -netdev user,id=net0 -device virtio-net,netdev=net0
+        # USB: xHCI, as both references do. macOS handles the q35 default ICH9
+        # EHCI/UHCI pair (what `-usb` used to give us) far less reliably.
+        -device qemu-xhci,id=xhci
+        -device usb-kbd,bus=xhci.0
+        -device usb-tablet,bus=xhci.0
+        -device usb-ehci,id=ehci
+        # Disks: SATA, the exact OSX-KVM layout our OpenCore.qcow2 was built
+        # against (OpenCore sata.2, install media sata.3, system disk sata.4).
+        # Not virtio-blk: only Ventura+ carries a VirtIO block driver at all,
+        # and the recovery environment is the one place we can't afford to
+        # find out it doesn't. snapshot=on on the OpenCore image instead of
+        # readonly=on -- an IDE/SATA hard disk can't be attached read-only,
+        # but writes to a snapshot drive land in a throwaway overlay, which
+        # is the same outcome we wanted.
+        -device ich9-ahci,id=sata
+        -drive id=OpenCoreBoot,if=none,format=qcow2,snapshot=on,file="$OPENCORE_IMG"
+        -device ide-hd,bus=sata.2,drive=OpenCoreBoot,bootindex=0
+        -drive id=MacHDD,if=none,format=qcow2,file="$VM_DISK"
+        -device ide-hd,bus=sata.4,drive=MacHDD
+        # romfile= (empty) drops the NIC's PXE option ROM: no "UEFI Misc
+        # Device" network-boot entry for OVMF to wander into.
+        -netdev user,id=net0
+        -device virtio-net-pci,netdev=net0,id=net0,romfile=
+        # OpenCore and XNU write their boot logs to the serial console. Until
+        # now nothing captured it, which made every stall a blind blue
+        # screen; this is what turns it into text.
+        -serial "file:$SERIAL_LOG"
+        -display sdl,full-screen=on
     )
+    QEMU_ARGS+=("${GFX_ARGS[@]}")
     if [ -n "$RECOVERY_DISK" ]; then
         echo "Attaching recovery/installer disk: $RECOVERY_DISK"
-        # Same if=virtio interface as $VM_DISK, for consistency with
-        # the rest of this invocation -- if macOS's own recovery/
-        # installer environment turns out to need a real AHCI/SATA
-        # disk instead (no virtio block driver that early), swap this
-        # to `-device ahci,id=ahci -device ide-hd,bus=ahci.0,drive=rec
-        # -drive if=none,id=rec,file=...,format=qcow2`. Untested on
-        # real hardware yet — see docs/CHECKLIST.md.
-        QEMU_ARGS+=(-drive if=virtio,file="$RECOVERY_DISK",format=qcow2)
+        QEMU_ARGS+=(
+            -drive id=InstallMedia,if=none,format=qcow2,file="$RECOVERY_DISK"
+            -device ide-hd,bus=sata.3,drive=InstallMedia
+        )
     fi
 
+    LAUNCHED_AT=$(date +%s)
     LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
@@ -294,12 +382,26 @@ while true; do
 
     ACTION=$(python3 "$KIOSK_DIR/qmp-watch.py" "$QMP_SOCK")
     wait "$QEMU_PID" 2>/dev/null
+    RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
 
     # Every QEMU session's outcome, good or bad, gets a fresh copy of
     # this log (and a journal snapshot) onto the USB -- during testing
     # this matters most right after a crash/black-screen exit, which
     # is exactly when there's no other easy way to see what happened.
     bash "$KIOSK_DIR/lib/save-logs-to-usb.sh" 2>/dev/null || true
+
+    # A guest "reboot" seconds after launch is not someone clicking Restart
+    # in the Apple menu -- it's XNU panicking and auto-restarting (or OVMF
+    # resetting after a failed boot). With -no-reboot that arrives as the
+    # same guest-reset SHUTDOWN event a real Restart does, so tell them
+    # apart by uptime: nothing a person does reaches the Apple menu inside
+    # $MIN_UPTIME_FOR_REAL_REBOOT seconds of a cold start. Rebooting the
+    # physical machine on a panic loop (what this used to do) fixes nothing
+    # and takes the logs away.
+    if [ "$ACTION" = "host-reboot" ] && [ "$RAN_FOR" -lt "$MIN_UPTIME_FOR_REAL_REBOOT" ]; then
+        echo "Guest reset only ${RAN_FOR}s after launch -- treating it as a boot failure (kernel panic / firmware reset), not a Restart request. See $SERIAL_LOG."
+        ACTION="vm-only"
+    fi
 
     case "$ACTION" in
         host-poweroff)
@@ -313,12 +415,14 @@ while true; do
             exit 0
             ;;
         vm-only|*)
-            echo "QEMU exited without a clear guest request (action: ${ACTION}) — relaunching just the VM."
+            echo "QEMU exited without a clear guest request (action: ${ACTION}, ran ${RAN_FOR}s) — relaunching just the VM."
             RETRIES=$((RETRIES + 1))
             if [ "$RETRIES" -ge 5 ]; then
-                echo "Too many failures in a row — rebooting the physical machine as a last resort."
-                sudo systemctl reboot
-                exit 1
+                fatal "QEMU exited $RETRIES times in a row." \
+                    "That's a boot that fails the same way every time, not a transient glitch -- rebooting the physical" \
+                    "machine (what this used to do here) would just loop it faster. Read $LOG and $SERIAL_LOG" \
+                    "(F2 terminal: 'logs' / 'serial'). To try the plain VMware display instead of Reims:" \
+                    "echo vmware > $GFX_FILE, then sudo pkill Xorg."
             fi
             sleep 3
             ;;

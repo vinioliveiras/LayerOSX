@@ -14,11 +14,13 @@ RCFILE=$(mktemp)
 cat > "$RCFILE" <<RCEOF
 export LOG="$LOG"
 logs() { tail -n 200 -f "\$LOG" 2>/dev/null || echo "Nothing to show yet."; }
+export SERIAL_LOG="\$HOME/mac-vm-serial.log"
+serial() { tail -n 200 -f "\$SERIAL_LOG" 2>/dev/null || echo "No guest serial log yet (the VM hasn't been launched on this boot)."; }
 echo "LayerOSX -- live terminal. Last lines of \$LOG:"
 echo
 tail -n 40 "\$LOG" 2>/dev/null || echo "(nothing logged yet)"
 echo
-echo "Type 'logs' to follow it live (Ctrl-C stops watching, back to this prompt), or run any command."
+echo "Type 'logs' to follow it live, or 'serial' for the guest's own firmware/kernel console (OpenCore + XNU boot log). Ctrl-C stops watching, back to this prompt. Any other command works too."
 RCEOF
 
 xterm -fa Monospace -fs 12 -bg black -fg white \

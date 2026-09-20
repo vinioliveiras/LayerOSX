@@ -6,6 +6,9 @@ set -uo pipefail
 
 VM_DISK="$1"
 OVMF_VARS="$2"
+# Which macOS the "download from Apple" path fetched -- mac-vm-launch.sh
+# reads this to pick a CPU model the guest will accept (see there).
+MACOS_VERSION_FILE="$(dirname "$VM_DISK")/macos-version"
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
 VM_SIZE_GB="${MAC_VM_SIZE_GB:-128}"
 
@@ -23,7 +26,7 @@ cleanup_failed_attempt() {
     local ec=$?
     if [ "$ec" -ne 0 ]; then
         echo "Wizard failed (exit $ec) -- removing any partial VM disk so the options are shown again on the next boot instead of a stuck black screen." >&2
-        rm -f "$VM_DISK" "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2" "$OVMF_VARS" 2>/dev/null || true
+        rm -f "$VM_DISK" "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2" "$OVMF_VARS" "$MACOS_VERSION_FILE" 2>/dev/null || true
     fi
 }
 trap cleanup_failed_attempt EXIT
@@ -198,6 +201,7 @@ case "$CHOICE" in
         ensure_internet || exit 1
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
         copy_ovmf_vars
+        [ -n "$MACOS_SHORTNAME" ] && printf '%s\n' "$MACOS_SHORTNAME" > "$MACOS_VERSION_FILE"
         if ! run_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press F2 for details)" \
             bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK" "$MACOS_SHORTNAME"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
@@ -215,11 +219,22 @@ case "$CHOICE" in
         copy_ovmf_vars
 
         case "$SRC" in
-            *.qcow2|*.img|*.raw|*.IMG|*.RAW)
+            *.qcow2)
                 # A complete, already-installed macOS disk -- boots
                 # directly, no installer step needed.
                 echo "Copying $SRC as the VM disk (already a complete system, not installer media)..."
                 cp -v "$SRC" "$VM_DISK"
+                ;;
+            *.img|*.raw|*.IMG|*.RAW)
+                # Same, but raw: mac-vm-launch.sh attaches $VM_DISK as
+                # format=qcow2, so a raw image has to be converted, not
+                # copied (it used to be copied -- QEMU then refused it as
+                # "not in qcow2 format").
+                if ! run_convert_with_progress "LayerOSX — first run" "Converting VM disk to qcow2… (press F2 for details)" \
+                    "$SRC" "$VM_DISK"; then
+                    zenity --error --text="Couldn't convert this raw disk image into a qcow2 VM disk. Press F2 to see the details."
+                    exit 1
+                fi
                 ;;
             *.iso|*.ISO)
                 # Recovery/installer media (not a complete system) --

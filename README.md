@@ -1740,3 +1740,92 @@ standard, explicit way distros control their own GRUB menu title.
 Confirmed on real hardware, repeatedly: openbox's stock `rc.xml` (copied wholesale by `lib/install-f2-keybind.sh`, see there) ships with 4 virtual desktops by default -- completely unused by this kiosk (it only ever runs one fullscreen QEMU window), but still fully wired up, including openbox's own default mouse-wheel-on-desktop bindings (`DesktopNext`/`DesktopPrevious`). A stray scroll while the pointer wasn't over the QEMU window (or anything else that happened to trigger a desktop switch) could flip to an empty desktop with the VM window left behind on the old one -- from the user's side this looked like the VM vanishing into a black/blank screen, recoverable only via openbox's middle-click window-list pager.
 
 `install-f2-keybind.sh` now also drops the desktop count from 4 to 1 (there's nothing to accidentally switch *to* anymore) and adds an `<application>` rule pinning the QEMU window (matched on a wildcard class and its actual SDL title, confirmed on real hardware as `QEMU (<-name value>)`) to desktop 1, focused, always above everything else the moment it appears. Both edits follow the same idempotent pattern the rest of the script already uses.
+
+## Root cause of the real-hardware boot stall: the launch profile itself
+
+After everything above, the VM reliably reached OVMF (TianoCore logo,
+`BdsDxe: starting Boot0002`), then went blue, then black, and QEMU's
+PID kept changing -- it was exiting and being relaunched by
+`mac-vm-launch.sh`'s own retry loop, over and over, with nothing
+readable on screen. Instead of guessing further, `mac-vm-launch.sh`
+was compared line by line against the two upstream launchers this
+project actually descends from: **Reims' own `vm/boot-x86.sh`**
+(github.com/steelbrain/reims-vgpu -- the validated invocation for the
+`reims-vgpu-pci` device on x86/KVM) and **kholia/OSX-KVM's
+`OpenCore-Boot.sh`** (the launcher the `OpenCore.qcow2` we ship was
+configured against), with **dockur/macos** (same QEMU build family as
+`qemus/qemu-macos`) as a third reference. Where those agree, our
+launcher now does the same. Where it used to differ from all of them,
+it was wrong -- five times over, any one of which is enough on its own
+to produce exactly the symptom observed:
+
+1. **`-cpu host`.** No working macOS-on-KVM setup does this. XNU only
+   boots on a CPU it recognises as Intel, and only calibrates its clock
+   through the `vmware-cpuid-freq` CPUID leaf; `-cpu host` on an AMD
+   host hands it an `AuthenticAMD` vendor (immediate early panic --
+   our OpenCore carries no AMD kernel patches), and on any host omits
+   `vmware-cpuid-freq=on` (XNU hangs before drawing anything). A
+   panicking guest auto-restarts; with `-no-reboot` that restart is a
+   QEMU exit; the retry loop relaunches it -- the PID-cycling loop. Now:
+   a named Intel model with the exact flags the references use
+   (`kvm=on,vendor=GenuineIntel,vmware-cpuid-freq=on,vmx=off,-pdpe1gb,
+   -hle,-rtm`, `+invtsc` only when the host really has a constant,
+   nonstop TSC). Model choice follows dockur/macos: `Haswell-noTSX` for
+   an AMD host running Ventura or older, `Skylake-Client-v4` otherwise,
+   with dockur's per-host feature mirroring on AMD. The macOS version
+   comes from `/var/lib/layerosx/macos-version`, which the first-run
+   wizard now writes.
+2. **No shared memfd RAM.** Reims decodes the guest's GPU command
+   stream out of guest memory on the host side; its README lists
+   "shared memfd-backed guest RAM" as a hard runtime requirement and
+   its script does `-object memory-backend-memfd,share=on` +
+   `-machine memory-backend=`. Plain `-m` gives the device no view of
+   guest memory at all.
+3. **A second display.** Without `-vga none` (or `-nodefaults`) QEMU
+   adds its default VGA next to the Reims device. Reims' script is
+   explicit: the UEFI GOP lives on the Reims PCI device's own option
+   ROM and it must "never [be] a second display". Now `-nodefaults
+   -vga none`, the Reims device behind a `pci-bridge` (their default
+   attach), `romfile=` as an absolute path.
+4. **virtio-blk disks.** Only Ventura+ has a VirtIO block driver, and
+   the recovery environment is the one place we can't afford to find
+   out it doesn't. Both references put everything on SATA
+   (`ich9-ahci` + `ide-hd`), and OSX-KVM's exact port layout is what
+   our OpenCore image was built for: OpenCore on `sata.2`, install
+   media on `sata.3`, system disk on `sata.4`. (`snapshot=on` instead
+   of `readonly=on` on the OpenCore image -- an IDE/SATA hard disk
+   can't be attached read-only, but a snapshot drive discards its
+   writes, which was the intent.)
+5. **ICH9 USB (`-usb`).** Both references use xHCI (`qemu-xhci`) with
+   the keyboard and tablet on it; macOS handles the q35 default
+   EHCI/UHCI pair far less reliably.
+
+Also from the references and folded in at the same time: `-smp` capped
+at 8 and rounded down to a power of two (Reims caps its guest at 8 with
+`reims-vgpu-pci`; macOS misbehaves on odd topologies), `romfile=` on
+the NIC (no PXE option ROM, so no "UEFI Misc Device" network-boot entry
+for OVMF to wander into), and `-serial file:~/mac-vm-serial.log` --
+OpenCore and XNU write their boot logs to the serial console, so what
+used to be a blind blue screen is now text (`serial` in the F2
+terminal).
+
+Two behaviours of the retry loop changed with it, because the old ones
+actively hid this bug: a guest "reset" within 180 s of launch is now
+treated as a boot failure (kernel panic / firmware reset) and relaunched,
+not as a Restart request that reboots the physical machine (nothing a
+person does reaches the Apple menu that fast from a cold start), and
+five QEMU exits in a row now stop with a `fatal()` pointing at both logs
+instead of rebooting the physical machine (which fixes nothing and
+takes the logs away). Every log line now carries a timestamp, since the
+log is append-only across boots and the "which attempt was that?"
+ambiguity cost a whole session.
+
+And one escape hatch, because Reims is alpha on top of alpha: writing
+`vmware` into `/var/lib/layerosx/gfx` (then `sudo pkill Xorg` from tty2)
+makes the next launch use the plain VMware SVGA adapter -- the same
+VMVGA build dockur/macos runs on, unaccelerated but boring -- with
+everything else identical. It's the single most useful A/B switch for
+telling "Reims can't draw yet" apart from "macOS isn't booting at all",
+and it needs no rebuild. (Also fixed on the way: the wizard's
+`.img`/`.raw` "complete disk" path copied the file verbatim, but the
+launcher attaches `$VM_DISK` as qcow2 -- it's converted now.)
