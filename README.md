@@ -1628,3 +1628,66 @@ since "enable nested virtualization" in VirtualBox (or similar) is
 unreliable at actually exposing a usable `/dev/kvm` to a guest even
 when turned on -- this project targets real hardware, and chasing
 nested-virtualization settings further wasn't a good use of time.
+
+## Live real-hardware testing: two follow-up UX fixes
+
+Both surfaced while testing on real hardware, past the point where the
+`bootindex` fix above got the VM to actually launch — neither is a boot
+blocker, but both were annoying enough while iterating (trying a
+different macOS source, or trying to attach a local `.dmg`) to fix
+right away instead of working around by hand every time.
+
+### Feature: `layerosx-reset-vm` — a one-command way to redo the first-run wizard
+
+`mac-vm-launch.sh` only ever shows `macos-source-wizard.sh` (the
+"where should macOS come from" first-run screen) when `$VM_DISK`
+doesn't exist yet — so trying a different macOS source/version, or
+recovering from a bad first attempt, meant knowing to manually delete
+the right handful of files under `/var/lib/layerosx/` by hand (and
+knowing that `OVMF_VARS.fd`, the UEFI NVRAM store, has to go too — it
+remembers OpenCore's last boot choice, which can point at nothing
+useful once the disk it pointed at is gone). Wrapped that into a
+single command, installed straight into `PATH`:
+
+    layerosx-reset-vm         # asks for confirmation first
+    layerosx-reset-vm -y      # skip the confirmation
+
+It deletes `macos.qcow2`, `macos-recovery.qcow2`/`macos-installer.qcow2`
+(whichever exists), and `OVMF_VARS.fd`, then tells you to reboot (or
+switch to tty1 and re-run `mac-vm-launch.sh`) so the first-run wizard
+opens again. Refuses by default if a `qemu-system-x86_64` process is
+still running — deleting the disk out from under `mac-vm-launch.sh`'s
+own launch loop while it's still active would make *its* automatic
+relaunch fail instead of cleanly reopening the wizard, so this asks for
+a reboot first instead (or `-y`/`--force` to delete anyway).
+
+### Bug: zenity's file-selection dialog never appeared for the "I already have macOS" path — replaced with a native Tkinter picker
+
+Picking "I already have macOS (VM disk, installer `.dmg`, or
+recovery/installer `.iso`) — pick a file" in the first-run wizard is
+supposed to open a `zenity --file-selection` dialog next. On real
+hardware, no dialog ever appeared — no error either, it just silently
+didn't show up. This is the same dependency class of bug documented
+above ("`LD_LIBRARY_PATH` was leaking into zenity, crashing it on
+every dialog"): zenity is a GTK application, and GTK is exactly the
+kind of thing this project already bundles a conflicting,
+Debian-flavored copy of (for the custom `qemus/qemu-macos` build) —
+that earlier bug was fixed by no longer exporting `LD_LIBRARY_PATH`
+globally, but it's still a live risk any time something upstream of
+zenity in the environment changes.
+
+Rather than keep chasing this specific class of fragility, the file
+picker no longer uses zenity at all: `lib/pick-source-file.py` opens a
+plain Tkinter (`Tk`) "open file" dialog instead — same filters
+(`*.qcow2 *.img *.raw *.iso *.dmg *.app`), same starting directory
+(`/mnt/media`, where `lib/mount-removable-media.sh` mounts USB media),
+same behavior (prints the chosen path, or nothing if cancelled).
+Tkinter has no dependency on GTK whatsoever, so this whole bug class
+can't recur here regardless of what `qemus/qemu-macos` or anything
+else ends up bundling in the future. Needs the `tk` package (added to
+`packages.x86_64`) for Tcl/Tk's shared libraries — Arch's `python`
+package already ships the `_tkinter` extension built in. The rest of
+the wizard (the initial "where should macOS come from" choice,
+progress dialogs, error messages, the Wi-Fi picker) still uses zenity
+— this swap is scoped to just the one dialog that was actually
+breaking.

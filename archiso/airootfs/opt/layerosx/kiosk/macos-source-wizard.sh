@@ -162,10 +162,10 @@ case "$CHOICE" in
         fi
         ;;
     *"pick a file"*)
-        SRC=$(zenity --file-selection --title="Pick a macOS VM disk, .dmg, or .iso" \
-            --filename="/mnt/media/" \
-            --file-filter="macOS sources | *.qcow2 *.img *.raw *.iso *.dmg *.app" \
-            --file-filter="All files | *")
+        # Tkinter/Tk, not zenity (GTK) -- see lib/pick-source-file.py's
+        # own header comment for why: zenity's GTK dependency is what
+        # already crashed it once on this project.
+        SRC=$(python3 "$LIB_DIR/pick-source-file.py")
         [ -n "$SRC" ] || exit 1
 
         copy_ovmf_vars

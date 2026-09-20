@@ -5,3 +5,5 @@ archiso/out/
 macos-assets/
 archiso/airootfs/opt/layerosx/bin/
 archiso/airootfs/usr/share/qemu/
+__pycache__/
+*.pyc

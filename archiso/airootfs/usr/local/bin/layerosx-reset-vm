@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# Deletes the current macOS VM disk, its recovery/installer image, and
+# its UEFI NVRAM state, so mac-vm-launch.sh's first-run wizard runs
+# again from scratch on the next launch -- e.g. to retry with a
+# different macOS source/version, or to recover from a corrupted or
+# half-finished VM disk. Usage: layerosx-reset-vm [-y|--force]
+#
+# NVRAM (OVMF_VARS.fd) has to go too, not just the disk: it remembers
+# OpenCore's last boot choice (see README.md's OpenCore/SMBIOS
+# section), which can point at nothing useful once the disk it
+# pointed at is gone.
+#
+# Safe to run from tty2 (Ctrl+Alt+F2) while mac-vm-launch.sh is not
+# actively looping on tty1. If a QEMU instance is still running, this
+# warns and refuses by default -- reboot the machine (or exit the VM)
+# first so mac-vm-launch.sh restarts from the top and re-runs its
+# first-run check; deleting the disk out from under an already-running
+# launch loop would make its automatic relaunch fail instead of
+# reopening the wizard.
+set -uo pipefail
+
+STATE_DIR="/var/lib/layerosx"
+VM_DISK="$STATE_DIR/macos.qcow2"
+OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
+RECOVERY_DISK="${VM_DISK%.qcow2}-recovery.qcow2"
+INSTALLER_DISK="${VM_DISK%.qcow2}-installer.qcow2"
+
+FORCE=0
+if [ "${1:-}" = "-y" ] || [ "${1:-}" = "--force" ]; then
+    FORCE=1
+fi
+
+if pgrep -f qemu-system-x86_64 >/dev/null 2>&1 && [ "$FORCE" -ne 1 ]; then
+    echo "A qemu-system-x86_64 process is still running." >&2
+    echo "Reboot the machine (or stop it) first, so mac-vm-launch.sh restarts" >&2
+    echo "from the top and re-runs its first-run wizard check -- deleting the" >&2
+    echo "disk while its launch loop is still active would make the loop's" >&2
+    echo "own automatic relaunch fail instead of reopening the wizard." >&2
+    echo "Re-run with -y/--force to delete anyway." >&2
+    exit 1
+fi
+
+echo "This deletes the current macOS VM state:"
+FOUND=0
+for f in "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS"; do
+    if [ -e "$f" ]; then
+        echo "  $f"
+        FOUND=1
+    fi
+done
+if [ "$FOUND" -eq 0 ]; then
+    echo "  (nothing found under $STATE_DIR -- already clean)"
+    exit 0
+fi
+
+if [ "$FORCE" -ne 1 ]; then
+    read -r -p "Continue? [y/N] " _confirm
+    case "$_confirm" in
+        y|Y) ;;
+        *) echo "Cancelled."; exit 1 ;;
+    esac
+fi
+
+rm -f "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS"
+echo "Done. Reboot the machine (or switch to tty1 and re-run mac-vm-launch.sh) -- the first-run wizard will open again, letting you pick a different macOS source/version."

@@ -489,6 +489,15 @@ actually run the detection logic against real hardware yet.
   will show whether the partition's filesystem is even one of the
   ones it recognizes (ext2-4, vfat, exfat, ntfs(3), hfsplus, iso9660,
   udf).
+- Confirmed on real hardware: "pick a file" used to open nothing at
+  all — no dialog, no error, `zenity --file-selection` just silently
+  never appeared (same GTK-dependency fragility as the
+  `LD_LIBRARY_PATH`-leaking-into-zenity bug above). Replaced with a
+  native Tkinter picker (`kiosk/lib/pick-source-file.py`, needs the
+  `tk` package — see README.md). Confirm the file dialog now actually
+  opens, that it starts browsing at `/mnt/media/`, and that the
+  filter still only shows `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`
+  by default (with "All files" selectable too).
 - If "download from Apple" is picked on a Wi-Fi-only machine with no
   connection yet, it should now offer a zenity list of nearby networks
   to click (`kiosk/lib/wifi-setup.sh`, see README.md) — confirm the
@@ -687,6 +696,14 @@ report back from this exact point:
 - Run `sudo /usr/local/bin/layerosx-cleanup.sh` manually once to
   confirm nothing breaks (mainly `paccache`, which depends on
   `pacman-contrib` actually being installed).
+- `layerosx-reset-vm` should be on `PATH` already (installed straight
+  to `/usr/local/bin`, see README.md) — run it once with an existing
+  VM to confirm it lists `macos.qcow2` (and `OVMF_VARS.fd`, and
+  whichever of `macos-recovery.qcow2`/`macos-installer.qcow2` exists),
+  asks for confirmation, deletes them, and that the *next* boot shows
+  the first-run wizard again instead of trying to launch a missing
+  disk. Also confirm it refuses (without `-y`/`--force`) while a
+  `qemu-system-x86_64` process is still running.
 
 ## Licensing notes (not legal advice)
 

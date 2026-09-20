@@ -79,6 +79,10 @@ edk2-ovmf
 swtpm
 python
 python-yaml
+# tkinter's runtime dep (see lib/pick-source-file.py) -- Arch's python
+# package already has the _tkinter extension built in, just needs Tk's
+# own shared libs present to load it.
+tk
 curl
 
 # Vulkan (Reims-vGPU backend)
