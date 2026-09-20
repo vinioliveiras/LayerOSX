@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Show the macOS VM's current settings and disk state at a glance.
+S=/var/lib/layerosx
+gfx=$(cat "$S/gfx" 2>/dev/null || echo vmware); verb=$(cat "$S/verbose" 2>/dev/null || echo on); aud=$(cat "$S/audio" 2>/dev/null || echo off)
+cpu=$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)
+echo "===== macOS VM status ====="
+echo "  host CPU : $cpu"
+echo "  gpu      : $gfx      (gpu reims|vmware)"
+echo "  verbose  : $verb     (verbose on|off)  -- on = full boot logs"
+echo "  audio    : $aud      (audio on|off)"
+echo "  --- disks in $S ---"
+for f in macos.qcow2 macos-recovery.qcow2 macos-installer.qcow2 OVMF_VARS.fd; do
+  [ -e "$S/$f" ] && echo "    $f  ($(du -h "$S/$f" 2>/dev/null | cut -f1))" || true
+done
+echo "  --- commands: gpu verbose audio maclog relaunch erasevm ---"

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Quick access to the macOS VM's boot/serial log (~/mac-vm-serial.log) without
+# typing long grep pipelines. Mirrors the gpu/verbose command style.
+#
+#   maclog            curated diagnostic view (where it stopped + errors + OC)
+#   maclog tail       last 40 lines (usually where the boot froze)
+#   maclog oc         OpenCore's own log lines (OC:/OCB:/OCABC:/OCAK:)
+#   maclog patch      kernel-patch results (needs the debug OpenCore / verbose on)
+#   maclog err        errors / panics / halts only
+#   maclog all        the whole log, paged
+#   maclog usb        copy the log to the USB stick
+set -uo pipefail
+LOG="$HOME/mac-vm-serial.log"
+[ -r "$LOG" ] || LOG="/home/mac/mac-vm-serial.log"
+if [ ! -r "$LOG" ]; then
+    echo "No serial log yet at $LOG -- launch the VM first." >&2; exit 1
+fi
+case "${1:-}" in
+    ""|view|diag)
+        echo "===== macOS VM serial log: $LOG ($(wc -l <"$LOG") lines) ====="
+        echo "--- last 25 lines (where it stopped) ---"
+        tail -25 "$LOG"
+        echo
+        echo "--- errors / panics / halts ---"
+        grep -inE "halting|panic|Err\(0x[^E]|fatal|died|Aborted|Unable|not a valid" "$LOG" | grep -viE "wake-failure|root_hash|\.development" | head -20 || echo "(none)"
+        echo
+        echo "--- kernel-patch results (OCAK) ---"
+        grep -i "OCAK" "$LOG" | head -40 || echo "(none -- needs the debug OpenCore, i.e. 'verbose on')"
+        ;;
+    tail) tail -40 "$LOG" ;;
+    oc)   grep -iE "OC[A-Z]*:" "$LOG" | grep -viE "AAPL:" | less -R ;;
+    patch|patches|ocak) grep -i "OCAK" "$LOG" || echo "No OCAK lines -- run 'verbose on' (debug OpenCore) and relaunch." ;;
+    err|errors|panic) grep -inE "halting|panic|fatal|died|Aborted|Unable|Err\(0x[^E]|not a valid" "$LOG" | grep -viE "wake-failure|root_hash|\.development" || echo "(no hard errors)" ;;
+    all|full) less -R "$LOG" ;;
+    usb)
+        DST=""
+        for m in /run/media/mac/* /mnt/usb /media/*; do [ -d "$m" ] && [ -w "$m" ] && DST="$m" && break; done
+        if [ -n "$DST" ]; then cp "$LOG" "$DST/mac-vm-serial-$(date +%H%M%S).log" && echo "Copied to $DST"; else echo "No writable USB mount found." >&2; fi
+        ;;
+    *) echo "usage: maclog [tail|oc|patch|err|all|usb]   (no arg = diagnostic view)" >&2; exit 2 ;;
+esac

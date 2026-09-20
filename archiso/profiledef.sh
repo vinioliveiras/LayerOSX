@@ -65,4 +65,7 @@ file_permissions=(
   ["/usr/local/bin/gpu"]="0:0:755"
   ["/usr/local/bin/verbose"]="0:0:755"
   ["/usr/local/bin/audio"]="0:0:755"
+  ["/usr/local/bin/maclog"]="0:0:755"
+  ["/usr/local/bin/relaunch"]="0:0:755"
+  ["/usr/local/bin/macstatus"]="0:0:755"
 )

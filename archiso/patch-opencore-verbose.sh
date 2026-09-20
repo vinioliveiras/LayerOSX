@@ -64,6 +64,17 @@ dbg["DisableWatchDog"] = True
 dbg["AppleDebug"] = True
 dbg["ApplePanic"] = True
 
+# 3) Enable kholia's own kernel serial-output patches, which ship DISABLED.
+#    They route XNU's early boot log and its panic string to the serial port
+#    (0x3F8 / COM1, which the launcher captures to ~/mac-vm-serial.log). Without
+#    them the serial log stops at HANDOFF and the kernel is a black box -- with
+#    them we finally see WHERE/why XNU dies. They are Base-symbol patches
+#    (_panic, _kernel_debug_string_early, _disable_serial_output) with no
+#    MinKernel/MaxKernel, so they apply to every macOS version incl. Ventura.
+for _p in (cfg.get("Kernel", {}).get("Patch", []) or []):
+    if _p.get("Identifier") == "kernel" and "serial" in (_p.get("Comment", "") or "").lower():
+        _p["Enabled"] = True
+
 plistlib.dump(cfg, open(p, "wb"))
 sys.exit(0)
 PYV

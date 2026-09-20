@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Relaunch the macOS VM to apply a gpu/verbose/audio change, without rebooting
+# the whole machine. Kills Xorg; the kiosk autostart brings the VM right back.
+echo "Relaunching the macOS VM (applies any gpu/verbose/audio change)..."
+sudo pkill Xorg 2>/dev/null
+echo "Done -- the VM should relaunch on tty1 in a couple of seconds."
