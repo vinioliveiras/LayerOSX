@@ -1904,3 +1904,36 @@ small descriptor `.vmdk` and `qemu-img` pulls in the `-s001.vmdk`/
 is the user's business, same as any other source here — a pre-installed
 macOS image redistributed by a third party is not something LayerOSX
 fetches or bundles; this is format support for a disk you already have.)
+
+### Bug: the VMware adapter is `vmvga` in this build, not `vmware-svga`
+
+Confirmed on real hardware, the moment vmware-svga became the default: QEMU
+exited instantly with `-device vmware-svga: 'vmware-svga' is not a valid
+device model name`, five times into the `fatal()`, screen flickering. The
+qemu-vmvga overlay this build uses (see `qemus/qemu-macos`) *replaces* stock
+QEMU's VMware SVGA device and registers its own under the name `vmvga`
+(verified in qemu-vmvga's source: `hw/display/vmware_vga.c` →
+`TypeInfo .name = "vmvga"`). Stock QEMU and this build have the name
+inverted — stock has `vmware-svga` and no `vmvga`, this build has `vmvga`
+and no `vmware-svga` — which is exactly the kind of build-specific detail a
+generic reference launcher gets wrong. Fixed to `-device vmvga`.
+
+### Hardening: a persistent launch failure no longer flicker-loops the machine
+
+The same incident exposed a worse problem than any single wrong argument:
+once QEMU failed to launch, the machine became nearly impossible to fix by
+hand. `fatal()` used to `sleep 60; exit 1`, but exiting ends the X session,
+and getty's tty1 autologin restarts it immediately — which re-runs
+`force-max-refresh.sh` (resetting the display mode) and relaunches the VM,
+an endless ~75 s flicker cycle with only a brief, mode-thrashing window to
+switch to a text console. (The user's own read of it — "it keeps trying to
+force the refresh rate in a loop" — was the symptom of exactly this: the
+refresh reset every time X restarted.)
+
+`fatal()` now does **not** exit. It prints what to do and then holds the
+session alive and idle (`while true; do sleep 3600; done`) — no QEMU, no X
+restart, no mode-thrash — so the screen sits still and `Ctrl+Alt+F2` stays
+reliably reachable. The machine is recoverable: switch to a text console,
+apply the fix, `sudo reboot`. The transient-crash retry loop (a QEMU that
+exits *without* a fatal-class cause, fewer than 5 times) is unchanged; only
+the give-up path stopped nuking the session.

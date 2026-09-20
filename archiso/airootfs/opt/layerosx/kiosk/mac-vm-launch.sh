@@ -59,9 +59,14 @@ fatal() {
     for _line in "$@"; do
         echo "  $_line" >&2
     done
-    echo "Not retrying automatically -- this needs a fix, not another attempt. Will try again in 60s in case that fix already happened (a rebuild, a BIOS change + reboot, ...). Ctrl+Alt+F2 for a text console, or F2 for the live log if a VM window ever got this far before." >&2
-    sleep 60
-    exit 1
+    echo "Not retrying, and NOT restarting the graphical session -- a restart here would just re-loop (flicker). Fix it from a text console: Ctrl+Alt+F2, log in (mac/mac), make the change, then 'sudo reboot'. This screen will now sit still (no flicker) so the text console stays reachable." >&2
+    # Deliberately do NOT exit: exiting ends X, and getty's tty1 autologin
+    # immediately restarts it (.xinitrc re-runs force-max-refresh + this
+    # script), which is the flicker loop. Staying alive keeps X up and idle --
+    # no QEMU, no restart, no mode-thrash -- so Ctrl+Alt+F2 works reliably and
+    # the machine is actually fixable. The user reboots once they've applied
+    # the fix. (A tty is always available regardless; nothing here blocks it.)
+    while true; do sleep 3600; done
 }
 
 # The build container qemus/qemu-macos compiles this binary in
@@ -312,7 +317,12 @@ if [ "$GFX" = "reims-vgpu-pci" ]; then
         -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
     )
 else
-    GFX_ARGS=(-vga none -device vmware-svga)
+    # This build's VMware SVGA adapter is qemu-vmvga, whose PCI device is
+    # registered as "vmvga" (confirmed in its source: hw/display/vmware_vga.c
+    # -> TypeInfo .name = "vmvga"), NOT stock QEMU's "vmware-svga". Confirmed
+    # on real hardware: "-device vmware-svga: 'vmware-svga' is not a valid
+    # device model name", QEMU exits instantly, 5x -> fatal, screen flickering.
+    GFX_ARGS=(-vga none -device vmvga)
 fi
 
 echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"

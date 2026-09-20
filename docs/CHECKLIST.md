@@ -716,6 +716,20 @@ real-hardware boot stall"). Check, in this order:
   missing, the launcher on the machine is stale (rebuild/reinstall, or
   edit `/opt/layerosx/kiosk/mac-vm-launch.sh` in place + `sudo pkill
   Xorg`).
+- Confirmed on real hardware: `'vmware-svga' is not a valid device
+  model name` — this build's VMware adapter is `vmvga` (qemu-vmvga
+  renames it), not stock QEMU's `vmware-svga`. Fixed (see README.md). If
+  a launch dies instantly on the display device, check the `-device`
+  name against what the actual binary offers: `sudo LD_LIBRARY_PATH=/opt/
+  layerosx/lib /opt/layerosx/bin/qemu-system-x86_64 -device help | grep
+  -i vmware` from tty2.
+- If a launch keeps failing, the machine no longer flicker-loops: after 5
+  tries `fatal()` holds the session still (no X restart, no refresh
+  thrash) so Ctrl+Alt+F2 stays reachable. Fix from the text console, then
+  `sudo reboot`. If you instead see the screen flickering endlessly and
+  can't reach a tty, the launcher on the machine is from before this
+  hardening — power-cycle and use the GRUB `init=/bin/bash` route to edit
+  `mac-vm-launch.sh` (see README.md/the recovery notes).
 - Confirmed on real hardware: `Unsupported PCI slot 0 for standard
   hotplug controller` from the `reims-vgpu-pci` device -- stock QEMU
   reserves slot 0 of a pci-bridge for its hotplug controller, but Reims'
