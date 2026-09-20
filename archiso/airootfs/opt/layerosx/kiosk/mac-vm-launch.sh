@@ -28,6 +28,7 @@ GOP_ROM="/usr/share/qemu/reims-vgpu-gop.rom"
 MACOS_VERSION_FILE="$STATE_DIR/macos-version"   # written by macos-source-wizard.sh
 GFX_FILE="$STATE_DIR/gfx"                       # optional: "vmware" to bypass Reims
 VERBOSE_FILE="$STATE_DIR/verbose"                # optional: "off" for a clean Apple-logo boot (default: on)
+AUDIO_FILE="$STATE_DIR/audio"                    # optional: "on" to attach a usb-audio device (default: off)
 VM_RAM_MB=8192
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
@@ -364,6 +365,37 @@ else
     GFX_ARGS=(-vga none -device vmvga)
 fi
 
+# --- Audio (opt-in) ---------------------------------------------------------
+# Off by default. macOS drives a USB Audio Class device with its own built-in
+# AppleUSBAudio driver (no kext, unlike the intel-hda + AppleALC route), so
+# `-device usb-audio` is the lowest-risk way to get sound -- IF two things hold
+# on this build: the custom qemu-macos binary has an audio backend compiled in
+# (it's built for VNC/noVNC, so it may not), and the host has that backend's
+# library. We probe for both and simply skip audio (with a warning) when
+# they're missing, rather than handing QEMU an argument it rejects and turning
+# a working boot into a launch failure. `audio on|off` flips $AUDIO_FILE.
+AUDIO_ARGS=()
+AUDIO_STATE="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
+case "$AUDIO_STATE" in on|1|yes|true|ON|On) AUDIO_STATE=on ;; *) AUDIO_STATE=off ;; esac
+if [ "$AUDIO_STATE" = on ]; then
+    _qhelp="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -audiodev help 2>/dev/null || true)"
+    _has_usbaudio="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -device help 2>/dev/null | grep -c '"usb-audio"' || true)"
+    _snd_backend=""
+    # Prefer alsa: it talks straight to the kernel with no sound daemon, which
+    # a bare kiosk (no PipeWire/PulseAudio running) is. The others are listed
+    # as fallbacks only.
+    for _b in alsa pipewire pa sdl oss; do
+        if printf '%s\n' "$_qhelp" | grep -qw "$_b"; then _snd_backend="$_b"; break; fi
+    done
+    if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
+        AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
+        echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+    else
+        echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
+        echo "         The custom qemu-macos build needs an audio backend compiled in; see README's audio note. Boot is unaffected." >&2
+    fi
+fi
+
 echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
 echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the F2 terminal)."
 
@@ -435,6 +467,7 @@ while true; do
         -display sdl,full-screen=on
     )
     QEMU_ARGS+=("${GFX_ARGS[@]}")
+    if [ "${#AUDIO_ARGS[@]}" -gt 0 ]; then QEMU_ARGS+=("${AUDIO_ARGS[@]}"); fi
     if [ -n "$RECOVERY_DISK" ]; then
         echo "Attaching recovery/installer disk: $RECOVERY_DISK"
         QEMU_ARGS+=(

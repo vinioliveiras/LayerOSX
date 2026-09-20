@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Toggle a USB audio device for the macOS VM without a rebuild -- it only
+# changes whether the launcher attaches `-device usb-audio` on the next launch
+# (macOS drives it with its built-in AppleUSBAudio driver, no kext needed).
+#
+#   audio            show the current setting
+#   audio on         attach a usb-audio device next launch (sound, if supported)
+#   audio off        no audio device (the default)
+#
+# Default is OFF, on purpose: sound is not required to install or run macOS,
+# and this way the audio path can never interfere with a boot that's still
+# being brought up. When ON, the launcher first checks that this build's QEMU
+# actually has a usb-audio device and an audio backend compiled in; if it
+# doesn't, it prints a warning and boots WITHOUT audio rather than failing --
+# so turning this on is always safe to try.
+#
+# NOTE: whether sound actually comes out also depends on (a) the custom
+# qemu-macos binary having been built with an audio backend (it's built for
+# VNC/noVNC, so it may not be -- see README's audio note), and (b) the host's
+# sound card working under Linux. If `audio on` boots but there's no sound,
+# that's the QEMU-build side, which needs the build patched and QEMU rebuilt.
+#
+# After switching, relaunch the VM: sudo pkill Xorg  (or reboot).
+set -uo pipefail
+AUDIO_FILE="/var/lib/layerosx/audio"
+
+current() {
+    local v; v="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
+    case "$v" in
+        on|1|yes|true|ON|On) echo "on (usb-audio attached, if this build supports it)" ;;
+        *) echo "off (no audio device -- the default)" ;;
+    esac
+}
+
+case "${1:-}" in
+    "")
+        echo "macOS VM audio: $(current)"
+        echo "Change it with:  audio on   |   audio off"
+        echo "Then relaunch:   sudo pkill Xorg   (or reboot)"
+        ;;
+    on|1|yes|true)
+        sudo mkdir -p "$(dirname "$AUDIO_FILE")"
+        echo on | sudo tee "$AUDIO_FILE" >/dev/null
+        echo "Audio ON -- a usb-audio device will be attached next launch (if this QEMU build supports it)."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        echo "If there's no sound after this, the custom QEMU was built without audio -- see README's audio note."
+        ;;
+    off|0|no|false)
+        sudo mkdir -p "$(dirname "$AUDIO_FILE")"
+        echo off | sudo tee "$AUDIO_FILE" >/dev/null
+        echo "Audio OFF -- no audio device next launch."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        ;;
+    *)
+        echo "usage: audio [on|off]   (no argument = show current setting)" >&2
+        exit 2
+        ;;
+esac

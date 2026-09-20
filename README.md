@@ -2071,8 +2071,34 @@ can actually drive it:
 | Keyboard/mouse | USB HID (absolute `usb-tablet`) | works, absolute pointer (no mouse-grab) |
 | SMC | `isa-applesmc` | required, present |
 | Clock | `-rtc base=utc` | works |
-| **Audio** | none configured | **no audio yet.** QEMU's `intel-hda` isn't plug-and-play on macOS (needs `AppleALC` + a codec layout-id the OpenCore image doesn't ship), so wiring up a dead HDA device would add nothing. Left out on purpose; real audio is future work: add `AppleALC.kext` + a layout to the OpenCore image, then `-device intel-hda -device hda-duplex`. |
+| Audio | `usb-audio` (opt-in, off by default) | macOS drives a USB Audio Class device with its built-in `AppleUSBAudio` — no kext, unlike the `intel-hda` + `AppleALC` route. Attached only when `audio on` is set, and the launcher probes first so it's skipped (not fatal) if unsupported. **Caveat:** sound still depends on the custom qemu-macos binary having an audio backend compiled in — it's built for VNC/noVNC, so it may not; if so, that needs a QEMU rebuild (see below). |
 
 Deliberately *not* present because macOS can't use them: `virtio-rng`,
 `virtio-balloon`, virtio-serial/clipboard sharing. Nothing here blocks
 installing or running macOS; audio is the one everyday feature not there yet.
+
+### Audio: an opt-in `usb-audio` toggle (host side may still need work)
+
+Audio is a whole stack, not one flag, so it's opt-in and off by default. The
+guest side is the easy part: `-device usb-audio` presents a USB Audio Class
+device that macOS's built-in `AppleUSBAudio` driver binds to with no kext. An
+`audio on|off` command (same pattern as `gpu`/`verbose`, writing
+`/var/lib/layerosx/audio`) toggles whether the launcher attaches it.
+
+Turning it on is always safe to try: before adding the device the launcher
+probes the QEMU binary for a `usb-audio` device *and* a usable audio backend,
+and if either is missing it prints a warning and boots **without** audio rather
+than feeding QEMU an argument it would reject (which would turn a good boot into
+a launch failure). The host packages for the ALSA backend (`alsa-lib`,
+`alsa-utils`, `sof-firmware`) are on the ISO.
+
+The remaining unknown is the QEMU binary itself: `qemus/qemu-macos` is built for
+VNC/noVNC viewing and may have been compiled with **no audio backend at all**.
+If `audio on` boots but stays silent, that's this — the fix is to patch
+`prepare-qemu-macos.sh`'s Dockerfile to install `libasound2-dev` and build QEMU
+with `--audio-drv-list=alsa`, then rebuild (the 30-60 min Docker step). That
+build-side change is deliberately *not* done yet: it's the same fragile
+Dockerfile-patching that the SDL enablement needed several tries to get right,
+and getting it wrong breaks the whole QEMU build, so it's kept separate from
+the guest-side toggle above. The `intel-hda` + `AppleALC.kext` route remains an
+alternative if `usb-audio` ever proves unreliable.

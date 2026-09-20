@@ -869,9 +869,15 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   had none). Once macOS is up, confirm it gets an IP (System Settings →
   Network, or `ifconfig` in Terminal) over the user-mode NAT. If not, the
   `e1000-82545em` fallback is the documented next thing to try.
-- **No audio yet** (see README.md's device-support table): macOS won't have a
-  working sound device until `AppleALC` + a codec layout are added to the
-  OpenCore image. Not a blocker for install/run; just expect silence.
+- **Audio (opt-in, off by default):** `audio on` then relaunch attaches a
+  `usb-audio` device (macOS drives it natively, no kext). Safe to try — the
+  launcher probes first and boots without audio (with a warning) if this QEMU
+  build can't do it. If it boots but there's no sound, the custom qemu-macos
+  binary was built without an audio backend (likely — it's a VNC/noVNC build);
+  that needs the Dockerfile patched (`libasound2-dev` + `--audio-drv-list=alsa`)
+  and QEMU rebuilt. `audio off` returns to no audio. The host ALSA packages
+  (`alsa-lib`, `alsa-utils`, `sof-firmware`) are already on the ISO. See
+  README.md's "Audio: an opt-in usb-audio toggle" for the full picture.
 
 ## 5.5. Branding (GRUB menu, boot message)
 

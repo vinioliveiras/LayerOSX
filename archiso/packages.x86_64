@@ -129,3 +129,10 @@ xterm
 # on whatever a dependency happens to drag in, not a real guarantee
 ttf-dejavu
 gparted
+
+# opt-in VM audio (the `audio on` toggle attaches a usb-audio device; QEMU's
+# alsa backend needs libasound at runtime, alsa-utils to unmute, and
+# sof-firmware so modern Intel/AMD sound cards are detected by the host at all)
+alsa-lib
+alsa-utils
+sof-firmware
