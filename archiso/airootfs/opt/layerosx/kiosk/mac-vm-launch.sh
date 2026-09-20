@@ -268,18 +268,21 @@ _p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
 VM_CORES=$_p
 
 # --- Graphics device --------------------------------------------------------
-# reims-vgpu-pci is the whole point of this project, but it is alpha software
-# on an alpha driver stack. $GFX_FILE lets a tester switch the guest to the
-# plain VMware SVGA adapter (the same VMVGA build dockur/macos runs on, no
-# acceleration, but boring and known-good) WITHOUT a rebuild: write
-# `vmware` into it from tty2, `sudo pkill Xorg`, and the next launch uses
-# that. Anything else (or no file) means reims. This is the single most
-# useful A/B switch for telling "Reims can't draw yet" apart from "macOS
-# isn't booting at all".
+# reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
+# but it is alpha software on an alpha driver stack, and Reims' own docs say
+# to provision the macOS guest on the plain VMware SVGA adapter FIRST and
+# only switch to Reims once there's a working, installed system. So the
+# DEFAULT here is vmware-svga: boring, unaccelerated, but reliable enough to
+# actually get macOS installed. Reims is opt-in -- `echo reims > $GFX_FILE`
+# (then `sudo pkill Xorg`, or a reboot) turns it on for the next launch,
+# `echo vmware > $GFX_FILE` (or `rm $GFX_FILE`) goes back. This is also the
+# single most useful A/B switch for telling "Reims can't draw yet" apart from
+# "macOS isn't booting at all": if it boots on vmware but not reims, it's the
+# Reims path; if it fails the same way on both, it isn't Reims.
 GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
 case "$GFX" in
-    vmware|vmware-svga) GFX="vmware-svga" ;;
-    *) GFX="reims-vgpu-pci" ;;
+    reims|reims-vgpu-pci) GFX="reims-vgpu-pci" ;;
+    *) GFX="vmware-svga" ;;
 esac
 GFX_ARGS=()
 if [ "$GFX" = "reims-vgpu-pci" ]; then
@@ -291,7 +294,7 @@ if [ "$GFX" = "reims-vgpu-pci" ]; then
     # works if QEMU's firmware search path happens to include where
     # prepare-qemu-macos.sh staged it.
     if [ ! -s "$GOP_ROM" ]; then
-        fatal "$GOP_ROM is missing." "The ISO was built without prepare-qemu-macos.sh staging the Reims GOP ROM — see docs/CHECKLIST.md. (Or write 'vmware' into $GFX_FILE to boot without Reims.)"
+        fatal "$GOP_ROM is missing." "The ISO was built without prepare-qemu-macos.sh staging the Reims GOP ROM — see docs/CHECKLIST.md. (Or write 'vmware' into $GFX_FILE -- or just delete it -- to go back to the default VMware display.)"
     fi
     GFX_ARGS=(
         -vga none
@@ -432,8 +435,8 @@ while true; do
                 fatal "QEMU exited $RETRIES times in a row." \
                     "That's a boot that fails the same way every time, not a transient glitch -- rebooting the physical" \
                     "machine (what this used to do here) would just loop it faster. Read $LOG and $SERIAL_LOG" \
-                    "(F2 terminal: 'logs' / 'serial'). To try the plain VMware display instead of Reims:" \
-                    "echo vmware > $GFX_FILE, then sudo pkill Xorg."
+                    "(F2 terminal: 'logs' / 'serial'). The display defaults to plain VMware SVGA;" \
+                    "if you'd switched it to Reims, echo vmware > $GFX_FILE (or rm it) + sudo pkill Xorg to go back."
             fi
             sleep 3
             ;;

@@ -62,4 +62,5 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/pick-source-file.py"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
   ["/usr/local/bin/erasevm"]="0:0:755"
+  ["/usr/local/bin/gpu"]="0:0:755"
 )

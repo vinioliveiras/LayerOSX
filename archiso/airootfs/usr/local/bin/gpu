@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Switch the macOS VM's graphics adapter without a rebuild and without
+# reinstalling macOS -- the disk stays the same, only which GPU QEMU
+# hands the guest changes on the next launch (macOS redetects it and
+# loads the right driver; Reims uses the stock AppleParavirtGPU.kext).
+#
+#   gpu            show the current setting
+#   gpu reims      Reims vGPU (hardware-accelerated, alpha) next launch
+#   gpu vmware     VMware SVGA (reliable, unaccelerated -- the default)
+#
+# After switching, relaunch the VM: sudo pkill Xorg  (or reboot).
+set -uo pipefail
+GFX_FILE="/var/lib/layerosx/gfx"
+
+current() {
+    local v; v="$(cat "$GFX_FILE" 2>/dev/null || true)"
+    case "$v" in
+        reims|reims-vgpu-pci) echo "reims (hardware-accelerated, alpha)" ;;
+        *) echo "vmware (reliable, unaccelerated -- the default)" ;;
+    esac
+}
+
+case "${1:-}" in
+    "")
+        echo "macOS VM graphics adapter: $(current)"
+        echo "Change it with:  gpu reims   |   gpu vmware"
+        echo "Then relaunch:   sudo pkill Xorg   (or reboot)"
+        ;;
+    reims|reims-vgpu-pci)
+        sudo mkdir -p "$(dirname "$GFX_FILE")"
+        echo reims | sudo tee "$GFX_FILE" >/dev/null
+        echo "Graphics set to Reims vGPU (hardware-accelerated, alpha)."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        echo "If the VM won't boot on Reims, come back with:  gpu vmware"
+        ;;
+    vmware|vmware-svga)
+        sudo mkdir -p "$(dirname "$GFX_FILE")"
+        echo vmware | sudo tee "$GFX_FILE" >/dev/null
+        echo "Graphics set to VMware SVGA (reliable, unaccelerated)."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        ;;
+    *)
+        echo "usage: gpu [reims|vmware]   (no argument = show current setting)" >&2
+        exit 2
+        ;;
+esac

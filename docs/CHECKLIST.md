@@ -476,8 +476,13 @@ actually run the detection logic against real hardware yet.
   be visible here (a real bug found and fixed: `-nocursor` was hiding
   it for the whole session, not just inside the VM — see README.md).
 - Test both options at least once each, even just to see they open
-  without crashing: automatic download, and "pick a file" (now one
-  merged picker for `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`).
+  without crashing: automatic download, and "pick a file" (one merged
+  picker for a complete VM disk in `.qcow2`/`.img`/`.raw`/`.vmdk`/
+  `.vdi`/`.vhd`/`.vhdx`, recovery/installer `.iso`, or a `.dmg`/`.app`
+  installer). The `.vmdk`/`.vdi`/`.vhd`/`.vhdx` paths convert via
+  `qemu-img` to qcow2 — confirm a small test disk of each converts and
+  boots; a split VMware `.vmdk` needs all its `-s00x.vmdk` extents in
+  the same folder as the descriptor you pick.
 - Confirm the "where should macOS come from" list itself renders both
   rows on one line each, no horizontal scrollbar cutting text off —
   confirmed on real hardware once already (see README.md), fixed by
@@ -746,13 +751,20 @@ real-hardware boot stall"). Check, in this order:
   `FATAL: QEMU exited 5 times in a row` and a 60 s pause, never a
   physical reboot. If you see the physical machine rebooting on its
   own, something regressed here.
-- **A/B the display without a rebuild**: `echo vmware >
-  /var/lib/layerosx/gfx && sudo pkill Xorg` from tty2. If macOS boots
-  to the installer on VMware SVGA but not on Reims, the problem is the
-  Reims path (GOP ROM, Vulkan on the host, driver maturity) — check
+- **The display now defaults to VMware SVGA; Reims is opt-in** (see
+  README.md). Confirm a fresh launch's `Launch profile:` line says
+  `gfx=vmware-svga` with no `/var/lib/layerosx/gfx` file present. Switch
+  with the `gpu` command: `gpu reims` then `sudo pkill Xorg` to try
+  acceleration, `gpu vmware` (or `gpu` alone to check) to go back. If
+  macOS boots on VMware SVGA but not on Reims, the problem is the Reims
+  path (GOP ROM, Vulkan on the host, driver maturity) — check
   `vulkaninfo --summary` on the host and `~/mac-vm.log` for Reims/Vulkan
-  errors. If it fails the same way on both, it isn't Reims. `rm
-  /var/lib/layerosx/gfx` to go back.
+  errors. If it fails the same way on both, it isn't Reims.
+- Recommended install flow (matches Reims' own docs): leave it on the
+  default VMware SVGA, get macOS fully installed and booting to the
+  desktop, THEN `gpu reims` + relaunch to bring up acceleration on a
+  known-good guest. No reinstall needed to switch — the disk is
+  untouched, macOS redetects the GPU at boot.
 
 ### 5.3. Reaching the installer (what "working" looks like from here)
 

@@ -86,7 +86,12 @@ run_with_progress() {
 # so it's simple to parse live -- same FIFO pattern install-wizard.sh
 # uses for rsync's progress.
 run_convert_with_progress() {
-    local title="$1" text="$2" src="$3" dst="$4"
+    # $5 (optional) is the qemu-img source format. Empty = let qemu-img
+    # autodetect (safe for container formats with a magic header: qcow2,
+    # vmdk, vdi, vpc/vhd, vhdx). Callers pass "raw" explicitly for formats
+    # with NO header (a plain disk image, an .iso), where autodetect would
+    # guess wrong.
+    local title="$1" text="$2" src="$3" dst="$4" src_format="${5:-}"
 
     echo "----- $text -----"
 
@@ -100,7 +105,10 @@ run_convert_with_progress() {
     exec 4>"$fifo"
     rm -f "$fifo"
 
-    qemu-img convert -p -f raw -O qcow2 "$src" "$dst" 2>&1 | \
+    local _cargs=(convert -p)
+    [ -n "$src_format" ] && _cargs+=(-f "$src_format")
+    _cargs+=(-O qcow2 "$src" "$dst")
+    qemu-img "${_cargs[@]}" 2>&1 | \
         stdbuf -oL tr '\r' '\n' | stdbuf -oL grep --line-buffered -oE '[0-9]{1,3}(\.[0-9]+)?%' | \
         while IFS= read -r raw; do
             raw="${raw%\%}"; raw="${raw%.*}"
@@ -155,7 +163,7 @@ CHOICE=$(zenity --list --radiolist --width=620 --height=280 \
     --text="Where should macOS come from? (only asked once)" \
     --column="" --column="Option" \
     TRUE  "Download the recovery image directly from Apple (recommended)" \
-    FALSE "I already have macOS — pick a file (disk, .dmg, or .iso)")
+    FALSE "I already have macOS — pick a file (VM disk, .dmg, or .iso)")
 
 [ -n "$CHOICE" ] || exit 1
 
@@ -231,8 +239,29 @@ case "$CHOICE" in
                 # copied (it used to be copied -- QEMU then refused it as
                 # "not in qcow2 format").
                 if ! run_convert_with_progress "LayerOSX — first run" "Converting VM disk to qcow2… (press F2 for details)" \
-                    "$SRC" "$VM_DISK"; then
+                    "$SRC" "$VM_DISK" raw; then
                     zenity --error --text="Couldn't convert this raw disk image into a qcow2 VM disk. Press F2 to see the details."
+                    exit 1
+                fi
+                ;;
+            *.vmdk|*.vdi|*.vhd|*.vhdx|*.VMDK|*.VDI|*.VHD|*.VHDX)
+                # A complete, already-installed macOS disk from another
+                # hypervisor -- VMware (.vmdk), VirtualBox (.vdi, also .vmdk/
+                # .vhd), Hyper-V (.vhd/.vhdx). qemu-img reads all of these
+                # natively; convert to the qcow2 mac-vm-launch.sh expects.
+                # (A split VMware .vmdk is fine: pick the small descriptor
+                # .vmdk and qemu-img pulls in the -s00x.vmdk extents sitting
+                # next to it automatically.) These boot directly -- a complete
+                # system, not installer media -- so no second disk is attached.
+                case "${SRC,,}" in
+                    *.vmdk) _srcfmt=vmdk ;;
+                    *.vdi)  _srcfmt=vdi ;;
+                    *.vhd)  _srcfmt=vpc ;;
+                    *.vhdx) _srcfmt=vhdx ;;
+                esac
+                if ! run_convert_with_progress "LayerOSX — first run" "Converting ${SRC##*.} disk to qcow2… (press F2 for details)" \
+                    "$SRC" "$VM_DISK" "$_srcfmt"; then
+                    zenity --error --text="Couldn't convert this ${SRC##*.} disk into a qcow2 VM disk. Press F2 to see the details. If it's a split VMware disk, make sure every part (the -s001.vmdk, -s002.vmdk… files) is in the same folder as the descriptor .vmdk you picked."
                     exit 1
                 fi
                 ;;
@@ -245,7 +274,7 @@ case "$CHOICE" in
                 qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
                 INSTALLER_DISK="${VM_DISK%.qcow2}-installer.qcow2"
                 if ! run_convert_with_progress "LayerOSX — first run" "Preparing installer from .iso… (press F2 for details)" \
-                    "$SRC" "$INSTALLER_DISK"; then
+                    "$SRC" "$INSTALLER_DISK" raw; then
                     zenity --error --text="Couldn't convert this .iso into a VM disk. Press F2 to see the details, or try the 'download directly from Apple' option instead."
                     exit 1
                 fi
@@ -259,7 +288,7 @@ case "$CHOICE" in
                 fi
                 ;;
             *)
-                zenity --error --text="Unrecognized file type: $SRC\n\nExpected a .qcow2/.img/.raw (complete VM disk), .iso (recovery/installer media), or .dmg/.app (macOS installer)."
+                zenity --error --text="Unrecognized file type: $SRC\n\nExpected a complete VM disk (.qcow2/.img/.raw/.vmdk/.vdi/.vhd/.vhdx), .iso (recovery/installer media), or .dmg/.app (macOS installer)."
                 exit 1
                 ;;
         esac

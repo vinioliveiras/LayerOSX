@@ -37,7 +37,7 @@ def main() -> int:
         title="Pick a macOS VM disk, .dmg, or .iso",
         initialdir=initial_dir,
         filetypes=[
-            ("macOS sources", "*.qcow2 *.img *.raw *.iso *.dmg *.app"),
+            ("macOS sources", "*.qcow2 *.img *.raw *.vmdk *.vdi *.vhd *.vhdx *.iso *.dmg *.app"),
             ("All files", "*"),
         ],
     )

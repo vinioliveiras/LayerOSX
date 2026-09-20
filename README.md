@@ -1858,3 +1858,49 @@ drawing wrong) would instead leave a single frozen/garbage frame with no
 relaunch. That distinction is worth remembering: flicker = QEMU exiting
 = read the `qemu-system-x86_64:` line in `~/mac-vm.log`; frozen = QEMU
 up = read `~/mac-vm-serial.log` for what the guest is doing.
+
+## VMware SVGA is now the default display; Reims is opt-in
+
+Reims is alpha, and its own docs say to provision the macOS guest on the
+plain VMware SVGA adapter first and only switch to Reims once there's a
+working, installed system. So the launcher now defaults to `vmware-svga`
+-- unaccelerated but reliable enough to actually get macOS installed --
+and Reims is opt-in. This splits two problems that were being fought at
+once: "can macOS install/boot here at all" (vmware answers that) and
+"does the accelerated GPU work yet" (a separate problem, on a guest
+that's already known-good).
+
+Switching needs no rebuild and no macOS reinstall -- the disk is
+untouched, only the GPU QEMU hands the guest changes, and macOS
+redetects it at boot (Reims uses the stock `AppleParavirtGPU.kext`). A
+small `gpu` command wraps it:
+
+    gpu            # show the current adapter
+    gpu reims      # use Reims vGPU next launch
+    gpu vmware     # use VMware SVGA next launch (the default)
+    # then: sudo pkill Xorg   (or reboot)
+
+Under the hood it just writes `reims` or `vmware` into
+`/var/lib/layerosx/gfx`, which `mac-vm-launch.sh` reads at launch
+(anything other than `reims` -- including no file at all -- means
+vmware). `erasevm` deliberately leaves this file alone: it's a display
+preference, not tied to any particular macOS install.
+
+## More "I already have macOS" disk formats: VMware, VirtualBox, Hyper-V
+
+The "pick a file" path used to take a complete disk only as
+`.qcow2`/`.img`/`.raw`. It now also takes the native disk formats of the
+other common hypervisors, since `qemu-img` reads them all and converts
+straight to the qcow2 the launcher expects:
+
+- `.vmdk` — VMware (also VirtualBox's default export)
+- `.vdi` — VirtualBox
+- `.vhd` / `.vhdx` — Hyper-V (and VirtualBox)
+
+All are treated as a complete, already-installed system (they boot
+directly, no installer step). A split VMware `.vmdk` works too: pick the
+small descriptor `.vmdk` and `qemu-img` pulls in the `-s001.vmdk`/
+`-s002.vmdk`… extents sitting next to it. (Where the disk *comes from*
+is the user's business, same as any other source here — a pre-installed
+macOS image redistributed by a third party is not something LayerOSX
+fetches or bundles; this is format support for a disk you already have.)
