@@ -100,22 +100,15 @@ import sys
 path = pathlib.Path(sys.argv[1])
 text = path.read_text()
 
-old_deps = "    libbz2-dev \
-    libvulkan-dev \
-"
-new_deps = "    libbz2-dev \
-    libsdl2-dev \
-    libvulkan-dev \
-"
+old_deps = "    libbz2-dev \\\n    libvulkan-dev \\\n"
+new_deps = "    libbz2-dev \\\n    libsdl2-dev \\\n    libvulkan-dev \\\n"
 if old_deps not in text:
     print("FAIL: apt-get dependency list anchor not found -- upstream Dockerfile's builder deps may have changed.", file=sys.stderr)
     sys.exit(1)
 text = text.replace(old_deps, new_deps, 1)
 
-old_flag = "    --disable-sdl \
-"
-new_flag = "    --enable-sdl \
-"
+old_flag = "    --disable-sdl \\\n"
+new_flag = "    --enable-sdl \\\n"
 if old_flag not in text:
     print("FAIL: --disable-sdl anchor not found -- upstream Dockerfile's configure flags may have changed.", file=sys.stderr)
     sys.exit(1)
