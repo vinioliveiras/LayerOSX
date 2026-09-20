@@ -102,24 +102,6 @@ if not already:
 
 kern.setdefault("Quirks", {})["ProvideCurrentCpuInfo"] = True
 
-# --- DIAGNOSTIC (AMD bring-up) ---------------------------------------------
-# Turn on OpenCore's own logging so the next boot prints, PER PATCH, whether
-# each AMD_Vanilla patch actually applied to this macOS build:
-#   OCAK: Kernel patcher result 0 for <comment> - Success   (matched, applied)
-#   OCAK: Kernel patcher result ...              - Not found (bytes didn't match)
-# A patch that says "Not found" is a patch that isn't protecting the kernel,
-# which is how an AMD boot dies silently right after HANDOFF TO XNU. The log
-# goes to the serial port (captured in ~/mac-vm-serial.log) AND the screen
-# (console) AND a file on the ESP, so it's readable however the boot fails.
-# TODO: remove this block once macOS boots on AMD -- it's noisy / slows boot.
-dbg = cfg.setdefault("Misc", {}).setdefault("Debug", {})
-dbg["Target"] = 0x4B              # enable(1)+console(2)+serial(8)+file(64)
-dbg["DisplayLevel"] = 0xFFFFFFFF  # include INFO level -- patch results live there
-dbg["SerialInit"] = True
-dbg["DisableWatchDog"] = True
-dbg["AppleDebug"] = True
-dbg["ApplePanic"] = True
-
 plistlib.dump(cfg, open(cfg_path, "wb"))
 sys.exit(3 if already else 0)
 PYA

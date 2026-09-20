@@ -2102,3 +2102,49 @@ Dockerfile-patching that the SDL enablement needed several tries to get right,
 and getting it wrong breaks the whole QEMU build, so it's kept separate from
 the guest-side toggle above. The `intel-hda` + `AppleALC.kext` route remains an
 alternative if `usb-audio` ever proves unreliable.
+
+## Root cause of the "boots to HANDOFF then dies" freeze: phantom kexts, not the CPU
+
+For a long stretch this looked like an AMD kernel problem — macOS reached
+`HANDOFF TO XNU` and then the screen froze with no further output, which is the
+textbook signature of an AMD CPU issue, so the AMD_Vanilla patches went in. They
+were necessary, but they were not the whole story.
+
+Turning on OpenCore's own logging (see the verbose image below) made the real
+error print:
+
+```
+OC: Plist Kexts\VoodooPS2Controller.kext\Contents\Info.plist is missing for
+    injected kext VoodooPS2Controller.kext
+Halting on critical error
+```
+
+The base OpenCore image (kholia/OSX-KVM's `OpenCore.qcow2`) lists five kexts in
+`Kernel > Add` as **Enabled** that it does **not** actually bundle:
+`VoodooPS2Controller.kext` (+ its keyboard plug-in), `AppleMCEReporterDisabler.kext`,
+`USBToolBox.kext` and `UTBMap.kext`. OpenCore treats a missing injected kext as a
+critical error and **halts before loading the kernel** — so XNU never ran, and
+the "freeze after HANDOFF" was OpenCore stopping, not the kernel dying. (This
+also explains the intermittent behaviour: whichever missing kext OpenCore hit
+first is where it stopped.) None of the five are needed here — the VM uses USB
+input, not PS/2 — and the kexts that matter (Lilu, VirtualSMC, WhateverGreen)
+are present and stay enabled.
+
+The fix is `patch-opencore-fixup.sh`: it reads the image's actual `Kexts` folder
+and disables any `Kernel > Add` entry whose bundle isn't there. It's detection by
+filesystem, not a hardcoded list, so it keeps working if the base image changes
+what it ships. `build.sh` runs it **in place on the base** before deriving any
+variant, so every image — including the clean Intel base that boots directly —
+inherits the fix. This affects Intel too: the same phantom-kext halt would hit an
+Intel host, so fixing it in the base is what makes "the same ISO also runs on
+Intel" actually true.
+
+### Verbose is now the single diagnostics switch
+
+OpenCore's logging (which revealed the halt) and XNU's `-v` are both baked **only
+into the verbose images** now (`patch-opencore-verbose.sh` sets `Misc > Debug`
+`Target`/`DisplayLevel` alongside adding `-v`). So the non-verbose images
+(`OpenCore.qcow2`, `OpenCore-amd.qcow2`) are completely silent, and `verbose off`
+turns off *everything* — the Apple-logo boot with no `-v` and no OpenCore log
+spam — while `verbose on` turns all of it back on. One command for all
+diagnostics. Once macOS boots cleanly, `verbose off` is the polished mode.

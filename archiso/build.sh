@@ -73,6 +73,12 @@ fi
 # stale/missing variants). Each degrades to a clear warning if qemu-img/mtools
 # are missing rather than aborting the build.
 OCDIR=airootfs/opt/layerosx/opencore
+# First, fix a latent bug in the base image itself (in place): its config.plist
+# enables several kexts that aren't actually bundled (VoodooPS2Controller etc.),
+# which makes OpenCore HALT on "missing injected kext" before macOS ever loads.
+# This must run before the derivations so every image -- including the clean
+# Intel base that boots directly -- inherits the fix. Idempotent.
+./patch-opencore-fixup.sh   "$OCDIR/OpenCore.qcow2"
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-verbose.qcow2"
 ./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd.qcow2"
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd.qcow2" "$OCDIR/OpenCore-amd-verbose.qcow2"

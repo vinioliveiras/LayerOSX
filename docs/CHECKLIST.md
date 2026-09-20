@@ -835,6 +835,21 @@ real-hardware boot stall"). Check, in this order:
   (section 6) — those paths are unchanged, only gated behind the 180 s
   uptime check now.
 
+### 5.4a. Phantom kexts in the base image (fixed by patch-opencore-fixup.sh)
+
+Root cause of the long "boots to HANDOFF then freezes" saga: the base OpenCore
+image enables five kexts it doesn't bundle (VoodooPS2Controller + keyboard
+plug-in, AppleMCEReporterDisabler, USBToolBox, UTBMap), so OpenCore HALTS on the
+first missing one ("Halting on critical error") before macOS loads -- on Intel
+AND AMD. `patch-opencore-fixup.sh` disables any Kernel>Add entry whose kext isn't
+in the image; `build.sh` runs it on the base before deriving variants.
+
+- After a build, none of the four images should halt on a missing kext. If a
+  boot shows "... is missing for injected kext ... Halting on critical error",
+  the fixup didn't run (check qemu-img/mtools on the build host).
+- Only Lilu, VirtualSMC and WhateverGreen should remain enabled in Kernel>Add.
+- This is why the same ISO can run on Intel too: the base halt is fixed for all.
+
 ### 5.4. AMD host: kernel patches, core count, network, verbose toggle
 
 The macOS kernel is Intel-only; on an `AuthenticAMD` host it hangs at
