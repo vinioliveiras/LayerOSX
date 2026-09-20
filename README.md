@@ -1947,10 +1947,11 @@ straight to the screen instead of hiding behind the logo — the fastest way
 to see exactly where a boot hangs or panics on real hardware. It patches the
 `config.plist` inside the pinned OpenCore image *after* the sha256 check (the
 integrity check still guards the download; only our known `-v` edit is added
-on top), editing the FAT EFI partition in place with `mtools` — so the build
-host needs `qemu-img` and `mtools` (`sudo pacman -S qemu-img mtools`). If
-either is missing the step is skipped with a warning rather than failing the
-build. `boot-args` is in this config's `NVRAM/Delete` list as well as `Add`,
+on top), editing the FAT EFI partition in place with `mtools`. The build host needs
+`qemu-img` and `mtools`; `build.sh` auto-installs them via pacman if missing
+(best-effort — on a non-pacman host, or with no network, install by hand). If
+either is still missing the patch step is skipped with a warning rather than
+failing the build. `boot-args` is in this config's `NVRAM/Delete` list as well as `Add`,
 so OpenCore rewrites it every boot and `-v` applies even over a cached NVRAM.
 
 To go back to the quiet Apple-logo boot later, drop the `-v` from

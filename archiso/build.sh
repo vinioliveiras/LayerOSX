@@ -13,6 +13,25 @@ command -v mkarchiso >/dev/null 2>&1 || {
     exit 1
 }
 
+# Build-host tools used by prepare-opencore.sh to bake verbose boot (-v) into
+# the OpenCore image (qemu-img for the qcow2<->raw round-trip, mtools to edit
+# the FAT EFI partition without root). Auto-install the missing ones so the
+# build doesn't silently ship a non-verbose image just because a tool wasn't
+# there -- easy to forget. Best-effort: if the install can't run (no network,
+# no sudo, a non-pacman distro), we don't abort the build; prepare-opencore.sh
+# already degrades to a clear "shipping without -v" warning on its own.
+_missing=()
+command -v qemu-img >/dev/null 2>&1 || _missing+=("qemu-img")
+command -v mcopy    >/dev/null 2>&1 || _missing+=("mtools")
+if [ "${#_missing[@]}" -gt 0 ]; then
+    if command -v pacman >/dev/null 2>&1; then
+        echo "==> installing missing build tools for verbose-boot patching: ${_missing[*]}"
+        sudo pacman -S --needed --noconfirm "${_missing[@]}" ||             echo "WARNING: couldn't auto-install ${_missing[*]} -- the ISO may ship without verbose boot (-v). Install them by hand and re-run to bake it in." >&2
+    else
+        echo "WARNING: ${_missing[*]} missing and this isn't a pacman system -- install them by hand to get verbose boot (-v) baked in." >&2
+    fi
+fi
+
 # Checking just the binary isn't enough: confirmed on real hardware
 # that an ISO built from an already-existing qemu-system-x86_64 (from
 # before the libjpeg.so.62 bundling fix, see README.md) kept shipping
