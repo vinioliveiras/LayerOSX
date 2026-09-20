@@ -27,6 +27,33 @@ LOG="$HOME/mac-vm.log"
 
 exec > >(tee -a "$LOG") 2>&1
 
+# Common landing spot for a condition nothing below would ever fix by
+# itself (missing binary/image from an incomplete build, or missing
+# /dev/kvm) -- these all need either a rebuild with the right prepare-*
+# script run, or a physical fix like a BIOS setting, never just a
+# retry. Confirmed on real hardware: a plain `exit 1` here is actually
+# WORSE than the old all-QEMU-launch-failures retry loop it replaced
+# for these specific cases. .xinitrc does `exec mac-vm-launch.sh`, so
+# this script exiting ends the whole X session; getty's autologin
+# (40-kiosk-autologin.sh) restarts it right away -- with nothing to
+# pace that out, the result is tty1 flash-restarting far faster than
+# the retry loop's own `sleep 3`/5x/reboot ever did, and fast enough
+# that systemd's own restart-rate-limit on the getty unit can trip and
+# leave tty1 dead. A long sleep before exiting fixes both: paces the
+# restart to something sane, and gives a wide window to switch to tty2
+# (Ctrl+Alt+F2) or pull up the F2 live-log terminal and actually read
+# the message before it's gone.
+fatal() {
+    echo "FATAL: $1" >&2
+    shift
+    for _line in "$@"; do
+        echo "  $_line" >&2
+    done
+    echo "Not retrying automatically -- this needs a fix, not another attempt. Will try again in 60s in case that fix already happened (a rebuild, a BIOS change + reboot, ...). Ctrl+Alt+F2 for a text console, or F2 for the live log if a VM window ever got this far before." >&2
+    sleep 60
+    exit 1
+}
+
 # The build container qemus/qemu-macos compiles this binary in
 # (Debian-based, with --enable-vnc-jpeg among other features) links
 # it against a couple of libraries whose SONAME doesn't match what
@@ -70,8 +97,7 @@ else
 fi
 
 if [ ! -x "$QEMU_BIN" ]; then
-    echo "FATAL: $QEMU_BIN is missing. The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md." >&2
-    exit 1
+    fatal "$QEMU_BIN is missing." "The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md."
 fi
 
 # Plain OVMF + a bare QEMU command line is not enough for macOS's kernel
@@ -79,17 +105,13 @@ fi
 # a handful of ACPI/kernel quirks) that only OpenCore supplies here. See
 # prepare-opencore.sh and README.md for the full story.
 if [ ! -s "$OPENCORE_IMG" ]; then
-    echo "FATAL: $OPENCORE_IMG is missing. The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md." >&2
-    exit 1
+    fatal "$OPENCORE_IMG is missing." "The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md."
 fi
 
 # Confirmed on real hardware: "qemu-system-x86_64: Could not access KVM
 # kernel module: No such file or directory" / "failed to initialize kvm:
 # No such file or directory" -- QEMU's own message is accurate but gives
-# no next step, and without this check the retry loop further down just
-# relaunches QEMU (and eventually reboots the whole machine) forever,
-# hitting the exact same error every time. /dev/kvm missing here almost
-# always means one of:
+# no next step. /dev/kvm missing here almost always means one of:
 #   1. Virtualization (Intel VT-x, or AMD-V / "SVM Mode") is disabled in
 #      the machine's BIOS/UEFI firmware -- the single most common cause
 #      on real hardware, and postinstall has no way to fix this itself.
@@ -99,12 +121,12 @@ fi
 #      BIOS doesn't actually allow it, so mkinitcpio itself can't catch
 #      it ahead of time either.
 # There's no useful software-only (TCG) fallback for something as heavy
-# as a macOS guest, so fail fast with a message that says what to
-# actually go check, instead of looping on QEMU's cryptic one. One more
-# modprobe attempt here costs nothing and occasionally is enough on its
-# own (e.g. if 10-hardware-detect.sh ran before a later BIOS update
-# re-enabled virtualization, so the module was never loaded even though
-# it now could be).
+# as a macOS guest, so fail via fatal() below with a message that says
+# what to actually go check, instead of looping on QEMU's cryptic one.
+# One more modprobe attempt here costs nothing and occasionally is
+# enough on its own (e.g. if 10-hardware-detect.sh ran before a later
+# BIOS update re-enabled virtualization, so the module was never loaded
+# even though it now could be).
 if [ ! -e /dev/kvm ]; then
     _cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
     case "$_cpu_vendor" in
@@ -114,13 +136,12 @@ if [ ! -e /dev/kvm ]; then
     sleep 1
 fi
 if [ ! -e /dev/kvm ]; then
-    echo "FATAL: /dev/kvm doesn't exist -- macOS needs KVM acceleration, there's no usable software-only fallback here." >&2
-    echo "  This is almost always virtualization being disabled in the BIOS/UEFI: reboot," >&2
-    echo "  enter setup (Del/F2/F10 depending on the board) and enable Intel VT-x" >&2
-    echo "  (sometimes just called 'Virtualization') or AMD-V / SVM Mode." >&2
-    echo "  If it's already enabled there, check 'dmesg | grep -i kvm' and" >&2
-    echo "  /var/log/layerosx-postinstall.log for why kvm_intel/kvm_amd didn't load." >&2
-    exit 1
+    fatal "/dev/kvm doesn't exist -- macOS needs KVM acceleration, there's no usable software-only fallback here." \
+        "This is almost always virtualization being disabled in the BIOS/UEFI: reboot," \
+        "enter setup (Del/F2/F10 depending on the board) and enable Intel VT-x" \
+        "(sometimes just called 'Virtualization') or AMD-V / SVM Mode." \
+        "If it's already enabled there, check 'dmesg | grep -i kvm' and" \
+        "/var/log/layerosx-postinstall.log for why kvm_intel/kvm_amd didn't load."
 fi
 
 if [ ! -f "$VM_DISK" ]; then
