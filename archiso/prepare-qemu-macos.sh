@@ -118,6 +118,43 @@ path.write_text(text)
 print("==> patched Dockerfile: --enable-sdl (was --disable-sdl), libsdl2-dev added to builder deps")
 PYEOF_SDL
 
+# LayerOSX-specific, part 2 of the SDL patch: enabling SDL in the builder
+# means qemu-system-x86_64 now links against libSDL2-2.0.so.0 and
+# libSDL2_image-2.0.so.0 too -- confirmed on real hardware, the
+# Dockerfile's own "verify" stage (FROM qemux/qemu:latest, a plain Debian
+# image that never needed SDL before this patch) failed its ldd check
+# with both of those reported as "not found", aborting the whole build
+# with "FAIL: one or more QEMU runtime dependencies could not be
+# resolved." before ever reaching the library-bundling step below (which
+# only runs once this stage has already succeeded). Install the SDL2
+# runtime packages in that stage too so the ldd check actually resolves
+# them -- this also means the library-bundling step further down (which
+# extracts everything reported by the verify stage's own ldd) correctly
+# picks up libSDL2/libSDL2_image and ships them in airootfs/opt/layerosx/lib
+# alongside libjpeg, exactly like every other bundled library.
+python3 - "$WORK/qemu-macos/Dockerfile" <<'PYEOF_SDL_VERIFY'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+
+old_verify_copy = "COPY --from=builder /out/reims-vgpu-gop.rom /tmp/reims-vgpu-gop.rom\n\nRUN <<'EOF_VERIFY'\n"
+new_verify_copy = (
+    "COPY --from=builder /out/reims-vgpu-gop.rom /tmp/reims-vgpu-gop.rom\n\n"
+    "RUN apt-get update && apt-get install -y --no-install-recommends "
+    "libsdl2-2.0-0 libsdl2-image-2.0-0 && rm -rf /var/lib/apt/lists/*\n\n"
+    "RUN <<'EOF_VERIFY'\n"
+)
+if old_verify_copy not in text:
+    print("FAIL: verify-stage COPY/RUN anchor not found -- upstream Dockerfile's verify stage may have changed.", file=sys.stderr)
+    sys.exit(1)
+text = text.replace(old_verify_copy, new_verify_copy, 1)
+
+path.write_text(text)
+print("==> patched Dockerfile: installs libsdl2-2.0-0 + libsdl2-image-2.0-0 in the verify stage")
+PYEOF_SDL_VERIFY
+
 echo "==> building (target: artifact) — this compiles real QEMU from source, expect 30-60+ minutes"
 "$ENGINE" build --target artifact -t layerosx/qemu-macos:local "$WORK/qemu-macos"
 
