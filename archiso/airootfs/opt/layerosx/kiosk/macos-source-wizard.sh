@@ -140,12 +140,19 @@ copy_ovmf_vars() {
 # there first so it's actually browsable.
 bash "$LIB_DIR/mount-removable-media.sh" 2>/dev/null || true
 
+# Kept short on purpose: zenity sizes this list's horizontal scroll
+# area off the actual text width, not --width -- the old, more
+# verbose second option ("I already have macOS (VM disk, installer
+# .dmg, or recovery/installer .iso) — pick a file") overflowed it and
+# forced a horizontal scrollbar, cutting the row off mid-sentence on
+# real hardware. The full list of accepted extensions is still shown
+# one screen later, right on the file-picker itself.
 CHOICE=$(zenity --list --radiolist --width=620 --height=280 \
     --title="LayerOSX — first run" \
     --text="Where should macOS come from? (only asked once)" \
     --column="" --column="Option" \
     TRUE  "Download the recovery image directly from Apple (recommended)" \
-    FALSE "I already have macOS (VM disk, installer .dmg, or recovery/installer .iso) — pick a file")
+    FALSE "I already have macOS — pick a file (disk, .dmg, or .iso)")
 
 [ -n "$CHOICE" ] || exit 1
 

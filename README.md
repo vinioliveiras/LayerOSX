@@ -1691,3 +1691,16 @@ the wizard (the initial "where should macOS come from" choice,
 progress dialogs, error messages, the Wi-Fi picker) still uses zenity
 — this swap is scoped to just the one dialog that was actually
 breaking.
+
+### Bug: the "where should macOS come from" list forced a horizontal scrollbar
+
+Confirmed on real hardware (screenshot): the second option's label
+("I already have macOS (VM disk, installer `.dmg`, or
+recovery/installer `.iso`) — pick a file") was wider than zenity's
+list actually renders before scrolling, cutting the row off mid-
+sentence behind a horizontal scrollbar instead of just wrapping or
+shrinking to fit `--width=620`. Shortened to "I already have macOS —
+pick a file (disk, `.dmg`, or `.iso`)" — short enough to render on one
+line with no scrollbar. The full list of accepted extensions is still
+shown right on the file picker itself one screen later, so nothing
+was lost by trimming this one.

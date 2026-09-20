@@ -478,6 +478,10 @@ actually run the detection logic against real hardware yet.
 - Test both options at least once each, even just to see they open
   without crashing: automatic download, and "pick a file" (now one
   merged picker for `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`).
+- Confirm the "where should macOS come from" list itself renders both
+  rows on one line each, no horizontal scrollbar cutting text off —
+  confirmed on real hardware once already (see README.md), fixed by
+  shortening the second option's label.
 - The `.dmg`/`.iso` installer paths are the most fragile (see
   `kiosk/lib/extract-dmg-installer.sh`) — if they fail, they fail
   gracefully (clear error message), but still need more work to
