@@ -3,7 +3,7 @@
 # its UEFI NVRAM state, so mac-vm-launch.sh's first-run wizard runs
 # again from scratch on the next launch -- e.g. to retry with a
 # different macOS source/version, or to recover from a corrupted or
-# half-finished VM disk. Usage: layerosx-reset-vm [-y|--force]
+# half-finished VM disk. Usage: erasevm [-y|--force]
 #
 # NVRAM (OVMF_VARS.fd) has to go too, not just the disk: it remembers
 # OpenCore's last boot choice (see README.md's OpenCore/SMBIOS

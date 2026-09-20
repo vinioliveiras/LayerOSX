@@ -696,7 +696,7 @@ report back from this exact point:
 - Run `sudo /usr/local/bin/layerosx-cleanup.sh` manually once to
   confirm nothing breaks (mainly `paccache`, which depends on
   `pacman-contrib` actually being installed).
-- `layerosx-reset-vm` should be on `PATH` already (installed straight
+- `erasevm` should be on `PATH` already (installed straight
   to `/usr/local/bin`, see README.md) — run it once with an existing
   VM to confirm it lists `macos.qcow2` (and `OVMF_VARS.fd`, and
   whichever of `macos-recovery.qcow2`/`macos-installer.qcow2` exists),

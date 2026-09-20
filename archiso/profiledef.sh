@@ -61,5 +61,5 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/peek-terminal.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/pick-source-file.py"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
-  ["/usr/local/bin/layerosx-reset-vm"]="0:0:755"
+  ["/usr/local/bin/erasevm"]="0:0:755"
 )

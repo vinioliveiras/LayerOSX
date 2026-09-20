@@ -1637,7 +1637,7 @@ blocker, but both were annoying enough while iterating (trying a
 different macOS source, or trying to attach a local `.dmg`) to fix
 right away instead of working around by hand every time.
 
-### Feature: `layerosx-reset-vm` — a one-command way to redo the first-run wizard
+### Feature: `erasevm` — a one-command way to redo the first-run wizard
 
 `mac-vm-launch.sh` only ever shows `macos-source-wizard.sh` (the
 "where should macOS come from" first-run screen) when `$VM_DISK`
@@ -1649,8 +1649,8 @@ remembers OpenCore's last boot choice, which can point at nothing
 useful once the disk it pointed at is gone). Wrapped that into a
 single command, installed straight into `PATH`:
 
-    layerosx-reset-vm         # asks for confirmation first
-    layerosx-reset-vm -y      # skip the confirmation
+    erasevm         # asks for confirmation first
+    erasevm -y      # skip the confirmation
 
 It deletes `macos.qcow2`, `macos-recovery.qcow2`/`macos-installer.qcow2`
 (whichever exists), and `OVMF_VARS.fd`, then tells you to reboot (or
