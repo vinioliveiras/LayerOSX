@@ -1712,3 +1712,25 @@ Come up while looking for a Ventura `.dmg` to test with (see the `.dmg`-corrupti
 The wizard now shows a version picker right after choosing "download from Apple," defaulting to **Ventura (13)** — recommended specifically because that's what Reims-vGPU's own README recommends for initial testing (its alpha-stage driver is most tested against it), which is a different reason than upstream OSX-KVM's own "Sonoma — RECOMMENDED" default (that one's about general Hackintosh/OSX-KVM compatibility, not this project's specific GPU driver). `lib/fetch-recovery.sh` takes the chosen shortname as an optional second argument and passes it straight through to `fetch-macOS-v2.py -s`.
 
 Also means there's no more need to go hunting for a macOS installer `.dmg` on a Hackintosh forum (unreliable in general — no way to verify integrity of an unofficial re-upload, and see the `.dmg`-corruption bug above for what an old `dmg2img` does with modern Apple DMGs anyway) just to test an older/specific macOS version — the automatic download path can just be asked for that version directly now.
+
+## Feature: rebrand the installed system away from "Arch Linux"
+
+Confirmed while installing on real hardware: past the wizard/VM
+concerns above, the installed *host* system still visibly says "Arch
+Linux" in two places outside the kiosk itself — the GRUB boot menu
+entry, and systemd's own early-boot "Welcome to Arch Linux!" message.
+Both trace back to the same untouched `/etc/os-release` (`NAME`/
+`PRETTY_NAME` still say "Arch Linux" from the base install) — GRUB's
+own `grub-mkconfig` falls back to reading it for the menu title
+whenever `GRUB_DISTRIBUTOR` isn't set, which Arch's own
+`/etc/default/grub` template leaves unset by default.
+
+Fixed with two small, independent postinstall changes: `01-base-
+system.sh` now rewrites `NAME`/`PRETTY_NAME` in `/etc/os-release` to
+"LayerOSX" (leaving `ID`/`ID_LIKE`/`VERSION` alone on purpose — those
+are what pacman hooks and other tooling check to know this is really
+Arch underneath, no reason to risk breaking that for a cosmetic
+rename), and `50-grub.sh` now explicitly sets `GRUB_DISTRIBUTOR=
+"LayerOSX"` in `/etc/default/grub` before `grub-mkconfig` runs, rather
+than relying on the os-release fallback alone — that's the more
+standard, explicit way distros control their own GRUB menu title.

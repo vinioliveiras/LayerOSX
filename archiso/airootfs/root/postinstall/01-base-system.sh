@@ -16,6 +16,21 @@ cat > /etc/hosts <<'EOF'
 127.0.1.1   layerosx.localdomain layerosx
 EOF
 
+# /etc/os-release still says "Arch Linux" untouched otherwise -- it's
+# what systemd's own early-boot "Welcome to $PRETTY_NAME!" message
+# reads, and (when GRUB_DISTRIBUTOR is unset, see 50-grub.sh) what
+# grub-mkconfig falls back to for the boot menu's own title too. Only
+# touching the two display fields (NAME/PRETTY_NAME), not ID/ID_LIKE/
+# VERSION -- those are what pacman hooks and other tooling actually
+# check to know this is really Arch underneath, and changing them
+# would risk breaking something for a cosmetic rename. /etc/os-release
+# is normally a symlink to /usr/lib/os-release on Arch; sed -i still
+# edits it correctly either way (see README.md).
+if [ -f /etc/os-release ]; then
+    sed -i 's/^NAME=.*/NAME="LayerOSX"/' /etc/os-release
+    sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="LayerOSX"/' /etc/os-release
+fi
+
 hwclock --systohc --utc 2>/dev/null || true
 
 # single appliance user — no interactive password prompt, autologin in

@@ -2,6 +2,24 @@
 set -euo pipefail
 echo "[50] GRUB (reuses the existing EFI partition — never formats it)"
 
+# Without this, the boot menu's own entry just says "Arch Linux" --
+# grub-mkconfig's 10_linux falls back to /etc/os-release's NAME when
+# GRUB_DISTRIBUTOR is unset, which is what Arch's own /etc/default/grub
+# template leaves it as. 01-base-system.sh already rebrands os-release
+# itself (also fixes systemd's "Welcome to ...!" boot message), but
+# setting this explicitly too is the standard, more reliable way distros
+# actually control their own GRUB menu title, so it doesn't just happen
+# to work via a fallback. Same present/commented/missing handling as
+# GRUB_DISABLE_OS_PROBER below, since Arch's own default/grub template
+# state can't be assumed.
+if grep -q '^GRUB_DISTRIBUTOR=' /etc/default/grub; then
+    sed -i 's/^GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="LayerOSX"/' /etc/default/grub
+elif grep -q '^#GRUB_DISTRIBUTOR=' /etc/default/grub; then
+    sed -i 's/^#GRUB_DISTRIBUTOR=.*/GRUB_DISTRIBUTOR="LayerOSX"/' /etc/default/grub
+else
+    echo 'GRUB_DISTRIBUTOR="LayerOSX"' >> /etc/default/grub
+fi
+
 # GRUB stopped enabling os-prober by default a while back (security:
 # an unprivileged user could otherwise get grub-mkconfig, run as
 # root, to run arbitrary code off another mounted OS). We DO want it

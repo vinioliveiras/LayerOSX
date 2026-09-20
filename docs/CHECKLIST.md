@@ -689,6 +689,23 @@ report back from this exact point:
   fastest way to rule out a typo/missing flag versus a deeper
   OpenCore/config problem.
 
+## 5.5. Branding (GRUB menu, boot message)
+
+- Confirmed on real hardware: without this, both said "Arch Linux"
+  instead of "LayerOSX" (see README.md). After a fresh install, check:
+  the GRUB boot menu's top entry should read "LayerOSX" (not
+  "Arch Linux"), and the "Welcome to ...!" line during early boot
+  (visible if `quiet` is ever removed from the kernel cmdline, or by
+  checking `journalctl -b` for it) should also say "LayerOSX".
+- If either still says "Arch Linux" after a fresh install: check
+  `/etc/os-release`'s `NAME=`/`PRETTY_NAME=` lines got rewritten by
+  `01-base-system.sh`, and `/etc/default/grub`'s `GRUB_DISTRIBUTOR=`
+  line got set by `50-grub.sh` *before* `grub-mkconfig` ran in that
+  same script — a GRUB menu still stuck on the old name after that
+  usually just means `grub-mkconfig` needs a re-run (`sudo
+  grub-mkconfig -o /boot/grub/grub.cfg`) after editing
+  `/etc/default/grub` by hand, since it doesn't regenerate on its own.
+
 ## 6. Physical Restart / Shutdown
 
 - Inside an already-installed macOS: test "Restart" from the Apple
