@@ -433,6 +433,23 @@ actually run the detection logic against real hardware yet.
 - Confirm the right KVM module loaded: `lsmod | grep kvm_` should show
   exactly `kvm_intel` (Intel) or `kvm_amd` (AMD), not both, not
   neither.
+- Confirmed on real hardware: `qemu-system-x86_64: Could not access
+  KVM kernel module: No such file or directory` at first launch, with
+  `/dev/kvm` simply not existing — `10-hardware-detect.sh` had added
+  the right module to `/etc/mkinitcpio.conf` and regenerated the
+  initramfs, but had no way to confirm the module actually loads at
+  boot, which fails silently when virtualization (Intel VT-x / AMD-V /
+  "SVM Mode") is disabled in the BIOS/UEFI — by far the most likely
+  cause if you hit this. **Check the BIOS/UEFI setting first** before
+  assuming it's a LayerOSX bug. Hardened with a second registration
+  path (`/etc/modules-load.d/layerosx-kvm.conf`) and a best-effort
+  `modprobe` + log line right at install time (see README.md) — after
+  a fresh install, grep `/var/log/layerosx-postinstall.log` for
+  `[10]` to see whether it already reported success or failure right
+  there, instead of waiting to find out at first VM launch.
+  `mac-vm-launch.sh` also now checks `/dev/kvm` itself before ever
+  invoking QEMU and fails fast with an actionable message rather than
+  looping forever on QEMU's own cryptic one.
 - On NVIDIA: confirm `/etc/modprobe.d/nvidia.conf` exists and
   `nvidia-persistenced` is enabled.
 - On a laptop with hybrid graphics (Intel iGPU + NVIDIA/AMD dGPU),
@@ -587,6 +604,43 @@ actually run the detection logic against real hardware yet.
   `~/.config/openbox/rc.xml`'s `Root` context for a `ShowMenu
   root-menu` mousebind that `install-f2-keybind.sh` should have
   stripped.
+
+### 5.1. macOS's own kernel actually booting (OpenCore / SMC / SMBIOS)
+
+This is new territory as of this fix — everything above only ever got
+as far as QEMU launching and OVMF/the recovery environment coming up;
+nothing so far has gotten confirmation that XNU (macOS's kernel)
+itself boots past early init on real hardware. Treat everything below
+as **unverified on real hardware** until someone actually gets a
+report back from this exact point:
+
+- Confirm `airootfs/opt/layerosx/opencore/OpenCore.qcow2` exists after
+  a build (`prepare-opencore.sh` stages it, `build.sh` calls it
+  automatically if missing — see README.md). If it's missing,
+  `mac-vm-launch.sh` now fails fast with a clear `FATAL` instead of
+  silently booting without it.
+- If `/dev/kvm` is fine and OpenCore is staged, but the VM still never
+  gets past OVMF (no Apple logo, no progress at all): check
+  `~/mac-vm.log` for what QEMU printed, and confirm the OpenCore drive
+  is actually the one OVMF tries to boot from first — the picture-in-
+  picture OpenCore boot picker should show up before anything else,
+  even before the recovery/installer disk. If OVMF's own boot manager
+  is picking a different disk first, double-check the `bootindex=0`
+  on the OpenCore `-drive` line in `mac-vm-launch.sh` wasn't lost in a
+  future edit.
+- If OpenCore's own picker shows up but macOS's kernel panics or
+  reboots shortly after being chosen: this is exactly the kind of
+  failure the shared/default OpenCore identity (see README.md's
+  "Known v1 limitation") could plausibly cause — note down the exact
+  panic text/screenshot, since diagnosing this blind without real
+  hardware to test against is not realistic from this side.
+- If it panics with something explicitly about SMC, SMBIOS, or a
+  missing/invalid platform info: double check `isa-applesmc`,
+  `smbios type=2`, and the OpenCore drive are all actually present on
+  the final QEMU command line — `ps aux | grep qemu-system` from tty2
+  will show the full invocation actually running, which is the
+  fastest way to rule out a typo/missing flag versus a deeper
+  OpenCore/config problem.
 
 ## 6. Physical Restart / Shutdown
 

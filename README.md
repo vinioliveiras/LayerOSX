@@ -1398,3 +1398,161 @@ needed there. Verified end-to-end against a real, freshly fetched copy
 of the Dockerfile before deploying: both SDL patches (the builder-stage
 `--enable-sdl` one and this verify-stage `apt-get install` one) apply
 cleanly together, in the order the script actually runs them.
+
+## OpenCore / Apple SMC / SMBIOS: why plain QEMU isn't enough
+
+Getting `qemu-system-x86_64` to launch cleanly (Reims-vGPU, display,
+SDL runtime libs, and so on -- all the fixes above) only gets you to
+the point where macOS's own kernel (XNU) starts trying to boot. Plain
+OVMF + a bare QEMU command line is not enough for XNU to get past very
+early boot at all: it probes for a handful of Apple-specific hardware
+pieces that only exist on a real Mac (or something emulating one), and
+without them it just doesn't come up -- no useful error message,
+just never gets there.
+
+This is well-trodden ground in the wider Hackintosh / macOS-on-QEMU
+community (this project isn't inventing anything new here), confirmed
+firsthand by reading `dockur/macos`'s own `src/boot.sh` in full, which
+every working setup implements some version of:
+
+- **Apple SMC emulation** (`-device isa-applesmc,osk=...`): the `osk=`
+  value is the well-known *public* "Apple SMC key" -- it's stored
+  ROT13-encoded in `mac-vm-launch.sh` only to keep it from being
+  flagged by naive string scanners, **not** because it's a secret. It
+  has been public for well over a decade and is shared by essentially
+  every macOS-on-QEMU/Hackintosh project, OSX-KVM and dockur/macos
+  included.
+- **`-smbios type=2`**: baseline "Apple Inc." system info at the
+  firmware level.
+- **ICH9-LPC ACPI quirks** (`disable_s3`, `disable_s4`,
+  `acpi-pci-hotplug-with-bridge-support=off`): macOS handles sleep
+  states and bridge hotplug unreliably on the emulated ICH9 chipset
+  that QEMU's `q35` machine type provides, so these are disabled
+  outright.
+- **An OpenCore boot disk**: this is the piece that actually ties
+  everything together. OpenCore supplies the *per-machine* SMBIOS
+  identity (model, serial, UUID, board serial) plus a small set of
+  ACPI/kernel patches (via Lilu and friends) that stock OVMF+QEMU
+  don't provide on their own. It's attached with `bootindex=0`
+  (read-only) so OVMF's own boot manager always tries it first; once
+  OVMF hands it control, OpenCore does its *own* scan of every other
+  attached disk to find and chainload into the real macOS system --
+  no extra `bootindex` needed on those other disks, matching how
+  `dockur/macos` itself does it.
+
+### Decision: reuse a pre-built OpenCore image instead of assembling our own
+
+`dockur/macos`'s own approach builds a fresh, per-install OpenCore
+disk image at runtime: extract a bundled OpenCore release, edit its
+`config.plist` with a generator tool (`xmlstarlet`), generate a unique
+per-machine identity, build a GPT/FAT32 disk with `sfdisk` + `mtools`.
+That's a lot of new tooling this project doesn't otherwise depend on
+(7z, xmlstarlet, mtools/sfdisk), and -- more importantly -- there was
+no way to actually test-boot a hand-assembled `config.plist` before
+real hardware does; a subtly wrong identity or patch set would only
+surface as a mysterious failure to boot on the one machine that
+matters.
+
+Instead, `prepare-opencore.sh` (new) downloads
+[kholia/OSX-KVM](https://github.com/kholia/OSX-KVM)'s pre-built
+`OpenCore.qcow2` as is -- a community-battle-tested image already
+containing `OpenCore.efi`/`BOOTx64.efi`/`config.plist`/the standard
+Lilu-based kexts. It's pinned to a specific commit
+(`4c378a4b5e0b219783683012bec680325eb40719`) plus a SHA-256 integrity
+check, since unlike the QEMU binary (which gets re-verified by the
+Dockerfile's own build+verify stage on every run), this is a static
+binary blob with no such self-check of its own -- if the pin ever goes
+stale or the download is corrupted/tampered with, `prepare-opencore.sh`
+refuses to stage it rather than silently shipping something broken.
+`build.sh` now calls it automatically, the same way it already calls
+`prepare-qemu-macos.sh`, whenever
+`airootfs/opt/layerosx/opencore/OpenCore.qcow2` doesn't exist yet.
+
+Note on `file`'s "AES-encrypted (v3)" report for this image: that's a
+false positive from a qcow2-v3 header flag. Confirmed with `qemu-img
+info` (no encryption in the format-specific section) and by reading
+OSX-KVM's own `OpenCore-Boot.sh`, which attaches it with a plain
+`-drive ...,format=qcow2,file=...` and no `-object secret` at all.
+
+**Known v1 limitation, flagged for future work:** because this image
+is reused as-is, every LayerOSX install currently shares the same
+default OpenCore identity (model/serial/UUID/board serial) rather than
+generating a unique one per machine, the way `dockur/macos`'s own
+runtime build does. This is a deliberate tradeoff for now -- shared
+identity is a known, well-understood limitation in the Hackintosh
+community (some Apple services that key off hardware identity may
+treat multiple machines with the same identity as one device) -- not
+an oversight. Generating a real per-machine identity properly (valid
+serial/board-serial/SmUUID format, a real MLB, a ROM value derived
+from the machine's MAC address) is real future work, not something to
+get subtly wrong under time pressure with no way to test it.
+
+There was no explicit LICENSE file found in kholia/OSX-KVM at the time
+of writing (checked both a direct fetch and the repo's own GitHub
+page). The underlying OpenCore/Lilu/kexts it redistributes prebuilt
+are separately acidanthera-licensed (BSD-3-Clause) open source
+components -- noting this plainly rather than overclaiming a specific
+license for the repackaged blob itself, which is how the wider
+community already treats this artifact.
+
+### Note: no VMware-style "unlocker" or extra guest kext needed
+
+Worth spelling out explicitly since it comes up when researching this
+topic: the well-known `unlocker` project patches VMware Workstation/
+Fusion's own EULA-enforcement code, which blocks macOS guests on
+non-Apple hardware at the hypervisor level. **This doesn't apply
+here** -- LayerOSX uses QEMU, which has never had that restriction, so
+there's nothing to patch on that front.
+
+Separately, [reims-vgpu.com](https://reims-vgpu.com/) states that
+standard macOS 13 Ventura+ installations use Apple's own built-in
+`AppleParavirtGPU.kext` for the GPU -- no separate driver or kext to
+install on the guest side for that. This is unrelated to the OpenCore/
+Lilu kexts described above, which exist purely for kernel-boot
+compatibility (ACPI/SMBIOS patching), not GPU acceleration.
+
+## Bug: `qemu-system-x86_64: Could not access KVM kernel module`
+
+First real-hardware boot attempt after the OpenCore work above hit a
+new failure, right at QEMU launch:
+
+    qemu-system-x86_64: Could not access KVM kernel module: No such file or directory
+    qemu-system-x86_64: failed to initialize kvm: No such file or directory
+    could not connect to QMP: [Errno 111] Connection refused
+    QEMU exited without a clear guest request (action: vm-only) — relaunching just the VM.
+
+Before this fix, `mac-vm-launch.sh`'s own retry loop just kept
+relaunching QEMU into the exact same error forever (and eventually
+rebooted the whole physical machine as a last resort) -- a bad loop
+for what's almost always a one-time configuration problem that a
+reboot alone doesn't fix.
+
+`postinstall/10-hardware-detect.sh` already detects the CPU vendor and
+adds `kvm_intel`/`kvm_amd` to `/etc/mkinitcpio.conf`'s `MODULES=()`
+array at install time, then regenerates the initramfs -- but had no
+way to confirm the module actually loads. That fails *silently* when
+virtualization (Intel VT-x, or AMD-V / "SVM Mode") is disabled in the
+machine's BIOS/UEFI firmware, by far the most common real-hardware
+cause of this exact error -- mkinitcpio has no way to detect that
+ahead of time, so the install would appear to succeed and the failure
+would only surface much later, as QEMU's cryptic message on first
+launch.
+
+Fixed in two places:
+
+- `10-hardware-detect.sh` now also registers the module via
+  `/etc/modules-load.d/layerosx-kvm.conf` (a second, simpler path to
+  the same result -- `kvm_intel`/`kvm_amd` don't actually need to be
+  *in* the initramfs at all, since nothing before root-mount needs
+  `/dev/kvm`), and does a best-effort `modprobe` right there in the
+  chroot with logging, so a BIOS-disabled-virtualization failure shows
+  up in `/var/log/layerosx-postinstall.log` immediately instead of
+  only at first VM launch.
+- `mac-vm-launch.sh` now checks for `/dev/kvm` before ever invoking
+  QEMU, tries one more `modprobe` itself, and if it's still missing,
+  fails fast with a message that says what to actually check --
+  reboot, enter BIOS/UEFI setup, enable Intel VT-x / AMD-V / SVM
+  Mode -- instead of looping on QEMU's own unhelpful one. There's no
+  useful software-only (TCG) fallback for something as heavy as a
+  macOS guest, so this is a hard `FATAL`, not a degraded-performance
+  path.
