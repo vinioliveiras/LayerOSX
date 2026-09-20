@@ -35,10 +35,25 @@ exec > >(tee -a "$LOG") 2>&1
 # (immediately, every single launch) rather than a display/rendering
 # problem -- see README.md. prepare-qemu-macos.sh now bundles an
 # exact copy of every such library (extracted from the same verified
-# build image the binary was tested in) alongside the binary; point
-# the loader at it here so it's actually used.
+# build image the binary was tested in) alongside the binary.
+#
+# Confirmed on real hardware: this used to `export` LD_LIBRARY_PATH
+# here, at the top of the whole script -- which meant every later
+# child process (macos-source-wizard.sh, and everything IT launches:
+# zenity, GParted, ...) inherited it too, not just qemu-system-x86_64.
+# QEMU itself links against glib (it always has), so the bundle above
+# includes a Debian-flavored libglib-2.0/libgobject-2.0/libgio-2.0 --
+# and with LD_LIBRARY_PATH leaking into zenity's environment, zenity's
+# system-matching gtk4 was loading THAT foreign glib instead of
+# Arch's own, crashing immediately with "libgtk-4.so.1: undefined
+# symbol: g_zlib_compressor_set_os" on every single zenity call. Kept
+# as a plain (non-exported) variable now and only applied as a
+# per-command prefix on the actual qemu-system-x86_64 invocation
+# below, so nothing else launched by this script or its children ever
+# sees it.
+QEMU_LD_LIBRARY_PATH=""
 if [ -d /opt/layerosx/lib ] && [ -n "$(ls -A /opt/layerosx/lib 2>/dev/null)" ]; then
-    export LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    QEMU_LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"
@@ -125,7 +140,7 @@ while true; do
         QEMU_ARGS+=(-drive if=virtio,file="$RECOVERY_DISK",format=qcow2)
     fi
 
-    "$QEMU_BIN" "${QEMU_ARGS[@]}" &
+    LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done

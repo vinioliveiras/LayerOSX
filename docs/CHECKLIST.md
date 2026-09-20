@@ -528,6 +528,27 @@ actually run the detection logic against real hardware yet.
   this is the next thing to try — see the comment in
   `kiosk/mac-vm-launch.sh`.
 
+- Confirmed on real hardware: the first-run wizard can fail
+  instantly and loop forever ("The wizard failed or was cancelled.
+  Retrying in 10s...") with every zenity dialog crashing
+  (`/usr/lib/libgtk-4.so.1: undefined symbol:
+  g_zlib_compressor_set_os`). This is NOT a package-version problem
+  (`pacman -Syu` won't fix it either — this install is rsync-based, so
+  the target never gets real pacman sync databases/mirrorlist, see
+  `postinstall/01-base-system.sh`) -- it was `LD_LIBRARY_PATH` being
+  `export`ed for the whole of `mac-vm-launch.sh`, leaking the bundled
+  Debian-flavored glib (meant only for `qemu-system-x86_64`) into
+  every zenity call. Fixed by scoping it to just the qemu invocation
+  (see README.md). If you ever see this exact zenity crash again, it
+  means `LD_LIBRARY_PATH` is leaking somewhere new — check what's
+  exporting it before assuming it's a package problem.
+- Right-click on the desktop should no longer show openbox's full
+  Applications/System menu (Log Out, Reconfigure Openbox, ...) — only
+  F2 should get you out of the kiosk. If it still does, check
+  `~/.config/openbox/rc.xml`'s `Root` context for a `ShowMenu
+  root-menu` mousebind that `install-f2-keybind.sh` should have
+  stripped.
+
 ## 6. Physical Restart / Shutdown
 
 - Inside an already-installed macOS: test "Restart" from the Apple

@@ -1261,3 +1261,52 @@ Fixed by passing `--entrypoint sh` to that one `docker run`, bypassing
 tini entirely — this extraction is a one-off `ldd` + `cp` script, it
 never needed tini's init/signal-forwarding supervision in the first
 place.
+
+### Bug: `LD_LIBRARY_PATH` was leaking into zenity, crashing it on every dialog
+
+Confirmed on real hardware: after `sudo pacman -Syu` couldn't even run
+(`error: failed to synchronize all databases (no servers configured
+for repository)` — this install is rsync-based, not pacstrap-based,
+so the installed system never gets a real `/etc/pacman.d/mirrorlist`
+or pacman sync databases; see the comment in
+`postinstall/01-base-system.sh`), every `zenity` dialog in the
+first-run wizard was crashing immediately with `/usr/lib/libgtk-4.so.1:
+undefined symbol: g_zlib_compressor_set_os` — which is why the wizard
+kept failing instantly and looping ("The wizard failed or was
+cancelled. Retrying in 10s...") no matter what.
+
+Root cause had nothing to do with installed package versions.
+`mac-vm-launch.sh` used to `export LD_LIBRARY_PATH=...` for the whole
+script, right at the top — meant only for `qemu-system-x86_64` (see
+the libjpeg fix above), but `export` makes it inherited by *every*
+later child process too, including `macos-source-wizard.sh` and
+everything it launches: zenity, GParted, all of it. QEMU has always
+linked against glib, so the bundled-library fix above pulls in a
+Debian-flavored `libglib-2.0`/`libgobject-2.0`/`libgio-2.0` alongside
+it — and with `LD_LIBRARY_PATH` leaking into zenity's environment,
+zenity's own (correctly matched, system) gtk4 was loading *that*
+foreign glib instead of Arch's, crashing on a missing symbol every
+single time.
+
+Fixed by keeping `LD_LIBRARY_PATH` as a plain (non-exported) variable
+and applying it only as a per-command prefix on the actual
+`qemu-system-x86_64` invocation — nothing else launched by this script
+or its children ever sees it now.
+
+### Bug: right-click still opened openbox's full menu (Log Out and all)
+
+Confirmed on real hardware: right-clicking the desktop on an installed
+kiosk system opened openbox's stock root menu — Applications, and
+System → Log Out / Reconfigure Openbox / GNOME-KDE-Xfce settings
+panels. A plain, undocumented way out of "boots straight into the VM,
+nothing else" that defeats the whole point of making F2 the one
+deliberate escape hatch (see above).
+
+Fixed in `kiosk/lib/install-f2-keybind.sh`: alongside injecting the F2
+keybind, it now also strips just the Right-click → root-menu
+mousebind from openbox's `rc.xml` (everything else — middle-click for
+the window list, and every other context GParted/zenity/the QEMU
+window need — is untouched). Each change is independently idempotent
+now (checked inside the script, not by skipping the whole file on a
+single marker), so a system that already got the F2 keybind from an
+older build still picks up the root-menu fix on its next boot.
