@@ -450,6 +450,15 @@ actually run the detection logic against real hardware yet.
   `mac-vm-launch.sh` also now checks `/dev/kvm` itself before ever
   invoking QEMU and fails fast with an actionable message rather than
   looping forever on QEMU's own cryptic one.
+- Confirmed on real hardware, right after the above shipped: a FATAL
+  message alone isn't enough — the physical screen flash-looped too
+  fast to actually read it (X session ends -> getty autologin restarts
+  it immediately -> same FATAL -> repeat). If you ever see this again
+  (tty1 flickering, never settling): confirm `mac-vm-launch.sh`'s
+  `fatal()` helper is still what all three hard-stop checks call (it
+  sleeps 60s before exiting, specifically to pace this out) — it's
+  easy to accidentally reintroduce a bare `echo ...; exit 1` when
+  adding a new hard-stop check later and lose the pacing again.
 - On NVIDIA: confirm `/etc/modprobe.d/nvidia.conf` exists and
   `nvidia-persistenced` is enabled.
 - On a laptop with hybrid graphics (Intel iGPU + NVIDIA/AMD dGPU),

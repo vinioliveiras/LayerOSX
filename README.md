@@ -1556,3 +1556,35 @@ Fixed in two places:
   useful software-only (TCG) fallback for something as heavy as a
   macOS guest, so this is a hard `FATAL`, not a degraded-performance
   path.
+
+### Bug: the FATAL fix above flash-looped the whole X session
+
+Deploying the `/dev/kvm` check above immediately surfaced a second,
+worse problem on real hardware: the message printed correctly, but the
+machine kept cycling through it so fast it was only readable via the
+F2 live-log terminal, never on the physical screen itself.
+
+Root cause: `.xinitrc` runs `mac-vm-launch.sh` as the very last `exec`
+in its chain (agetty autologin -> `.bash_profile`'s `exec startx` ->
+`.xinitrc`'s `exec mac-vm-launch.sh`), so this script exiting doesn't
+just end the script -- it ends the whole X session. `getty@tty1`'s
+autologin config restarts that chain immediately. A plain `exit 1`
+right after printing the FATAL message, with nothing pacing it, meant
+the entire X-session-relaunch cycle repeated as fast as the machine
+could manage -- confirmed faster and worse than the old
+all-QEMU-launch-failures retry loop it was partly replacing (which at
+least had `sleep 3` between its 5 attempts before rebooting), and fast
+enough to risk tripping systemd's own restart-rate-limit on the getty
+unit, which would leave `tty1` dead until a manual restart.
+
+None of the three FATAL conditions in this script (missing
+`qemu-system-x86_64`, missing `OpenCore.qcow2`, missing `/dev/kvm`) are
+things a quick retry a second later would ever fix -- they all need
+either a rebuild with the right `prepare-*.sh` script run, or a
+physical fix like a BIOS setting. Fixed with a shared `fatal()` helper
+that all three now go through: prints the message, says plainly it
+isn't retrying automatically, then sleeps 60s before exiting. This
+paces the X-session restart to something sane and, more importantly,
+gives a wide window to switch to a text console (Ctrl+Alt+F2) or pull
+up the F2 live-log terminal and actually read the message before it
+scrolls away.
