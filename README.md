@@ -1962,6 +1962,117 @@ either is still missing the patch step is skipped with a warning rather than
 failing the build. `boot-args` is in this config's `NVRAM/Delete` list as well as `Add`,
 so OpenCore rewrites it every boot and `-v` applies even over a cached NVRAM.
 
-To go back to the quiet Apple-logo boot later, drop the `-v` from
-`boot-args` (a per-install `verbose on/off` toggle command, like `gpu`, is
-easy to add if that's wanted — it's not wired up yet).
+To toggle this per-install without a rebuild, use the `verbose on|off`
+command (see "Verbose boot is now a toggle" below) — this always-on bake was
+later superseded by per-CPU OpenCore images plus that toggle, so `-v` is no
+longer edited into the base image in place.
+
+## Running macOS on an AMD host CPU (AMD_Vanilla kernel patches)
+
+Confirmed on the AMD test machine: with the stock, Intel-only OpenCore the
+macOS recovery froze every time at `EXITBS` → `HANDOFF TO XNU` — the kernel
+takes over and dies before printing anything more. Per Dortania's OpenCore
+guide, an `EXITBS` hang on an AMD host is the signature of missing AMD kernel
+patches. XNU is built for Intel: even though QEMU is handed a masked Intel CPU
+(`Haswell-noTSX,vendor=GenuineIntel`), the guest still executes on real AMD
+silicon, and the Intel-specific MSRs XNU's power-management (XCPM) path
+reads/writes don't exist on AMD — KVM injects a fault and the kernel is gone
+before it can log a thing. The fix the whole AMD-Hackintosh world uses is the
+**AMD_Vanilla** patch set (github.com/AMD-OSX/AMD_Vanilla): OpenCore rewrites
+those kernel byte sequences in memory as it loads XNU.
+
+Because those same patches would corrupt a *correct* (Intel) kernel, they
+can't share one OpenCore image — Intel and AMD need different images. So the
+build now derives **four** OpenCore images from the one pristine,
+checksum-verified base:
+
+| image | host | boot log |
+|-------|------|----------|
+| `OpenCore.qcow2` (the base) | Intel | clean (Apple logo) |
+| `OpenCore-verbose.qcow2` | Intel | verbose `-v` |
+| `OpenCore-amd.qcow2` | AMD | clean |
+| `OpenCore-amd-verbose.qcow2` | AMD | verbose `-v` |
+
+`mac-vm-launch.sh` reads the host CPU vendor from `/proc/cpuinfo` and picks the
+AMD images on an `AuthenticAMD` host, the Intel images otherwise. If an AMD box
+is somehow missing its AMD image it warns loudly (it would just hang) and falls
+back to the base. Intel is completely unaffected — it keeps booting the
+untouched base image, still byte-for-byte the sha256-pinned download.
+
+Two AMD specifics that must line up:
+- **Core count.** Four of the 25 patches force `cpuid_cores_per_package` to a
+  constant, and it *must* equal the guest's `-smp` core count or XNU panics on
+  the mismatch. `patch-opencore-amd.sh` bakes in 4, and the launcher pins the
+  AMD guest to exactly 4 cores (Intel keeps the largest-power-of-two-≤8 rule).
+  Change one, change the other.
+- **`ProvideCurrentCpuInfo=True`**, which AMD_Vanilla's own sample config sets,
+  is enabled in the AMD images.
+
+The patch set is **vendored** in the repo (`archiso/amd-vanilla-patches.plist`,
+25 patches, sha256 `4bc820109b3d020c3c547fa23c49e0098e4f4a2c625ed6184dd54e390e84e1ab`)
+rather than downloaded at build time, so the build is reproducible and works
+offline; bump it deliberately to track upstream. `patch-opencore-amd.sh` is
+idempotent (never stacks the patches twice) and, like the verbose patcher,
+degrades to a warning if `qemu-img`/`mtools` are missing instead of failing the
+build.
+
+Validated as far as possible without the hardware: in a sandbox the AMD image
+loads OpenCore and reaches the boot picker with all 37 patches present (12 base
++ 25 AMD), the four core-count bytes set to 4, and the quirk on. Whether the
+patches actually carry XNU past `EXITBS` can only be confirmed on the AMD
+machine — that's the next real-hardware test.
+
+## Verbose boot is now a toggle, not always-on
+
+The earlier approach baked `-v` permanently into the single OpenCore image. Now
+that there are per-CPU images anyway, `-v` is just a second prebuilt image per
+family (see the table above), and a **`verbose` command** flips between them
+with no rebuild and no slow re-patch of the disk — same pattern as `gpu`:
+
+```
+verbose            # show the current setting
+verbose on         # show XNU's boot log (default while bringing macOS up)
+verbose off        # clean Apple-logo boot (the "normal" look)
+```
+
+It writes `/var/lib/layerosx/verbose`; the launcher reads it and attaches the
+matching image on the next launch (`sudo pkill Xorg`, or reboot). Default is
+**on**, because the boot log is what makes a stall diagnosable; switch it off
+once macOS boots cleanly. `prepare-opencore.sh` no longer edits the base image
+in place — it stays pristine and `build.sh` derives every variant from it.
+
+(OpenCore's own picker has no native "press F2 to toggle verbose" — its boot
+menu isn't an editable settings screen — which is why this is a host-side
+command instead. It's the reliable equivalent of what a bare-metal Hackintosh
+does by holding Cmd+V.)
+
+## Networking: `vmxnet3`, not `virtio-net`
+
+The launcher used `virtio-net-pci`, which macOS has no driver for — the guest
+would show a dead card and no network, even though the Linux host's own
+connection works fine (QEMU's user-mode NAT is host-agnostic; what matters is
+whether the *guest* recognizes the emulated card). Switched to **`vmxnet3`**:
+macOS bundles VMware's `AppleVmxnet3Ethernet.kext`, so the NIC is recognized
+out of the box and pulls an IP over the same user-mode NAT with zero guest
+configuration. `e1000-82545em` is the documented fallback if a future macOS
+ever drops vmxnet3.
+
+## General device support (what will and won't work in the guest)
+
+A pass over every virtual device the launcher hands macOS, and whether macOS
+can actually drive it:
+
+| area | device | macOS support |
+|------|--------|---------------|
+| Disk | SATA AHCI (`ich9-ahci`) | native `AppleAHCI` — works |
+| USB | xHCI (`qemu-xhci`) + `usb-kbd`/`usb-tablet` | native `AppleUSBXHCI` + HID — works |
+| Network | `vmxnet3` | native `AppleVmxnet3Ethernet` — works (this change) |
+| Graphics | `vmvga` / `reims-vgpu-pci` | VMware path via WhateverGreen; Reims via stock `AppleParavirtGPU` — works |
+| Keyboard/mouse | USB HID (absolute `usb-tablet`) | works, absolute pointer (no mouse-grab) |
+| SMC | `isa-applesmc` | required, present |
+| Clock | `-rtc base=utc` | works |
+| **Audio** | none configured | **no audio yet.** QEMU's `intel-hda` isn't plug-and-play on macOS (needs `AppleALC` + a codec layout-id the OpenCore image doesn't ship), so wiring up a dead HDA device would add nothing. Left out on purpose; real audio is future work: add `AppleALC.kext` + a layout to the OpenCore image, then `-device intel-hda -device hda-duplex`. |
+
+Deliberately *not* present because macOS can't use them: `virtio-rng`,
+`virtio-balloon`, virtio-serial/clipboard sharing. Nothing here blocks
+installing or running macOS; audio is the one everyday feature not there yet.

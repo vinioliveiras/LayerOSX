@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Toggle the macOS VM's verbose boot (-v) without a rebuild and without
+# reinstalling macOS -- it just changes which prebuilt OpenCore image the
+# launcher attaches on the next launch (see mac-vm-launch.sh). No slow
+# re-patching of the boot disk happens here.
+#
+#   verbose            show the current setting
+#   verbose on         show XNU's boot log (white text) -- useful for debugging
+#   verbose off        clean Apple-logo boot (the "normal" macOS look)
+#
+# Default when unset is ON, because while macOS is still being brought up the
+# boot log is the only way to see where a boot stalls. Once it boots cleanly,
+# `verbose off` gives the polished Apple-logo experience.
+#
+# After switching, relaunch the VM: sudo pkill Xorg  (or reboot).
+set -uo pipefail
+VERBOSE_FILE="/var/lib/layerosx/verbose"
+
+current() {
+    local v; v="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
+    case "$v" in
+        off|0|no|false|OFF|Off) echo "off (clean Apple-logo boot)" ;;
+        *) echo "on (XNU boot log shown -- the default)" ;;
+    esac
+}
+
+case "${1:-}" in
+    "")
+        echo "macOS VM verbose boot: $(current)"
+        echo "Change it with:  verbose on   |   verbose off"
+        echo "Then relaunch:   sudo pkill Xorg   (or reboot)"
+        ;;
+    on|1|yes|true)
+        sudo mkdir -p "$(dirname "$VERBOSE_FILE")"
+        echo on | sudo tee "$VERBOSE_FILE" >/dev/null
+        echo "Verbose boot ON -- XNU's boot log will be shown next launch."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        ;;
+    off|0|no|false)
+        sudo mkdir -p "$(dirname "$VERBOSE_FILE")"
+        echo off | sudo tee "$VERBOSE_FILE" >/dev/null
+        echo "Verbose boot OFF -- clean Apple-logo boot next launch."
+        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        ;;
+    *)
+        echo "usage: verbose [on|off]   (no argument = show current setting)" >&2
+        exit 2
+        ;;
+esac

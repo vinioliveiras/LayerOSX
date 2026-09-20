@@ -13,22 +13,22 @@ command -v mkarchiso >/dev/null 2>&1 || {
     exit 1
 }
 
-# Build-host tools used by prepare-opencore.sh to bake verbose boot (-v) into
-# the OpenCore image (qemu-img for the qcow2<->raw round-trip, mtools to edit
-# the FAT EFI partition without root). Auto-install the missing ones so the
-# build doesn't silently ship a non-verbose image just because a tool wasn't
-# there -- easy to forget. Best-effort: if the install can't run (no network,
-# no sudo, a non-pacman distro), we don't abort the build; prepare-opencore.sh
-# already degrades to a clear "shipping without -v" warning on its own.
+# Build-host tools used to derive the OpenCore boot variants below (verbose
+# boot and the AMD_Vanilla-patched image): qemu-img for the qcow2<->raw
+# round-trip, mtools to edit the FAT EFI partition without root. Auto-install
+# the missing ones so the build doesn't silently ship without a variant just
+# because a tool wasn't there -- easy to forget. Best-effort: if the install
+# can't run (no network, no sudo, a non-pacman distro), we don't abort the
+# build; each patch step degrades to a clear warning on its own.
 _missing=()
 command -v qemu-img >/dev/null 2>&1 || _missing+=("qemu-img")
 command -v mcopy    >/dev/null 2>&1 || _missing+=("mtools")
 if [ "${#_missing[@]}" -gt 0 ]; then
     if command -v pacman >/dev/null 2>&1; then
         echo "==> installing missing build tools for verbose-boot patching: ${_missing[*]}"
-        sudo pacman -S --needed --noconfirm "${_missing[@]}" ||             echo "WARNING: couldn't auto-install ${_missing[*]} -- the ISO may ship without verbose boot (-v). Install them by hand and re-run to bake it in." >&2
+        sudo pacman -S --needed --noconfirm "${_missing[@]}" ||             echo "WARNING: couldn't auto-install ${_missing[*]} -- the ISO may ship without the verbose and/or AMD OpenCore images. Install them by hand and re-run to build those variants." >&2
     else
-        echo "WARNING: ${_missing[*]} missing and this isn't a pacman system -- install them by hand to get verbose boot (-v) baked in." >&2
+        echo "WARNING: ${_missing[*]} missing and this isn't a pacman system -- install them by hand to build the verbose and AMD OpenCore images." >&2
     fi
 fi
 
@@ -56,11 +56,26 @@ if [ ! -s airootfs/opt/layerosx/opencore/OpenCore.qcow2 ]; then
     ./prepare-opencore.sh
 fi
 
-# Always (re)apply verbose boot (-v) to the OpenCore image, even when the
-# check above reused an existing OpenCore.qcow2 from an earlier build -- that
-# reuse is exactly why baking -v only inside prepare-opencore.sh's download
-# path silently shipped a non-verbose ISO. Idempotent: skips if already -v.
-./patch-opencore-verbose.sh
+# Derive every OpenCore boot variant from the pristine, checksum-verified
+# OpenCore.qcow2 that prepare-opencore.sh stages -- as SEPARATE images, so the
+# verified base is never mutated. mac-vm-launch.sh then picks one at launch by
+# host CPU vendor (Intel vs AMD) and the `verbose` toggle:
+#   OpenCore.qcow2             Intel, clean Apple-logo boot   (the base)
+#   OpenCore-verbose.qcow2     Intel, verbose (-v) boot log
+#   OpenCore-amd.qcow2         AMD  (AMD_Vanilla kernel patches), clean boot
+#   OpenCore-amd-verbose.qcow2 AMD  (AMD_Vanilla kernel patches), verbose
+# Why AMD needs its own image: XNU is Intel-only and panics/hangs at
+# EXITBS->HANDOFF on an AMD CPU without the AMD_Vanilla patches, but those same
+# patches would corrupt a correct kernel on Intel -- so they must live in a
+# separate image the launcher hands only to AMD hosts. All steps are idempotent
+# and always re-run (a reused base from an earlier build is exactly why baking
+# these only in prepare-opencore.sh's download path could silently ship
+# stale/missing variants). Each degrades to a clear warning if qemu-img/mtools
+# are missing rather than aborting the build.
+OCDIR=airootfs/opt/layerosx/opencore
+./patch-opencore-verbose.sh "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-verbose.qcow2"
+./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd.qcow2"
+./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd.qcow2" "$OCDIR/OpenCore-amd-verbose.qcow2"
 
 # mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
 # when profiledef.sh/pacman.conf/packages.x86_64 changed — it can

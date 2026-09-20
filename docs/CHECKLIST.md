@@ -6,11 +6,13 @@ to need adjustment.
 
 ## 1. Prepare the build machine
 
-- Build-host tools for the OpenCore verbose-boot patch (see README.md):
-  `qemu-img` and `mtools`. `build.sh` now auto-installs them via pacman if
-  missing, so normally nothing to do here. On a non-pacman host (or with no
-  network) install them by hand, else the build still succeeds but ships the
-  non-verbose Apple-logo boot (a warning is printed).
+- Build-host tools for the OpenCore image patching (verbose boot AND the
+  AMD_Vanilla-patched image — see README.md): `qemu-img` and `mtools`.
+  `build.sh` now auto-installs them via pacman if missing, so normally nothing
+  to do here. On a non-pacman host (or with no network) install them by hand,
+  else the build still succeeds but ships without the verbose and/or AMD
+  OpenCore images (a warning is printed) — and on an AMD host the missing AMD
+  image means macOS won't boot, so this matters there.
 
 See the README's **Build** section for the full setup (native
 Arch/CachyOS, or Windows via WSL2 — both documented there with exact
@@ -832,6 +834,44 @@ real-hardware boot stall"). Check, in this order:
   should reboot the physical machine, Shut Down should power it off
   (section 6) — those paths are unchanged, only gated behind the 180 s
   uptime check now.
+
+### 5.4. AMD host: kernel patches, core count, network, verbose toggle
+
+The macOS kernel is Intel-only; on an `AuthenticAMD` host it hangs at
+`EXITBS` → `HANDOFF TO XNU` without the AMD_Vanilla patches (confirmed on the
+AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
+`mac-vm-launch.sh` selects it automatically by CPU vendor. See README.md's
+"Running macOS on an AMD host CPU" for the why.
+
+- After a build, confirm all four OpenCore images exist under
+  `archiso/airootfs/opt/layerosx/opencore/`: `OpenCore.qcow2` (base),
+  `OpenCore-verbose.qcow2`, `OpenCore-amd.qcow2`, `OpenCore-amd-verbose.qcow2`.
+  If the AMD ones are missing, `qemu-img`/`mtools` were absent at build time
+  (see section 1) — an AMD host cannot boot macOS without them.
+- On the AMD machine, the launch profile line printed at start should read
+  `cpu=Haswell-noTSX (AuthenticAMD host) smp=4 ...`: **smp must be 4** on AMD
+  (the AMD image bakes `cpuid_cores_per_package = 4`, and a mismatch panics
+  XNU). If it isn't 4, the core-count pin in `mac-vm-launch.sh` didn't apply.
+- Expected result of the fix: the recovery no longer freezes at
+  `HANDOFF TO XNU` — it proceeds into the macOS Base System / installer. That
+  handoff is the exact point that used to hang; getting past it is the signal
+  the AMD patches worked. If it still hangs there, capture the serial log
+  (`~/mac-vm-serial.log`) — the last lines say how far XNU got.
+- The Intel path must be unchanged: on an Intel host the profile line should
+  show `GenuineIntel host` and a power-of-two smp (up to 8), booting the
+  untouched base `OpenCore.qcow2`. AMD patches must never reach an Intel guest.
+- **Verbose toggle:** `verbose` (no arg) shows the current setting; `verbose
+  off` then relaunch (`sudo pkill Xorg`) should give a clean Apple-logo boot,
+  `verbose on` brings the `-v` boot log back. Default is on. It just swaps
+  which prebuilt image is attached — no disk re-patch — so switching should be
+  instant on the next launch.
+- **Network:** the NIC is now `vmxnet3` (macOS has the driver; `virtio-net`
+  had none). Once macOS is up, confirm it gets an IP (System Settings →
+  Network, or `ifconfig` in Terminal) over the user-mode NAT. If not, the
+  `e1000-82545em` fallback is the documented next thing to try.
+- **No audio yet** (see README.md's device-support table): macOS won't have a
+  working sound device until `AppleALC` + a codec layout are added to the
+  OpenCore image. Not a blocker for install/run; just expect silence.
 
 ## 5.5. Branding (GRUB menu, boot message)
 

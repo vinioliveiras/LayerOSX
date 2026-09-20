@@ -100,8 +100,11 @@ mv "$TMP" "$DEST"
 trap - EXIT
 chmod 644 "$DEST"
 
-# Bake verbose boot (-v) into the freshly-staged image (idempotent; build.sh
-# also runs this every build to catch a reused image). See that script.
-"./patch-opencore-verbose.sh" "$DEST"
+# NOTE: the staged OpenCore.qcow2 is deliberately left PRISTINE here -- byte
+# for byte the checksum-verified download above. build.sh derives every boot
+# variant FROM it (OpenCore-verbose.qcow2, and the AMD images via
+# patch-opencore-amd.sh) as separate files, so the verified base stays intact
+# and the launcher can offer a clean Apple-logo boot by default. Don't patch
+# it in place here.
 
 echo "==> done: OpenCore boot image staged at $DEST ($(du -h "$DEST" | cut -f1))"

@@ -22,10 +22,12 @@ OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 QMP_SOCK="/tmp/macvm-qmp.sock"
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
-OPENCORE_IMG="/opt/layerosx/opencore/OpenCore.qcow2"
+OPENCORE_DIR="/opt/layerosx/opencore"
+OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"     # base default; reselected below by CPU vendor + verbose toggle
 GOP_ROM="/usr/share/qemu/reims-vgpu-gop.rom"
 MACOS_VERSION_FILE="$STATE_DIR/macos-version"   # written by macos-source-wizard.sh
 GFX_FILE="$STATE_DIR/gfx"                       # optional: "vmware" to bypass Reims
+VERBOSE_FILE="$STATE_DIR/verbose"                # optional: "off" for a clean Apple-logo boot (default: on)
 VM_RAM_MB=8192
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
@@ -272,6 +274,43 @@ VM_CORES=$((TOTAL_CORES - 2))
 _p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
 VM_CORES=$_p
 
+# --- AMD core-count pin -----------------------------------------------------
+# The AMD OpenCore image bakes cpuid_cores_per_package = 4 (see
+# patch-opencore-amd.sh). XNU panics if that baked constant doesn't match the
+# guest's actual -smp core count, so on AMD we pin to exactly 4 regardless of
+# the power-of-two rule above. Intel keeps the computed value. (Change both
+# together if patch-opencore-amd.sh's AMD_CORES ever changes.)
+if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+    VM_CORES=4
+fi
+
+# --- OpenCore image: pick by host CPU vendor and the verbose toggle ---------
+# Intel boots the stock (Intel-only) OpenCore; AMD needs the AMD_Vanilla-patched
+# image or XNU hangs at EXITBS->HANDOFF. Verbose (-v) is a separate prebuilt
+# image per family (build.sh makes all four), so toggling it needs no slow
+# re-patch -- the `verbose` command just flips $VERBOSE_FILE. Default is verbose
+# ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
+VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
+case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
+if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+    _oc_norm="$OPENCORE_DIR/OpenCore-amd.qcow2"
+    _oc_verb="$OPENCORE_DIR/OpenCore-amd-verbose.qcow2"
+else
+    _oc_norm="$OPENCORE_DIR/OpenCore.qcow2"
+    _oc_verb="$OPENCORE_DIR/OpenCore-verbose.qcow2"
+fi
+if [ "$VERBOSE_STATE" = on ] && [ -s "$_oc_verb" ]; then
+    OPENCORE_IMG="$_oc_verb"
+elif [ -s "$_oc_norm" ]; then
+    OPENCORE_IMG="$_oc_norm"
+else
+    OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"   # last-ditch fallback to the base
+fi
+if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ]; then
+    echo "WARNING: AMD host but no OpenCore-amd image found -- macOS will likely hang at boot." >&2
+    echo "         Rebuild the ISO so build.sh generates the AMD OpenCore variant." >&2
+fi
+
 # --- Graphics device --------------------------------------------------------
 # reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
 # but it is alpha software on an alpha driver stack, and Reims' own docs say
@@ -378,10 +417,16 @@ while true; do
         -device ide-hd,bus=sata.2,drive=OpenCoreBoot,bootindex=0
         -drive id=MacHDD,if=none,format=qcow2,file="$VM_DISK"
         -device ide-hd,bus=sata.4,drive=MacHDD
+        # vmxnet3, NOT virtio-net: macOS ships no virtio-net driver, so a
+        # virtio NIC shows up as a dead card with no network at all. macOS DOES
+        # bundle VMware's AppleVmxnet3Ethernet.kext, so a vmxnet3 NIC is
+        # recognised out of the box and pulls an IP over QEMU's user-mode NAT
+        # with zero guest config. (e1000-82545em is the fallback model if a
+        # future macOS ever drops vmxnet3.)
         # romfile= (empty) drops the NIC's PXE option ROM: no "UEFI Misc
         # Device" network-boot entry for OVMF to wander into.
         -netdev user,id=net0
-        -device virtio-net-pci,netdev=net0,id=net0,romfile=
+        -device vmxnet3,netdev=net0,id=net0,romfile=
         # OSX-KVM's OpenCore config (ours) patches XNU to send its early boot
         # prints and its panic string to the serial port. Until now nothing
         # captured it, which made every stall a blind blue screen; this is

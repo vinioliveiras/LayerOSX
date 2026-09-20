@@ -71,7 +71,7 @@ COMMON=(
   -device ide-hd,bus=sata.2,drive=OpenCoreBoot,bootindex=0
   -drive "id=MacHDD,if=none,format=qcow2,file=$TMP/hdd.qcow2"
   -device ide-hd,bus=sata.4,drive=MacHDD
-  -netdev user,id=net0 -device virtio-net-pci,netdev=net0,id=net0,romfile=
+  -netdev user,id=net0 -device vmxnet3,netdev=net0,id=net0,romfile=
   -drive "id=InstallMedia,if=none,format=qcow2,file=$TMP/rec.qcow2"
   -device ide-hd,bus=sata.3,drive=InstallMedia
   -display none -S

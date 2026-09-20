@@ -63,4 +63,5 @@ file_permissions=(
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
   ["/usr/local/bin/erasevm"]="0:0:755"
   ["/usr/local/bin/gpu"]="0:0:755"
+  ["/usr/local/bin/verbose"]="0:0:755"
 )
