@@ -123,7 +123,18 @@ mkdir -p "$WORK/libs" airootfs/opt/layerosx/lib
 # below, to hard-fail the whole build if the bundle ends up empty --
 # libjpeg alone is known to always need bundling (see README.md), so
 # zero libraries bundled is never a valid outcome, only a silent bug.
-"$ENGINE" run --rm -v "$WORK/libs:/host-out" layerosx/qemu-macos-verify:local sh -c '
+#
+# Also confirmed on real hardware: qemux/qemu:latest (the base image
+# for the "verify" stage) bakes in ENTRYPOINT ["/usr/bin/tini", "-s",
+# "/run/entry.sh"] -- `docker run` only replaces CMD, never
+# ENTRYPOINT, so without --entrypoint this whole "sh -c '...'" gets
+# appended onto that fixed entrypoint (effectively
+# "tini -s /run/entry.sh sh -c '...'"), and tini's own argument
+# parser chokes on the stray "-c" and refuses to run anything at all
+# ("/usr/bin/tini: invalid option -- 'c'"). --entrypoint sh bypasses
+# tini entirely for this one-off extraction, which never needed init/
+# signal-forwarding supervision in the first place.
+"$ENGINE" run --rm --entrypoint sh -v "$WORK/libs:/host-out" layerosx/qemu-macos-verify:local -c '
     set -eu
     if ! ldd /out/qemu-system-x86_64 >/tmp/ldd-out.txt 2>&1; then
         echo "FAIL: ldd /out/qemu-system-x86_64 itself failed inside the verify image:" >&2

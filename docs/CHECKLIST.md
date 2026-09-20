@@ -95,6 +95,17 @@ ISO build like the original plan assumed. Instead:
   also now clears its own previous output (binary, ROM, `lib/`) at
   the very start of every run, so nothing manual is ever needed
   before re-running it, however it ends up getting triggered.
+- Confirmed on real hardware: right after the fail-loud check above
+  started actually catching problems, the library extraction itself
+  failed with `/usr/bin/tini: invalid option -- 'c'` — the `verify`
+  stage's base image (`qemux/qemu:latest`) bakes in an ENTRYPOINT
+  running everything through `tini`, and `docker run` only replaces
+  CMD, not ENTRYPOINT, so the extraction's `sh -c '...'` was getting
+  appended onto that fixed entrypoint instead of replacing it. Fixed
+  with `--entrypoint sh` on that `docker run` call (see README.md).
+  If you hit this exact tini error again in the future, it means some
+  other `docker run` call in this repo forgot the same `--entrypoint`
+  override.
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 

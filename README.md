@@ -1240,3 +1240,24 @@ doing anything else — the same "always start clean" approach
 binary or a non-empty `lib/` is missing), this means neither script
 depends on manually deleting anything by hand anymore, however
 `prepare-qemu-macos.sh` ends up getting invoked.
+
+### Bug: `docker run` for the library extraction failed against `tini`
+
+Confirmed on real hardware, immediately after the previous fix started
+actually surfacing errors instead of hiding them (exactly as
+intended): the library extraction step failed outright with
+`/usr/bin/tini: invalid option -- 'c'` plus tini's own usage text.
+
+Root cause: `qemux/qemu:latest` (the base image for the Dockerfile's
+`verify` stage) bakes in `ENTRYPOINT ["/usr/bin/tini", "-s",
+"/run/entry.sh"]`. `docker run image sh -c '...'` only replaces the
+image's CMD — it never touches ENTRYPOINT unless `--entrypoint` is
+passed — so the actual command executed ends up being the ENTRYPOINT
+with `sh -c '...'` appended onto the end of it, effectively `tini -s
+/run/entry.sh sh -c '...'`. tini's own argument parser doesn't expect
+a stray `-c` like that and refuses to run anything at all.
+
+Fixed by passing `--entrypoint sh` to that one `docker run`, bypassing
+tini entirely — this extraction is a one-off `ldd` + `cp` script, it
+never needed tini's init/signal-forwarding supervision in the first
+place.
