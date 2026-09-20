@@ -81,6 +81,39 @@ if [ "${#MODULES_TO_ADD[@]}" -gt 0 ]; then
     done
     echo "[10] mkinitcpio -P (modules: ${MODULES_TO_ADD[*]})"
     mkinitcpio -P
+
+    # Belt-and-suspenders on the mkinitcpio edit above: kvm_intel/kvm_amd
+    # don't actually need to be IN the initramfs at all (nothing before
+    # root-mount needs /dev/kvm), so also register them the simpler,
+    # harder-to-get-wrong way -- a plain modules-load.d drop-in loaded at
+    # every regular boot by systemd-modules-load.service. This is a second
+    # independent path to the same result, in case a future Arch base
+    # package ever ships /etc/mkinitcpio.conf in a format the sed above
+    # stops matching (silently, since it's only a `grep -q` guard, not a
+    # hard failure).
+    mkdir -p /etc/modules-load.d
+    printf '%s\n' "${MODULES_TO_ADD[@]}" | grep '^kvm_' > /etc/modules-load.d/layerosx-kvm.conf || true
+
+    # Best-effort right now, too: this only proves whether the module
+    # loads under THIS boot's kernel inside the chroot (bind-mounted /proc
+    # /sys /dev, see the top of this file) -- it does NOT prove the next
+    # real boot will succeed, since a chroot can't test a future reboot.
+    # But it's a free early signal in the postinstall log for the single
+    # most common real-hardware cause: virtualization (Intel VT-x / AMD-V,
+    # "SVM Mode") disabled in the BIOS/UEFI, which makes modprobe fail
+    # right here too, immediately, instead of only surfacing much later as
+    # QEMU's cryptic "Could not access KVM kernel module" on first launch.
+    for mod in "${MODULES_TO_ADD[@]}"; do
+        case "$mod" in
+            kvm_intel|kvm_amd)
+                if modprobe "$mod" 2>&1; then
+                    echo "[10] $mod loaded successfully (KVM acceleration should work)"
+                else
+                    echo "[10] WARNING: modprobe $mod failed right now -- if virtualization (Intel VT-x / AMD-V / SVM Mode) is disabled in the BIOS/UEFI, this is expected until it's enabled there. The macOS VM will not boot with KVM acceleration until this is resolved -- see mac-vm-launch.sh's own /dev/kvm check for the same guidance at launch time." >&2
+                fi
+                ;;
+        esac
+    done
 fi
 
 echo 'KERNEL=="kvm", GROUP="kvm", MODE="0660"' > /etc/udev/rules.d/65-kvm.rules

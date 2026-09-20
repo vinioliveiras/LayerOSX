@@ -22,6 +22,7 @@ OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 QMP_SOCK="/tmp/macvm-qmp.sock"
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
+OPENCORE_IMG="/opt/layerosx/opencore/OpenCore.qcow2"
 LOG="$HOME/mac-vm.log"
 
 exec > >(tee -a "$LOG") 2>&1
@@ -73,6 +74,55 @@ if [ ! -x "$QEMU_BIN" ]; then
     exit 1
 fi
 
+# Plain OVMF + a bare QEMU command line is not enough for macOS's kernel
+# to boot at all -- it probes for Apple-specific hardware (SMC, SMBIOS,
+# a handful of ACPI/kernel quirks) that only OpenCore supplies here. See
+# prepare-opencore.sh and README.md for the full story.
+if [ ! -s "$OPENCORE_IMG" ]; then
+    echo "FATAL: $OPENCORE_IMG is missing. The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md." >&2
+    exit 1
+fi
+
+# Confirmed on real hardware: "qemu-system-x86_64: Could not access KVM
+# kernel module: No such file or directory" / "failed to initialize kvm:
+# No such file or directory" -- QEMU's own message is accurate but gives
+# no next step, and without this check the retry loop further down just
+# relaunches QEMU (and eventually reboots the whole machine) forever,
+# hitting the exact same error every time. /dev/kvm missing here almost
+# always means one of:
+#   1. Virtualization (Intel VT-x, or AMD-V / "SVM Mode") is disabled in
+#      the machine's BIOS/UEFI firmware -- the single most common cause
+#      on real hardware, and postinstall has no way to fix this itself.
+#   2. postinstall/10-hardware-detect.sh's kvm_intel/kvm_amd module
+#      (added to /etc/mkinitcpio.conf + /etc/modules-load.d at install
+#      time) failed to load at boot -- which happens silently when the
+#      BIOS doesn't actually allow it, so mkinitcpio itself can't catch
+#      it ahead of time either.
+# There's no useful software-only (TCG) fallback for something as heavy
+# as a macOS guest, so fail fast with a message that says what to
+# actually go check, instead of looping on QEMU's cryptic one. One more
+# modprobe attempt here costs nothing and occasionally is enough on its
+# own (e.g. if 10-hardware-detect.sh ran before a later BIOS update
+# re-enabled virtualization, so the module was never loaded even though
+# it now could be).
+if [ ! -e /dev/kvm ]; then
+    _cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+    case "$_cpu_vendor" in
+        GenuineIntel) sudo modprobe kvm_intel 2>/dev/null || true ;;
+        AuthenticAMD) sudo modprobe kvm_amd 2>/dev/null || true ;;
+    esac
+    sleep 1
+fi
+if [ ! -e /dev/kvm ]; then
+    echo "FATAL: /dev/kvm doesn't exist -- macOS needs KVM acceleration, there's no usable software-only fallback here." >&2
+    echo "  This is almost always virtualization being disabled in the BIOS/UEFI: reboot," >&2
+    echo "  enter setup (Del/F2/F10 depending on the board) and enable Intel VT-x" >&2
+    echo "  (sometimes just called 'Virtualization') or AMD-V / SVM Mode." >&2
+    echo "  If it's already enabled there, check 'dmesg | grep -i kvm' and" >&2
+    echo "  /var/log/layerosx-postinstall.log for why kvm_intel/kvm_amd didn't load." >&2
+    exit 1
+fi
+
 if [ ! -f "$VM_DISK" ]; then
     echo "No VM found — opening the first-run wizard."
     if ! "$KIOSK_DIR/macos-source-wizard.sh" "$VM_DISK" "$OVMF_VARS"; then
@@ -119,9 +169,46 @@ while true; do
         -enable-kvm -m 8192 -smp "cores=${VM_CORES},threads=1" -cpu host
         -machine q35
         -no-reboot
+        -rtc base=utc
         -qmp "unix:${QMP_SOCK},server,nowait"
         -drive if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd
         -drive if=pflash,format=raw,file="$OVMF_VARS"
+        # Apple-hardware emulation macOS's kernel actually checks for at
+        # boot -- confirmed by reading dockur/macos's own boot.sh, which
+        # every working QEMU-macOS setup does some version of. Without
+        # these, XNU never gets past very early boot regardless of what
+        # OpenCore below supplies.
+        #   - isa-applesmc: emulates the real Apple SMC chip; osk= is the
+        #     well-known public "Apple SMC key" (ROT13-encoded here only
+        #     to avoid it being flagged by naive string scanners -- it is
+        #     not a secret, it's been public for well over a decade and
+        #     is shared by essentially every macOS-on-QEMU/Hackintosh
+        #     project, OSX-KVM and dockur/macos included).
+        #   - smbios type=2: baseline "Apple Inc." system info at the
+        #     firmware level (OpenCore's own config.plist below adds the
+        #     actual per-machine model/serial/UUID identity on top).
+        #   - the ICH9-LPC globals disable ACPI sleep states (S3/S4) and
+        #     bridge hotplug, both of which macOS handles unreliably on
+        #     the emulated ICH9 chipset q35 provides.
+        -device "isa-applesmc,osk=$(echo 'bheuneqjbexolgurfrjbeqfthneqrqcyrnfrqbagfgrny(p)NccyrPbzchgreVap' | tr 'A-Za-z' 'N-ZA-Mn-za-m')"
+        -smbios type=2
+        -global ICH9-LPC.disable_s3=1
+        -global ICH9-LPC.disable_s4=1
+        -global ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off
+        # OpenCore is what actually makes the above enough for XNU to
+        # boot: it supplies the per-machine SMBIOS identity (model,
+        # serial, UUID, board serial) plus the small set of ACPI/kernel
+        # patches (via Lilu and friends) that stock OVMF+QEMU alone don't
+        # provide. bootindex=0 makes OVMF's boot manager always try this
+        # disk first; OpenCore then does its own scan of every other
+        # attached disk to find the real macOS system to chainload into
+        # (see prepare-opencore.sh and README.md) -- $VM_DISK and
+        # $RECOVERY_DISK below intentionally get no bootindex of their
+        # own, same as upstream dockur/macos does it. Read-only: nothing
+        # here is meant to write to this image at runtime, only to the
+        # separate $OVMF_VARS NVRAM store, which is what actually
+        # remembers OpenCore's boot choice across restarts.
+        -drive if=virtio,file="$OPENCORE_IMG",format=qcow2,readonly=on,bootindex=0
         -drive if=virtio,file="$VM_DISK",format=qcow2
         -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom
         -display sdl,gl=on,full-screen=on

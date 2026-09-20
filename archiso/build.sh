@@ -27,6 +27,16 @@ if [ ! -x airootfs/opt/layerosx/bin/qemu-system-x86_64 ] || \
     ./prepare-qemu-macos.sh
 fi
 
+# Same idea as the qemu-system-x86_64 check above: without OpenCore.qcow2
+# staged, mac-vm-launch.sh has nothing to attach as the boot disk and
+# macOS's kernel will never come up on plain OVMF alone (see
+# prepare-opencore.sh and README.md for why). This one's just a download
+# (no Docker build), so it's quick.
+if [ ! -s airootfs/opt/layerosx/opencore/OpenCore.qcow2 ]; then
+    echo "No OpenCore boot image yet — staging it now."
+    ./prepare-opencore.sh
+fi
+
 # mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
 # when profiledef.sh/pacman.conf/packages.x86_64 changed — it can
 # silently skip re-copying them and build with stale config (seen
