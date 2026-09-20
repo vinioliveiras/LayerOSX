@@ -1336,3 +1336,33 @@ upstream build image already carries it. GTK stays disabled — nothing
 here uses it. `mac-vm-launch.sh`'s own `-display sdl,gl=on,full-screen=on`
 line didn't need to change; it was always correct, just unsupported by
 the old binary.
+
+### Bug: the --enable-sdl patch itself failed with "apt-get dependency list anchor not found"
+
+The fix above was committed and then failed on real hardware on the
+very next build, before it ever got to touch a real Dockerfile. Root
+cause was a bug in how the patch script itself was generated, not
+anything about the target system: the Dockerfile-patching Python
+script is embedded inside `prepare-qemu-macos.sh` as a heredoc, and
+while deploying it through a chain of nested heredocs (bash -> an
+outer Python string -> this inner Python script's own string
+literals), the intended literal `\` + newline sequence inside the
+inner script's string values got interpreted by the outer layer at
+write time instead of passed through untouched. That turned
+
+    old_deps = "    libbz2-dev \n    libvulkan-dev \n"
+
+into a version using Python's backslash-newline line continuation
+inside the string (spread across several source lines), which
+produces no character at all -- so the value being searched for never
+matched the real Dockerfile content, and the patch always failed with
+`FAIL: apt-get dependency list anchor not found`.
+
+Fixed by writing the string literals in explicit single-line form
+(`"    libbz2-dev \\n    libvulkan-dev \\n"`, i.e. a real backslash
+followed by a real `n`), which encodes the intended bytes unambiguously
+no matter how many layers of heredoc/string generation wrap it later.
+Verified before redeploying by extracting just the inner script and
+running it against a real fetched copy of the `qemus/qemu-macos`
+Dockerfile: `libsdl2-dev` is correctly added to the apt-get dependency
+list and `--disable-sdl` is correctly flipped to `--enable-sdl`.

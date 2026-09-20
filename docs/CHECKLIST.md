@@ -69,6 +69,21 @@ ISO build like the original plan assumed. Instead:
   this patch's anchors (`--disable-sdl \`, the `libbz2-dev \` /
   `libvulkan-dev \` apt-get block) still match upstream's Dockerfile --
   the script fails loudly with a clear message if they don't.
+- Confirmed on real hardware: the `--enable-sdl` patch above failed on
+  its very first real run with `FAIL: apt-get dependency list anchor
+  not found`, before ever touching a real Dockerfile. Root cause was
+  self-inflicted: the patch script's Python string literals got
+  double-escaped while being deployed through a chain of nested
+  heredocs, turning the intended literal `\n` bytes into Python's
+  backslash-newline line continuation (which produces no character at
+  all), so the anchor strings never matched. Fixed by writing the
+  string literals in explicit single-line form and verifying the
+  script against a real fetched Dockerfile before redeploying (see
+  README.md). Lesson for future edits to this file: never generate
+  this script's content through nested string-literal layers (bash
+  heredoc -> Python string -> another Python string) -- edit it
+  directly and test the extracted inner script against real input
+  first.
 - There's also a genuine upstream bug (as of this writing): the step
   that checks out QEMU source places it at
   `/src/reims/vendor/qemu-11.1`, but the very next step that applies
