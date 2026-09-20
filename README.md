@@ -1704,3 +1704,11 @@ pick a file (disk, `.dmg`, or `.iso`)" — short enough to render on one
 line with no scrollbar. The full list of accepted extensions is still
 shown right on the file picker itself one screen later, so nothing
 was lost by trimming this one.
+
+## Feature: pick a specific macOS version for the "download from Apple" path
+
+Come up while looking for a Ventura `.dmg` to test with (see the `.dmg`-corruption bug above) — there was no way to ask the wizard for a *specific* macOS version at all; "download the recovery image directly from Apple" always just grabbed whatever `fetch-macOS-v2.py`'s own default board-id resolves to. `fetch-macOS-v2.py` (from kholia/OSX-KVM) already has a hardcoded table mapping version names to real Mac board-ids, exposed via its own `-s`/`--shortname` flag — Apple's actual recovery servers still serve every one of them (High Sierra through Tahoe), the same request a real Mac of that board-id makes when it boots into network recovery. This is the same "get it directly from Apple, over the real network-recovery protocol" mechanism the wizard already used, just parameterized instead of hardcoded to one implicit default — nothing about this redistributes or bundles anything from Apple.
+
+The wizard now shows a version picker right after choosing "download from Apple," defaulting to **Ventura (13)** — recommended specifically because that's what Reims-vGPU's own README recommends for initial testing (its alpha-stage driver is most tested against it), which is a different reason than upstream OSX-KVM's own "Sonoma — RECOMMENDED" default (that one's about general Hackintosh/OSX-KVM compatibility, not this project's specific GPU driver). `lib/fetch-recovery.sh` takes the chosen shortname as an optional second argument and passes it straight through to `fetch-macOS-v2.py -s`.
+
+Also means there's no more need to go hunting for a macOS installer `.dmg` on a Hackintosh forum (unreliable in general — no way to verify integrity of an unofficial re-upload, and see the `.dmg`-corruption bug above for what an old `dmg2img` does with modern Apple DMGs anyway) just to test an older/specific macOS version — the automatic download path can just be asked for that version directly now.

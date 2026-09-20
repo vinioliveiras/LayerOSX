@@ -6,6 +6,14 @@
 # same request a real Mac makes when it boots into network recovery
 # mode, this time onto your own disk.
 #
+# $2 (optional) is a macOS version shortname (high-sierra, mojave,
+# catalina, big-sur, monterey, ventura, sonoma, sequoia, tahoe) --
+# fetch-macOS-v2.py's own hardcoded product list (see its --shortname/
+# -s option) maps each one to a real board-id, and Apple's actual
+# recovery servers still serve all of them, same as any real Mac of
+# that board-id asking for network recovery. Empty/unset falls back to
+# fetch-macOS-v2.py's own default (RECENT_MAC).
+#
 # Needs unrestricted outbound HTTP to osrecovery.apple.com — this will
 # fail under any kind of network allowlist/proxy (confirmed while
 # testing: both this developer's sandboxed dev environments got a 403
@@ -14,6 +22,7 @@
 # works there.
 set -euo pipefail
 VM_DISK="$1"
+MACOS_SHORTNAME="${2:-}"
 WORK="/var/lib/layerosx/fetch-work"
 mkdir -p "$WORK"
 cd "$WORK"
@@ -71,7 +80,11 @@ else:
     print("WARNING: fetch-macOS-v2.py's verify_image() didn't match the expected shape -- skipped patching it, upstream may have changed.", flush=True)
 PYEOF
 
-python3 fetch-macOS-v2.py --action download -o recovery
+SHORTNAME_ARGS=()
+if [ -n "$MACOS_SHORTNAME" ]; then
+    SHORTNAME_ARGS=(-s "$MACOS_SHORTNAME")
+fi
+python3 fetch-macOS-v2.py --action download -o recovery "${SHORTNAME_ARGS[@]}"
 
 DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)
 if [ -n "$DMG" ] && command -v dmg2img >/dev/null 2>&1; then

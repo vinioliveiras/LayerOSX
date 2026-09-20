@@ -158,11 +158,48 @@ CHOICE=$(zenity --list --radiolist --width=620 --height=280 \
 
 case "$CHOICE" in
     *recommended*)
+        # fetch-macOS-v2.py (see lib/fetch-recovery.sh) supports picking
+        # a specific macOS version via its own hardcoded product list
+        # (-s/--shortname) -- Apple's real recovery servers still serve
+        # every one of these, tied to a real Mac board-id, same as any
+        # actual Mac asking for network recovery. Ventura is marked
+        # recommended here specifically because that's what Reims-vGPU's
+        # own README recommends for initial testing (its alpha-stage
+        # driver is most tested against it) -- not the same thing as
+        # "most recent", which is why this needed its own picker instead
+        # of just always grabbing whatever's newest.
+        MACOS_VERSION=$(zenity --list --radiolist --width=620 --height=380 \
+            --title="LayerOSX — first run" \
+            --text="Which macOS version?" \
+            --column="" --column="Version" \
+            FALSE "High Sierra (10.13)" \
+            FALSE "Mojave (10.14)" \
+            FALSE "Catalina (10.15)" \
+            FALSE "Big Sur (11)" \
+            FALSE "Monterey (12)" \
+            TRUE  "Ventura (13) — recommended for this project" \
+            FALSE "Sonoma (14)" \
+            FALSE "Sequoia (15)" \
+            FALSE "Tahoe (26)")
+        [ -n "$MACOS_VERSION" ] || exit 1
+        case "$MACOS_VERSION" in
+            *"High Sierra"*) MACOS_SHORTNAME=high-sierra ;;
+            *Mojave*)        MACOS_SHORTNAME=mojave ;;
+            *Catalina*)      MACOS_SHORTNAME=catalina ;;
+            *"Big Sur"*)     MACOS_SHORTNAME=big-sur ;;
+            *Monterey*)      MACOS_SHORTNAME=monterey ;;
+            *Ventura*)       MACOS_SHORTNAME=ventura ;;
+            *Sonoma*)        MACOS_SHORTNAME=sonoma ;;
+            *Sequoia*)       MACOS_SHORTNAME=sequoia ;;
+            *Tahoe*)         MACOS_SHORTNAME=tahoe ;;
+            *)               MACOS_SHORTNAME="" ;;
+        esac
+
         ensure_internet || exit 1
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
         copy_ovmf_vars
-        if ! run_with_progress "LayerOSX — first run" "Downloading macOS recovery image… (press F2 for details)" \
-            bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK"; then
+        if ! run_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press F2 for details)" \
+            bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK" "$MACOS_SHORTNAME"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
                 --text="Couldn't download the macOS recovery image. Press F2 to see the details, check your internet connection, and try again."
             exit 1

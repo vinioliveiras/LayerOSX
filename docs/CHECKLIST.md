@@ -509,6 +509,14 @@ actually run the detection logic against real hardware yet.
   secured one, and the download proceeds afterward. Also try
   "Advanced (nmtui)…" at the bottom of the list once, to confirm
   the fallback still works.
+- "Download from Apple" now asks which macOS version first (High
+  Sierra through Tahoe, Ventura pre-selected — see README.md). Confirm
+  the list opens, that picking a version other than Ventura actually
+  downloads that version (check the progress text / F2 log mentions
+  the right name, and `lib/fetch-work/recovery/` ends up with that
+  version's `BaseSystem.dmg`), and that Cancel here exits back to the
+  first-run wizard's outer screen instead of silently proceeding with
+  a default.
 - The Apple download, `.dmg` extraction and `.iso` conversion steps
   no longer open a visible terminal by default (a zenity progress bar
   instead — pulsating for the first two, a real percentage for
