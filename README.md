@@ -1224,3 +1224,19 @@ ends up bundling zero libraries, since libjpeg alone is known to
 always need bundling. A build that bundles nothing now stops with a
 clear error instead of quietly producing an ISO that crashes on every
 boot.
+
+### `prepare-qemu-macos.sh` now always starts clean
+
+Previously it only ever added files to `airootfs/opt/layerosx/` —
+never removed anything first. Combined with the bug above, this meant
+a failed/partial run could leave old or half-updated output sitting
+there, easy to mistake for a good build. It now clears
+`airootfs/opt/layerosx/bin/qemu-system-x86_64`,
+`airootfs/usr/share/qemu/reims-vgpu-gop.rom`, and
+`airootfs/opt/layerosx/lib/` at the very start of every run, before
+doing anything else — the same "always start clean" approach
+`build.sh` already uses for its own work directory. Combined with
+`build.sh`'s existing check (rebuilds automatically whenever the
+binary or a non-empty `lib/` is missing), this means neither script
+depends on manually deleting anything by hand anymore, however
+`prepare-qemu-macos.sh` ends up getting invoked.

@@ -91,7 +91,10 @@ ISO build like the original plan assumed. Instead:
   nothing (see README.md). Fixed to fail loudly instead. After running
   `prepare-qemu-macos.sh`, always check the `==> bundled N runtime
   librar(y|ies)` line near the end — `N` should never be `0`, and the
-  script now refuses to continue if it is.
+  script now refuses to continue if it is. `prepare-qemu-macos.sh`
+  also now clears its own previous output (binary, ROM, `lib/`) at
+  the very start of every run, so nothing manual is ever needed
+  before re-running it, however it ends up getting triggered.
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 

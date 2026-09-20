@@ -49,6 +49,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Always start clean: wipe any binary/ROM/libraries left behind by a
+# previous run before doing anything else. Confirmed useful in
+# practice -- without this, a run that fails partway through can
+# leave old/partial output sitting in airootfs/opt/layerosx/ that's
+# easy to mistake for a good build (this is also what build.sh's own
+# "does the binary + a non-empty lib/ already exist" check is
+# guarding against on its side -- this is the other half, so this
+# script never depends on you remembering to delete anything by hand
+# before re-running it, however it's invoked).
+echo "==> clearing any previous qemu-macos build output"
+rm -f airootfs/opt/layerosx/bin/qemu-system-x86_64 airootfs/usr/share/qemu/reims-vgpu-gop.rom
+rm -rf airootfs/opt/layerosx/lib
+mkdir -p airootfs/opt/layerosx/lib
+
 echo "==> cloning qemus/qemu-macos"
 git clone --depth 1 https://github.com/qemus/qemu-macos "$WORK/qemu-macos"
 
