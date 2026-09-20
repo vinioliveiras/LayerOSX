@@ -1588,3 +1588,43 @@ paces the X-session restart to something sane and, more importantly,
 gives a wide window to switch to a text console (Ctrl+Alt+F2) or pull
 up the F2 live-log terminal and actually read the message before it
 scrolls away.
+
+### Bug: `bootindex` rejected on the OpenCore drive, and the wizard blocked by unrelated checks
+
+With `/dev/kvm` sorted out, the very next real-hardware boot got
+further -- past the first-run wizard, downloading and decompressing
+the recovery image successfully -- and then hit a new failure right at
+the actual QEMU launch:
+
+    qemu-system-x86_64: -drive if=virtio,file=/opt/layerosx/opencore/OpenCore.qcow2,format=qcow2,readonly=on,bootindex=0: Block format 'qcow2' does not support the option 'bootindex'
+    could not connect to QMP: [Errno 111] Connection refused
+    QEMU exited without a clear guest request (action: vm-only) — relaunching just the VM.
+
+The `-drive if=virtio,...,bootindex=N` shorthand implicitly creates its
+own device, and on this QEMU build that implicit creation routes
+`bootindex` into the qcow2 block-layer's own options instead of the
+virtio-blk device's properties -- `$VM_DISK` and `$RECOVERY_DISK` never
+hit this because neither of them sets `bootindex` at all; the OpenCore
+drive was the only one that did. Fixed by splitting it into the
+explicit two-flag form already used for the AHCI/SATA fallback further
+down in the same script: `-drive if=none,id=opencore,...` just opens
+the image with nothing attached, and a separate `-device
+virtio-blk-pci,drive=opencore,bootindex=0` is what actually attaches it
+to the bus -- `bootindex` unambiguously belongs to that `-device` now,
+so there's nothing left to misroute it into the block layer.
+
+Separately (surfaced while testing without KVM available, in a nested
+virtualization setup): the `QEMU_BIN`/`OPENCORE_IMG`/`/dev/kvm`
+preflight checks used to run *before* the first-run wizard, which meant
+a missing or not-yet-ready piece of the accelerated-launch path blocked
+the wizard -- and its "download from Apple" step -- from ever opening
+at all, even though downloading/preparing macOS onto `$VM_DISK` needs
+none of them. Moved all three checks to right before the actual QEMU
+launch, after the wizard and recovery-disk detection, so preparing a VM
+disk always works regardless of whether the accelerated launch path is
+ready yet. Also added a line to the `/dev/kvm` `fatal()` message
+pointing at real hardware over nested virtualization specifically,
+since "enable nested virtualization" in VirtualBox (or similar) is
+unreliable at actually exposing a usable `/dev/kvm` to a guest even
+when turned on -- this project targets real hardware, and chasing
+nested-virtualization settings further wasn't a good use of time.

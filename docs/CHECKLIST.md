@@ -628,6 +628,23 @@ report back from this exact point:
   automatically if missing — see README.md). If it's missing,
   `mac-vm-launch.sh` now fails fast with a clear `FATAL` instead of
   silently booting without it.
+- Confirmed on real hardware: `Block format 'qcow2' does not support
+  the option 'bootindex'` right at QEMU launch, from the OpenCore
+  drive specifically (the only one of the three drives that sets
+  `bootindex`). Fixed by splitting it into the explicit `-drive
+  if=none,id=opencore,...` + `-device virtio-blk-pci,drive=opencore,
+  bootindex=0` form (see README.md). If you ever see this exact error
+  on a *different* drive after editing `mac-vm-launch.sh`, it means
+  that drive picked up a `bootindex=` on the `-drive if=virtio,...`
+  shorthand — split it the same way instead.
+- The `QEMU_BIN`/`OPENCORE_IMG`/`/dev/kvm` checks now run right before
+  this launch, *after* the wizard — confirm the first-run wizard
+  (including "download from Apple") still opens and works even on a
+  machine where one of those isn't ready yet (e.g. before
+  `prepare-opencore.sh` has ever run). If a fresh install can't reach
+  the wizard at all, check that these three checks haven't drifted
+  back to before the `if [ ! -f "$VM_DISK" ]` block in
+  `mac-vm-launch.sh`.
 - If `/dev/kvm` is fine and OpenCore is staged, but the VM still never
   gets past OVMF (no Apple logo, no progress at all): check
   `~/mac-vm.log` for what QEMU printed, and confirm the OpenCore drive
