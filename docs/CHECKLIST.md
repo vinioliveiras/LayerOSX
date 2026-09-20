@@ -57,6 +57,18 @@ ISO build like the original plan assumed. Instead:
   Diagnosed this the hard way by reading a real `--progress=plain` log
   line by line; the giveaway is `DEPRECATED: The legacy builder is
   deprecated...` printed before step 1.
+- Confirmed on real hardware: even a fully working QEMU binary (past
+  libjpeg and the LD_LIBRARY_PATH leak, both above) failed immediately
+  with `-display sdl,...: Parameter 'type' does not accept value
+  'sdl'` -- upstream builds this binary with `--disable-sdl` and
+  `--disable-gtk` (it's meant to be viewed over VNC/noVNC, not as a
+  local window). `prepare-qemu-macos.sh` now patches the Dockerfile to
+  `--enable-sdl` and installs `libsdl2-dev` in the builder image before
+  the `docker build --target artifact` step (see README.md). If a
+  future rebuild ever hits `-display sdl` errors again, check that
+  this patch's anchors (`--disable-sdl \`, the `libbz2-dev \` /
+  `libvulkan-dev \` apt-get block) still match upstream's Dockerfile --
+  the script fails loudly with a clear message if they don't.
 - There's also a genuine upstream bug (as of this writing): the step
   that checks out QEMU source places it at
   `/src/reims/vendor/qemu-11.1`, but the very next step that applies

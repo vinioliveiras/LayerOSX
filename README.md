@@ -1310,3 +1310,29 @@ window need — is untouched). Each change is independently idempotent
 now (checked inside the script, not by skipping the whole file on a
 single marker), so a system that already got the F2 keybind from an
 older build still picks up the root-menu fix on its next boot.
+
+### Bug: the custom QEMU build had no local-window display support at all
+
+Confirmed on real hardware: once QEMU actually got far enough to parse
+its own arguments (past the libjpeg and glib-leak bugs above), it
+failed immediately with `-display sdl,gl=on,full-screen=on: Parameter
+'type' does not accept value 'sdl'`. Reading `qemus/qemu-macos`'s
+Dockerfile directly confirmed why: QEMU is configured with
+`--disable-sdl` and `--disable-gtk` — this build ships VNC (with JPEG
++ SASL) and curses only, no local window at all. Makes sense for the
+upstream project's own use case (a container, viewed over VNC/noVNC in
+a browser) but not for LayerOSX, which wants a direct full-screen
+window on the physical display.
+
+Decided to keep the direct-window architecture rather than switch to
+VNC + a local viewer (the alternative would avoid a further ~30-60 min
+rebuild, but adds a whole extra display layer permanently). Fixed in
+`prepare-qemu-macos.sh`: after cloning `qemus/qemu-macos`, it now also
+patches the Dockerfile's configure invocation to `--enable-sdl`
+(`--enable-opengl` was already on upstream's own configure line, so
+SDL's GL integration needs nothing else) and makes sure `libsdl2-dev`
+is installed in the builder image, regardless of whether QEMU's own
+upstream build image already carries it. GTK stays disabled — nothing
+here uses it. `mac-vm-launch.sh`'s own `-display sdl,gl=on,full-screen=on`
+line didn't need to change; it was always correct, just unsupported by
+the old binary.

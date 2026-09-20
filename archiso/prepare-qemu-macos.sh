@@ -79,6 +79,52 @@ sed -i \
     -e 's#git -C /src/qemu diff#git -C /src/reims/vendor/qemu-11.1 diff#g' \
     "$WORK/qemu-macos/Dockerfile"
 
+# LayerOSX-specific: upstream builds this binary with --disable-sdl AND
+# --disable-gtk (confirmed by reading the Dockerfile's configure
+# invocation directly) -- it ships VNC + curses only, no local-window
+# display at all. Confirmed on real hardware: mac-vm-launch.sh's
+# `-display sdl,gl=on,full-screen=on` failed outright with "Parameter
+# 'type' does not accept value 'sdl'" once QEMU actually got far enough
+# to parse its own arguments (past the libjpeg/glib bugs above). Since
+# LayerOSX wants a direct full-screen local window (not VNC), patch
+# --disable-sdl to --enable-sdl here and make sure libsdl2-dev is
+# installed in the builder image regardless of whether QEMU's own
+# upstream base build image already carries it -- --enable-opengl is
+# already on upstream's own configure line, so SDL's GL integration
+# ("-display sdl,gl=on") needs nothing else on top of this. GTK stays
+# disabled; nothing here uses it.
+python3 - "$WORK/qemu-macos/Dockerfile" <<'PYEOF_SDL'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text()
+
+old_deps = "    libbz2-dev \
+    libvulkan-dev \
+"
+new_deps = "    libbz2-dev \
+    libsdl2-dev \
+    libvulkan-dev \
+"
+if old_deps not in text:
+    print("FAIL: apt-get dependency list anchor not found -- upstream Dockerfile's builder deps may have changed.", file=sys.stderr)
+    sys.exit(1)
+text = text.replace(old_deps, new_deps, 1)
+
+old_flag = "    --disable-sdl \
+"
+new_flag = "    --enable-sdl \
+"
+if old_flag not in text:
+    print("FAIL: --disable-sdl anchor not found -- upstream Dockerfile's configure flags may have changed.", file=sys.stderr)
+    sys.exit(1)
+text = text.replace(old_flag, new_flag, 1)
+
+path.write_text(text)
+print("==> patched Dockerfile: --enable-sdl (was --disable-sdl), libsdl2-dev added to builder deps")
+PYEOF_SDL
+
 echo "==> building (target: artifact) — this compiles real QEMU from source, expect 30-60+ minutes"
 "$ENGINE" build --target artifact -t layerosx/qemu-macos:local "$WORK/qemu-macos"
 
