@@ -1734,3 +1734,9 @@ rename), and `50-grub.sh` now explicitly sets `GRUB_DISTRIBUTOR=
 "LayerOSX"` in `/etc/default/grub` before `grub-mkconfig` runs, rather
 than relying on the os-release fallback alone — that's the more
 standard, explicit way distros control their own GRUB menu title.
+
+## Feature: stop the VM window from getting "lost" on another openbox desktop
+
+Confirmed on real hardware, repeatedly: openbox's stock `rc.xml` (copied wholesale by `lib/install-f2-keybind.sh`, see there) ships with 4 virtual desktops by default -- completely unused by this kiosk (it only ever runs one fullscreen QEMU window), but still fully wired up, including openbox's own default mouse-wheel-on-desktop bindings (`DesktopNext`/`DesktopPrevious`). A stray scroll while the pointer wasn't over the QEMU window (or anything else that happened to trigger a desktop switch) could flip to an empty desktop with the VM window left behind on the old one -- from the user's side this looked like the VM vanishing into a black/blank screen, recoverable only via openbox's middle-click window-list pager.
+
+`install-f2-keybind.sh` now also drops the desktop count from 4 to 1 (there's nothing to accidentally switch *to* anymore) and adds an `<application>` rule pinning the QEMU window (matched on a wildcard class and its actual SDL title, confirmed on real hardware as `QEMU (<-name value>)`) to desktop 1, focused, always above everything else the moment it appears. Both edits follow the same idempotent pattern the rest of the script already uses.

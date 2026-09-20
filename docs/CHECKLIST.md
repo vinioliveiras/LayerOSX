@@ -706,6 +706,22 @@ report back from this exact point:
   grub-mkconfig -o /boot/grub/grub.cfg`) after editing
   `/etc/default/grub` by hand, since it doesn't regenerate on its own.
 
+## 5.6. Not losing the VM window to another desktop
+
+- Confirmed on real hardware: openbox's stock 4 desktops (never used by
+  this kiosk) let a stray mouse-wheel scroll switch to an empty one,
+  leaving the QEMU window behind — looked like the VM going black.
+  Fixed in `lib/install-f2-keybind.sh` (see README.md): only 1 desktop
+  now, plus an `<application>` rule pinning the QEMU window to it,
+  focused, always on top.
+- After a fresh boot with a VM already prepared (no wizard), confirm
+  the QEMU window appears focused and fullscreen with no manual
+  action needed — no need to middle-click for the window list at all.
+  If it's still not focused, check `~/.config/openbox/rc.xml` on the
+  machine: `<number>1</number>` under `<desktops>`, and a
+  `layerosx-qemu-focus`-tagged `<application>` block should both be
+  there.
+
 ## 6. Physical Restart / Shutdown
 
 - Inside an already-installed macOS: test "Restart" from the Apple
