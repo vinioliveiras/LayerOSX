@@ -96,53 +96,16 @@ else
     VM_CORES=1
 fi
 
-if [ ! -x "$QEMU_BIN" ]; then
-    fatal "$QEMU_BIN is missing." "The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md."
-fi
-
-# Plain OVMF + a bare QEMU command line is not enough for macOS's kernel
-# to boot at all -- it probes for Apple-specific hardware (SMC, SMBIOS,
-# a handful of ACPI/kernel quirks) that only OpenCore supplies here. See
-# prepare-opencore.sh and README.md for the full story.
-if [ ! -s "$OPENCORE_IMG" ]; then
-    fatal "$OPENCORE_IMG is missing." "The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md."
-fi
-
-# Confirmed on real hardware: "qemu-system-x86_64: Could not access KVM
-# kernel module: No such file or directory" / "failed to initialize kvm:
-# No such file or directory" -- QEMU's own message is accurate but gives
-# no next step. /dev/kvm missing here almost always means one of:
-#   1. Virtualization (Intel VT-x, or AMD-V / "SVM Mode") is disabled in
-#      the machine's BIOS/UEFI firmware -- the single most common cause
-#      on real hardware, and postinstall has no way to fix this itself.
-#   2. postinstall/10-hardware-detect.sh's kvm_intel/kvm_amd module
-#      (added to /etc/mkinitcpio.conf + /etc/modules-load.d at install
-#      time) failed to load at boot -- which happens silently when the
-#      BIOS doesn't actually allow it, so mkinitcpio itself can't catch
-#      it ahead of time either.
-# There's no useful software-only (TCG) fallback for something as heavy
-# as a macOS guest, so fail via fatal() below with a message that says
-# what to actually go check, instead of looping on QEMU's cryptic one.
-# One more modprobe attempt here costs nothing and occasionally is
-# enough on its own (e.g. if 10-hardware-detect.sh ran before a later
-# BIOS update re-enabled virtualization, so the module was never loaded
-# even though it now could be).
-if [ ! -e /dev/kvm ]; then
-    _cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
-    case "$_cpu_vendor" in
-        GenuineIntel) sudo modprobe kvm_intel 2>/dev/null || true ;;
-        AuthenticAMD) sudo modprobe kvm_amd 2>/dev/null || true ;;
-    esac
-    sleep 1
-fi
-if [ ! -e /dev/kvm ]; then
-    fatal "/dev/kvm doesn't exist -- macOS needs KVM acceleration, there's no usable software-only fallback here." \
-        "This is almost always virtualization being disabled in the BIOS/UEFI: reboot," \
-        "enter setup (Del/F2/F10 depending on the board) and enable Intel VT-x" \
-        "(sometimes just called 'Virtualization') or AMD-V / SVM Mode." \
-        "If it's already enabled there, check 'dmesg | grep -i kvm' and" \
-        "/var/log/layerosx-postinstall.log for why kvm_intel/kvm_amd didn't load."
-fi
+# QEMU_BIN/OPENCORE_IMG/KVM are all only needed once we actually try to
+# LAUNCH the accelerated VM below -- none of them are needed just to
+# download/prepare macOS onto $VM_DISK via the wizard right after this.
+# Confirmed on real hardware: checking these up here used to block the
+# wizard (and its "download from Apple" step) from ever opening at all
+# whenever one of them wasn't ready yet -- annoying on its own, and
+# actively in the way while testing pieces of this independently (e.g.
+# preparing a VM disk on a machine where KVM isn't sorted out yet). The
+# checks now happen right before the actual QEMU launch further down,
+# so the wizard always gets a chance to run regardless.
 
 if [ ! -f "$VM_DISK" ]; then
     echo "No VM found — opening the first-run wizard."
@@ -170,6 +133,66 @@ for _cand in "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qco
         break
     fi
 done
+
+# Everything above (the wizard, recovery-disk detection) only ever
+# touches disk images -- nothing needed QEMU itself yet. From here on
+# we're about to actually launch it, so this is the right point to
+# insist on everything an accelerated launch needs.
+if [ ! -x "$QEMU_BIN" ]; then
+    fatal "$QEMU_BIN is missing." "The ISO was built without running prepare-qemu-macos.sh first — see docs/CHECKLIST.md."
+fi
+
+# Plain OVMF + a bare QEMU command line is not enough for macOS's kernel
+# to boot at all -- it probes for Apple-specific hardware (SMC, SMBIOS,
+# a handful of ACPI/kernel quirks) that only OpenCore supplies here. See
+# prepare-opencore.sh and README.md for the full story.
+if [ ! -s "$OPENCORE_IMG" ]; then
+    fatal "$OPENCORE_IMG is missing." "The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md."
+fi
+
+# Confirmed on real hardware: "qemu-system-x86_64: Could not access KVM
+# kernel module: No such file or directory" / "failed to initialize kvm:
+# No such file or directory" -- QEMU's own message is accurate but gives
+# no next step. /dev/kvm missing here almost always means one of:
+#   1. Virtualization (Intel VT-x, or AMD-V / "SVM Mode") is disabled in
+#      the machine's BIOS/UEFI firmware -- the single most common cause
+#      on real hardware, and postinstall has no way to fix this itself.
+#   2. postinstall/10-hardware-detect.sh's kvm_intel/kvm_amd module
+#      (added to /etc/mkinitcpio.conf + /etc/modules-load.d at install
+#      time) failed to load at boot -- which happens silently when the
+#      BIOS doesn't actually allow it, so mkinitcpio itself can't catch
+#      it ahead of time either.
+#   3. Running nested inside another hypervisor (VirtualBox, etc.) --
+#      "enable nested virtualization" there is unreliable at actually
+#      exposing a usable /dev/kvm to a guest, even when checked. This
+#      project targets real hardware; if that's the situation, testing
+#      on real hardware directly is the more useful next step, not more
+#      nested-virtualization settings.
+# There's no useful software-only (TCG) fallback for something as heavy
+# as a macOS guest, so fail via fatal() below with a message that says
+# what to actually go check, instead of looping on QEMU's cryptic one.
+# One more modprobe attempt here costs nothing and occasionally is
+# enough on its own (e.g. if 10-hardware-detect.sh ran before a later
+# BIOS update re-enabled virtualization, so the module was never loaded
+# even though it now could be).
+if [ ! -e /dev/kvm ]; then
+    _cpu_vendor="$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo 2>/dev/null || true)"
+    case "$_cpu_vendor" in
+        GenuineIntel) sudo modprobe kvm_intel 2>/dev/null || true ;;
+        AuthenticAMD) sudo modprobe kvm_amd 2>/dev/null || true ;;
+    esac
+    sleep 1
+fi
+if [ ! -e /dev/kvm ]; then
+    fatal "/dev/kvm doesn't exist -- macOS needs KVM acceleration, there's no usable software-only fallback here." \
+        "This is almost always virtualization being disabled in the BIOS/UEFI: reboot," \
+        "enter setup (Del/F2/F10 depending on the board) and enable Intel VT-x" \
+        "(sometimes just called 'Virtualization') or AMD-V / SVM Mode." \
+        "If it's already enabled there, check 'dmesg | grep -i kvm' and" \
+        "/var/log/layerosx-postinstall.log for why kvm_intel/kvm_amd didn't load." \
+        "Running nested inside VirtualBox/VMware/etc? Test on real hardware instead --" \
+        "nested KVM is unreliable even with 'nested virtualization' enabled there."
+fi
 
 RETRIES=0
 while true; do
@@ -229,7 +252,23 @@ while true; do
         # here is meant to write to this image at runtime, only to the
         # separate $OVMF_VARS NVRAM store, which is what actually
         # remembers OpenCore's boot choice across restarts.
-        -drive if=virtio,file="$OPENCORE_IMG",format=qcow2,readonly=on,bootindex=0
+        #
+        # Confirmed on real hardware: the shorthand `-drive
+        # if=virtio,...,bootindex=0` this used to be fails outright --
+        # `Block format 'qcow2' does not support the option 'bootindex'`
+        # -- because that shorthand's implicit device creation routes
+        # `bootindex` into the qcow2 block-layer options instead of the
+        # virtio-blk device's own properties (didn't happen to $VM_DISK/
+        # $RECOVERY_DISK below only because neither of them sets
+        # bootindex at all). Split into the explicit two-flag form
+        # instead: `-drive if=none` just opens the image with no device
+        # attached, and the separate `-device virtio-blk-pci` is what
+        # actually attaches it to the bus -- `bootindex` unambiguously
+        # belongs to that -device, not the block layer, so there's
+        # nothing left to misroute it. This is the same explicit pattern
+        # already used for the AHCI/SATA fallback further down.
+        -drive if=none,id=opencore,file="$OPENCORE_IMG",format=qcow2,readonly=on
+        -device virtio-blk-pci,drive=opencore,bootindex=0
         -drive if=virtio,file="$VM_DISK",format=qcow2
         -device reims-vgpu-pci,romfile=reims-vgpu-gop.rom
         -display sdl,gl=on,full-screen=on
