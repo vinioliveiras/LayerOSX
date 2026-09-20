@@ -84,6 +84,18 @@ ISO build like the original plan assumed. Instead:
   heredoc -> Python string -> another Python string) -- edit it
   directly and test the extracted inner script against real input
   first.
+- Confirmed on real hardware: even after that fix, the next build
+  still failed, further along, in the Dockerfile's own `verify` stage
+  (`FROM qemux/qemu:latest`) with `FAIL: one or more QEMU runtime
+  dependencies could not be resolved` -- `ldd` showed `libSDL2-2.0.so.0`
+  and `libSDL2_image-2.0.so.0` both `=> not found`. Enabling SDL in the
+  builder stage links the binary against both, but the verify stage's
+  own base image never had them installed. Fixed by also patching the
+  Dockerfile to `apt-get install libsdl2-2.0-0 libsdl2-image-2.0-0` in
+  the verify stage, right after its two `COPY` lines (see README.md).
+  If a future rebuild ever hits this again, check that this second
+  patch's anchor (the `COPY ... reims-vgpu-gop.rom` / `RUN <<'EOF_VERIFY'`
+  pair) still matches upstream.
 - There's also a genuine upstream bug (as of this writing): the step
   that checks out QEMU source places it at
   `/src/reims/vendor/qemu-11.1`, but the very next step that applies

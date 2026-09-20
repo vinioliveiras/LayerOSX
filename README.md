@@ -1366,3 +1366,35 @@ Verified before redeploying by extracting just the inner script and
 running it against a real fetched copy of the `qemus/qemu-macos`
 Dockerfile: `libsdl2-dev` is correctly added to the apt-get dependency
 list and `--disable-sdl` is correctly flipped to `--enable-sdl`.
+
+### Bug: the verify stage still rejected the binary after --enable-sdl was fixed
+
+Even with the double-escaping bug above fixed, the very next real
+build still failed -- this time further along, inside the
+Dockerfile's own `verify` stage (`FROM qemux/qemu:latest`), with:
+
+    FAIL: one or more QEMU runtime dependencies could not be resolved.
+
+The full `ldd` output printed just above that line showed exactly two
+unresolved entries: `libSDL2-2.0.so.0 => not found` and
+`libSDL2_image-2.0.so.0 => not found`. Enabling SDL in the builder
+stage makes `qemu-system-x86_64` link against both libraries, but the
+`verify` stage's base image (`qemux/qemu:latest`, a plain Debian image
+that never needed SDL before this patch) never gets those packages
+installed -- so its own `ldd` check, which hard-fails the whole build
+on any `not found`, rejected the binary before it ever reached `/out`.
+
+Fixed by patching the Dockerfile a second time: right after the two
+`COPY` lines that stage the built binary + GOP ROM into the `verify`
+stage, `prepare-qemu-macos.sh` now also inserts
+`RUN apt-get update && apt-get install -y --no-install-recommends
+libsdl2-2.0-0 libsdl2-image-2.0-0 && rm -rf /var/lib/apt/lists/*`
+before the verify stage's own `RUN` heredoc. This has a nice side
+effect too: the later library-bundling step (which extracts every
+library the verify stage's own `ldd` reports) automatically picks up
+`libSDL2`/`libSDL2_image` into `airootfs/opt/layerosx/lib` alongside
+`libjpeg`, exactly like any other bundled library -- nothing extra
+needed there. Verified end-to-end against a real, freshly fetched copy
+of the Dockerfile before deploying: both SDL patches (the builder-stage
+`--enable-sdl` one and this verify-stage `apt-get install` one) apply
+cleanly together, in the order the script actually runs them.
