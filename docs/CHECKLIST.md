@@ -711,6 +711,18 @@ real-hardware boot stall"). Check, in this order:
   missing, the launcher on the machine is stale (rebuild/reinstall, or
   edit `/opt/layerosx/kiosk/mac-vm-launch.sh` in place + `sudo pkill
   Xorg`).
+- Confirmed on real hardware: `Unsupported PCI slot 0 for standard
+  hotplug controller` from the `reims-vgpu-pci` device -- stock QEMU
+  reserves slot 0 of a pci-bridge for its hotplug controller, but Reims'
+  own launcher (a QEMU fork) puts the device there. Fixed with `shpc=off`
+  on the bridge (see README.md). If you see this again, the `shpc=off`
+  was lost from the `pci-bridge` line in `mac-vm-launch.sh`.
+- The screen flickering repeatedly (X session flashing) is this class of
+  bug: a QEMU arg/device error that exits instantly, relaunched by the
+  retry loop 5x before the 60 s `fatal()` pause. Switch to tty2
+  (Ctrl+Alt+F2) during the pause and read the `qemu-system-x86_64:` line
+  in `~/mac-vm.log` -- that names the rejected argument. A *rendering*
+  failure looks different (one frozen frame, QEMU stays up).
 - Every QEMU warning at launch lands in `~/mac-vm.log` right after the
   `Launch profile:` line. `warning: host doesn't support requested
   feature: ...` lines are expected on older hosts (`check` is on so they

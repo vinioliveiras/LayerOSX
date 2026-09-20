@@ -1829,3 +1829,32 @@ telling "Reims can't draw yet" apart from "macOS isn't booting at all",
 and it needs no rebuild. (Also fixed on the way: the wizard's
 `.img`/`.raw` "complete disk" path copied the file verbatim, but the
 launcher attaches `$VM_DISK` as qcow2 -- it's converted now.)
+
+
+### Bug: QEMU rejected the Reims device at slot 0 of the PCI bridge
+
+Confirmed on real hardware, right after the launch-profile rewrite above
+got the VM past OVMF: QEMU exited instantly, five times, into the
+`fatal()` -- and `~/mac-vm.log` had the exact reason:
+
+    qemu-system-x86_64: -device reims-vgpu-pci,...,bus=pci.5,addr=00.0: Unsupported PCI slot 0 for standard hotplug controller. Valid slots are between 1 and 31.
+
+Reims' own `vm/boot-x86.sh` puts the device at slot 0 of the pci-bridge
+(`addr=00.0`) and this launcher copied that exactly -- but Reims runs a
+QEMU *fork*, and stock QEMU 11.1 (what `qemus/qemu-macos` builds) enables
+the bridge's Standard Hot-Plug Controller (SHPC) by default, which
+reserves slot 0. Two ways out: move the device to slot 1+, or turn the
+hotplug controller off. Chose `shpc=off` on the bridge, because it keeps
+the Reims device at `addr=00.0` exactly where its own launcher puts it
+(its BAR0/GOP mapping comments suggest the slot placement isn't
+arbitrary) instead of moving it to a slot QEMU happens to allow.
+
+This was a fast-exit error, so the symptom on screen was the whole X
+session flickering -- QEMU taking the fullscreen, exiting immediately,
+openbox coming back, the loop relaunching, five times, then a 60 s
+`fatal()` pause. "The screen keeps flickering" is what a fast-exit
+launch error looks like from the outside; a *rendering* problem (Reims
+drawing wrong) would instead leave a single frozen/garbage frame with no
+relaunch. That distinction is worth remembering: flicker = QEMU exiting
+= read the `qemu-system-x86_64:` line in `~/mac-vm.log`; frozen = QEMU
+up = read `~/mac-vm-serial.log` for what the guest is doing.

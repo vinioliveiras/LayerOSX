@@ -295,7 +295,17 @@ if [ "$GFX" = "reims-vgpu-pci" ]; then
     fi
     GFX_ARGS=(
         -vga none
-        -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0
+        # shpc=off is not in Reims' own boot-x86.sh -- they run a QEMU fork that
+        # accepts the device at slot 0 of the bridge. Confirmed on real hardware
+        # that stock QEMU 11.1 (what qemus/qemu-macos builds) does NOT: with the
+        # bridge's default Standard Hot-Plug Controller on, slot 0 is reserved
+        # ("Unsupported PCI slot 0 for standard hotplug controller. Valid slots
+        # are between 1 and 31."), QEMU refuses the device and exits instantly,
+        # which the retry loop then repeats 5x into a fatal(). Turning the
+        # hotplug controller off frees slot 0, so the Reims device stays exactly
+        # where its own launcher puts it (addr=00.0) instead of being moved to a
+        # different slot, which its BAR/GOP mapping comments suggest matters.
+        -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0,shpc=off
         -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
     )
 else
