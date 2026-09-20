@@ -94,9 +94,30 @@ echo "==> building the 'verify' stage too, to inspect + bundle its runtime libra
 "$ENGINE" build --target verify -t layerosx/qemu-macos-verify:local "$WORK/qemu-macos"
 
 mkdir -p "$WORK/libs" airootfs/opt/layerosx/lib
+# Confirmed on real hardware: this used to pipe `ldd` straight into a
+# `while read` loop (`ldd ... | while read -r line; do ...; done`).
+# That "sh -c '...'" runs under a POSIX shell (dash on Debian-based
+# images, not bash), which has no `pipefail` at all -- `set -eu`
+# alone does NOT catch a failure on the left side of a pipe. If `ldd`
+# ever failed or printed nothing for any reason, the loop's body
+# simply never ran, the (empty) loop still "succeeded", and this
+# whole step reported success while bundling exactly zero libraries
+# -- which shipped straight through into a built ISO that crashed
+# with "libjpeg.so.62: cannot open shared object file" every single
+# launch, no error anywhere in the build log. Rewritten to capture
+# `ldd`'s own exit status explicitly (no pipe to hide behind) and,
+# below, to hard-fail the whole build if the bundle ends up empty --
+# libjpeg alone is known to always need bundling (see README.md), so
+# zero libraries bundled is never a valid outcome, only a silent bug.
 "$ENGINE" run --rm -v "$WORK/libs:/host-out" layerosx/qemu-macos-verify:local sh -c '
     set -eu
-    ldd /out/qemu-system-x86_64 | while read -r line; do
+    if ! ldd /out/qemu-system-x86_64 >/tmp/ldd-out.txt 2>&1; then
+        echo "FAIL: ldd /out/qemu-system-x86_64 itself failed inside the verify image:" >&2
+        cat /tmp/ldd-out.txt >&2
+        exit 1
+    fi
+    count=0
+    while IFS= read -r line; do
         lib=$(printf "%s\n" "$line" | sed -n "s/.* => \(\/[^ ]*\).*/\1/p")
         [ -n "$lib" ] || continue
         [ -f "$lib" ] || continue
@@ -113,11 +134,17 @@ mkdir -p "$WORK/libs" airootfs/opt/layerosx/lib
                 ;;
         esac
         cp -v "$lib" "/host-out/$base"
-    done
+        count=$((count + 1))
+    done </tmp/ldd-out.txt
+    echo "extracted $count librar$([ "$count" = 1 ] && echo y || echo ies) inside the verify image" >&2
 '
 cp -a "$WORK"/libs/. airootfs/opt/layerosx/lib/
 LIBCOUNT=$(find airootfs/opt/layerosx/lib -type f | wc -l)
 echo "==> bundled $LIBCOUNT runtime librar$([ "$LIBCOUNT" = 1 ] && echo y || echo ies) into airootfs/opt/layerosx/lib: $(ls airootfs/opt/layerosx/lib 2>/dev/null | tr '\n' ' ')"
+if [ "$LIBCOUNT" -eq 0 ]; then
+    echo "FAIL: bundled zero runtime libraries. This is never expected (libjpeg alone always needs bundling, see README.md) -- aborting instead of silently shipping a qemu-system-x86_64 that will crash on every launch." >&2
+    exit 1
+fi
 
 echo "==> querying reims-vgpu-pci's real options (update kiosk/mac-vm-launch.sh's -device line if these differ from what's already there)"
 # Same LD_LIBRARY_PATH trick mac-vm-launch.sh uses on the installed

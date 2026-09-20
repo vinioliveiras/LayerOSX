@@ -1197,3 +1197,30 @@ building on three different days left three different ISOs sitting in
 without noticing. `build.sh` now clears `$OUTDIR` at the start of
 every build, the same way it already clears `$WORKDIR`, so `out/`
 always has exactly one ISO: the one from the build that just ran.
+
+### Bug: the library-bundling step could silently bundle zero libraries
+
+Confirmed on real hardware, after already fixing the two issues above:
+a fresh build still shipped a `qemu-system-x86_64` that crashed with
+`libjpeg.so.62: cannot open shared object file`, and this time
+`/opt/layerosx/lib/` was completely empty in the built system — not
+missing one library, missing *all* of them, with no error anywhere in
+the build log.
+
+Root cause: `prepare-qemu-macos.sh`'s extraction step ran `ldd
+/out/qemu-system-x86_64 | while read -r line; do ...; done` inside
+`sh -c '...'` — a POSIX shell (dash, not bash), which has no
+`pipefail` option at all. `set -eu` alone does not catch a failure on
+the left side of a pipe, so if `ldd` ever failed or produced no
+output for any reason, the `while` loop's body simply never ran, the
+loop itself still "succeeded", and the whole step reported success
+while bundling exactly zero libraries — completely silently.
+
+Fixed two ways: the extraction now captures `ldd`'s own exit status
+explicitly (via a temp file + `if ! ldd ...`, no pipe to hide a
+failure behind), and — regardless of what silently breaks in the
+future — `prepare-qemu-macos.sh` now hard-fails the whole build if it
+ends up bundling zero libraries, since libjpeg alone is known to
+always need bundling. A build that bundles nothing now stops with a
+clear error instead of quietly producing an ISO that crashes on every
+boot.

@@ -83,6 +83,15 @@ ISO build like the original plan assumed. Instead:
   there (named after today's date, so nothing overwrites) and it's
   easy to accidentally test a stale one. After a build, `out/` should
   contain exactly one ISO.
+- Confirmed on real hardware: even after the above fixes, a build can
+  still bundle zero runtime libraries into `airootfs/opt/layerosx/lib/`
+  with no error at all — the extraction used to pipe `ldd` into a
+  `while read` loop inside a POSIX `sh -c` script, and `sh` has no
+  `pipefail`, so a failing/empty `ldd` just made the loop silently do
+  nothing (see README.md). Fixed to fail loudly instead. After running
+  `prepare-qemu-macos.sh`, always check the `==> bundled N runtime
+  librar(y|ies)` line near the end — `N` should never be `0`, and the
+  script now refuses to continue if it is.
 
 ## 3. Booting the ISO from a USB drive (Ventoy)
 
