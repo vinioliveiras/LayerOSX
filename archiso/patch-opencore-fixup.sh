@@ -51,11 +51,32 @@ for k in adds:
     if k.get("Enabled") and top and top not in present:
         k["Enabled"] = False
         disabled.append(bp)
-if disabled:
+# --- Framebuffer fix: force a fixed GOP resolution --------------------------
+# Confirmed on real hardware (both vmware and reims): after HANDOFF the macOS
+# kernel prints "no linesize" and stalls -- it gets a boot framebuffer with no
+# valid stride (rowBytes=0), so it can't bring up the video console. The base
+# config sets ProvideConsoleGop=True but leaves Resolution empty, so OpenCore
+# never actively establishes a GOP mode. Forcing a concrete resolution makes
+# OpenCore set up a clean framebuffer (valid stride) before handoff. This is
+# the VM's INTERNAL (emulated-GPU) resolution -- QEMU/SDL scales it to whatever
+# the physical monitor is, so it is safe on any monitor size. 1920x1080 is
+# universally supported by the emulated adapters.
+out = cfg.setdefault("UEFI", {}).setdefault("Output", {})
+changed_fb = False
+if out.get("Resolution", "") != "1920x1080":
+    out["Resolution"] = "1920x1080"; changed_fb = True
+if out.get("ProvideConsoleGop") is not True:
+    out["ProvideConsoleGop"] = True; changed_fb = True
+if out.get("ClearScreenOnModeSwitch") is not True:
+    out["ClearScreenOnModeSwitch"] = True; changed_fb = True
+
+if disabled or changed_fb:
     plistlib.dump(cfg, open(cfg_path, "wb"))
 for b in disabled:
     sys.stderr.write("  disabled missing kext: %s\n" % b)
-sys.exit(0 if disabled else 3)
+if changed_fb:
+    sys.stderr.write("  set UEFI>Output Resolution=1920x1080 (framebuffer/no-linesize fix)\n")
+sys.exit(0 if (disabled or changed_fb) else 3)
 PYF
 rc=$?
 

@@ -26,6 +26,40 @@ will need iteration, mainly around the two most uncertain points: the
 Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 `docs/CHECKLIST.md` for the step-by-step test plan.
 
+## TODO / polish (deferred until macOS boots cleanly)
+
+Running list of polish items we agreed to revisit once the VM boots to macOS.
+None of these block a working boot; they make it nicer.
+
+- **Auto-switch to Reims after install** — provision the guest on VMware SVGA
+  (reliable), then flip to the accelerated Reims vGPU automatically once macOS
+  is actually installed, instead of the manual `gpu reims`.
+- **Pre-boot settings menu** — a short countdown screen (~10s) before the VM
+  launches, with a "continue to system" button and toggles for gpu / verbose /
+  audio (writing the same `/var/lib/layerosx/*` state files the commands use).
+- **Easy dependency updates** — an `update-deps.sh` (or a documented process)
+  to bump each dependency with one command: Reims/qemu-macos (currently tracks
+  master via prepare-qemu-macos.sh), the OpenCore pin (prepare-opencore.sh),
+  and the vendored AMD_Vanilla patches.
+- **Audio (host side)** — the `audio on` toggle attaches a usb-audio device,
+  but the custom qemu-macos binary is likely built with no audio backend. Patch
+  its Dockerfile (libasound2-dev + `--audio-drv-list=alsa`) and rebuild so
+  sound actually comes out.
+- **Adaptive VM resolution** — the framebuffer resolution is a fixed 1920x1080
+  (scaled to any monitor by SDL). Optionally match it to the host's real
+  resolution for pixel-crisp, unscaled output.
+- **Per-install unique SMBIOS identity** — every install currently ships the
+  same serial/MLB/UUID baked into OpenCore.qcow2; generate a unique one per
+  install so iMessage/App Store/FaceTime don't collide across machines.
+- **Boot picker polish** — set a sensible default entry / timeout so an
+  unattended (or slow-to-select) boot doesn't land on a blank EFI entry / black
+  screen.
+- **tty2 (F2 console) refresh rate** — the text console is KMS-controlled, not
+  X, so force-max-refresh.sh doesn't reach it; a monitor-specific `video=`
+  kernel arg could, if it's worth it.
+- **Pre-boot mouse cursor** — the OVMF/OpenCore cursor duplicates/sticks before
+  boot; purely cosmetic, pre-boot only.
+
 ## How it all fits together
 
 ```
@@ -2148,3 +2182,28 @@ into the verbose images** now (`patch-opencore-verbose.sh` sets `Misc > Debug`
 turns off *everything* — the Apple-logo boot with no `-v` and no OpenCore log
 spam — while `verbose on` turns all of it back on. One command for all
 diagnostics. Once macOS boots cleanly, `verbose off` is the polished mode.
+
+## The "no linesize" freeze: the boot framebuffer had no stride
+
+After the phantom-kext halt was fixed and the kernel serial-output patches were
+enabled, the serial log finally showed what the macOS kernel does after
+`HANDOFF TO XNU`: it prints `no linesize` and stalls. Confirmed identical on
+BOTH the vmware and reims display paths, so it isn't display-driver specific.
+
+"linesize" is the framebuffer stride (bytes per scanline). The kernel gets a
+boot framebuffer with no valid stride (rowBytes = 0), so its early video
+console can't come up -- which shows as a black / frozen screen (and is why the
+OpenCore picker also goes black on timeout). The base config set
+`UEFI > Output > ProvideConsoleGop = True` but left `Resolution` empty, so
+OpenCore never actively established a GOP mode.
+
+`patch-opencore-fixup.sh` now forces `UEFI > Output > Resolution = 1920x1080`
+(plus `ProvideConsoleGop` and `ClearScreenOnModeSwitch`) on the base image, so
+every derived image hands the kernel a clean framebuffer with a valid stride.
+This is the VM's INTERNAL (emulated-GPU) resolution -- QEMU/SDL scales it to the
+physical monitor in fullscreen, so it is safe on any monitor size; 1920x1080 is
+universally supported by the emulated adapters.
+
+Also: `force-max-refresh.sh` is now idempotent -- it only switches an output's
+mode when it isn't already at its max refresh, which stops the screen flicker
+that a redundant mode-switch caused on every relaunch.

@@ -52,6 +52,14 @@ for line in out.splitlines():
     if not any(star for _, star in rates):
         continue  # not the currently-active resolution for this output
     best = max(float(r) for r, _ in rates)
+    # The rate currently in effect is the one xrandr marks with "*".
+    active = next((float(r) for r, star in rates if star), None)
+    # Skip if this output is ALREADY at (essentially) its max rate. Re-issuing
+    # the same mode on every pass is what makes the screen flicker on each
+    # relaunch/boot -- only switch when there is an actual change to make.
+    if active is not None and abs(active - best) < 0.4:
+        output = None
+        continue
     subprocess.run(
         ["xrandr", "--output", output, "--mode", res, "--rate", f"{best:.2f}"],
         check=False,
