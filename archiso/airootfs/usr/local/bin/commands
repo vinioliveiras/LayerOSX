@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Prints the LayerOSX kiosk commands and what each one does -- a discoverable
+# index so nobody has to remember them or dig through the README. Run
+# `commands` any time from the F2 terminal (debug builds) or tty2.
+set -uo pipefail
+MODE="$(cat /etc/layerosx/mode 2>/dev/null || echo release)"
+
+printf 'LayerOSX commands  (user "mac", build mode: %s)\n' "$MODE"
+printf 'Change a setting, then `relaunch` (no reboot) or reboot to apply it.\n\n'
+
+printf 'Display / VM\n'
+printf '  gpu <vmware|reims|std>  Graphics adapter next launch: vmware=reliable,\n'
+printf '                          reims=accelerated (alpha), std=stock VGA.\n'
+printf '  verbose <on|off>        Verbose macOS boot log (+ serial/OpenCore\n'
+printf '                          logging in a debug build).\n'
+printf '  audio <on|off>          Attach a usb-audio device.\n'
+printf '  relaunch                Restart just the VM to apply a gpu/verbose/audio\n'
+printf '                          change (no reboot, no flicker).\n\n'
+
+printf 'Diagnostics\n'
+printf '  macstatus               Current gpu/verbose/audio + VM disk summary.\n'
+printf '  maclog [sub]            View the guest serial log. subs: tail oc patch\n'
+printf '                          err launch qemu all usb.\n'
+printf '  macdiag [usb]           Full shareable diagnostics bundle (host + guest\n'
+printf '                          + config + all logs in one folder).\n\n'
+
+printf 'Lifecycle\n'
+printf '  erasevm [-y]            Delete the VM + recovery + NVRAM so the first-run\n'
+printf '                          wizard runs again (reinstall / pick a version).\n'
+printf '  commands                Show this list.\n\n'
+
+if [ "$MODE" = debug ]; then
+    printf 'Terminal: F2 (in the graphical session) or Ctrl+Alt+F2 (tty2).\n'
+else
+    printf 'Note: this is a locked release build -- host shortcuts (F2, VT switch)\n'
+    printf 'are disabled. Build in debug mode for a shell / these commands.\n'
+fi
+printf 'State files: /var/lib/layerosx/{gfx,verbose,audio}\n'

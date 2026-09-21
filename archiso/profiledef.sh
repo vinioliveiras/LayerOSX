@@ -69,5 +69,6 @@ file_permissions=(
   ["/usr/local/bin/maclog"]="0:0:755"
   ["/usr/local/bin/relaunch"]="0:0:755"
   ["/usr/local/bin/macstatus"]="0:0:755"
+  ["/usr/local/bin/commands"]="0:0:755"
   ["/usr/local/bin/macdiag"]="0:0:755"
 )
