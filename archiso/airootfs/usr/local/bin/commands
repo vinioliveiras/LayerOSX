@@ -1,38 +1,50 @@
 #!/usr/bin/env bash
-# Prints the LayerOSX kiosk commands and what each one does -- a discoverable
-# index so nobody has to remember them or dig through the README. Run
-# `commands` any time from the F2 terminal (debug builds) or tty2.
+# Discoverable index of the LayerOSX kiosk commands.
+#   commands            one line per command: name + short description
+#   commands <name>     the full description + usage of a single command
+# So nobody has to remember them or open the README.
 set -uo pipefail
 MODE="$(cat /etc/layerosx/mode 2>/dev/null || echo release)"
 
-printf 'LayerOSX commands  (user "mac", build mode: %s)\n' "$MODE"
-printf 'Change a setting, then `relaunch` (no reboot) or reboot to apply it.\n\n'
+# name | group | short (one line) | long (full description + usage)
+CMDS=(
+"commands|Help|list the kiosk commands (or 'commands <name>' for one)|Prints every kiosk command with a short description. 'commands <name>' shows the full description and usage of a single command."
+"gpu|Display / VM|graphics adapter for the next launch: vmware/reims/std|Chooses the guest display device for the NEXT launch. vmware = reliable, unaccelerated; reims = hardware-accelerated Reims-vGPU (alpha); std = stock VGA (OVMF linear framebuffer). Writes /var/lib/layerosx/gfx. Usage: gpu <vmware|reims|std>, then relaunch."
+"verbose|Display / VM|verbose macOS boot log on/off|on shows XNU's -v boot log (and, in a debug build, OpenCore + serial kernel logging); off is a clean Apple-logo boot. Writes /var/lib/layerosx/verbose. Usage: verbose <on|off>, then relaunch."
+"audio|Display / VM|attach a usb-audio device on/off|Attaches a usb-audio device macOS drives with AppleUSBAudio (no kext). Skips itself if the QEMU build has no audio backend. Writes /var/lib/layerosx/audio. Usage: audio <on|off>, then relaunch."
+"relaunch|Display / VM|restart just the VM to apply a gpu/verbose/audio change|Kills and restarts only the QEMU VM (not the X session), so a gpu/verbose/audio change takes effect with no reboot and no flicker. Usage: relaunch."
+"macstatus|Diagnostics|current gpu/verbose/audio + VM disk summary|One-glance summary of the current display/verbose/audio settings and whether the VM disk / recovery exist. Usage: macstatus."
+"maclog|Diagnostics|view the guest serial log (has subcommands)|Views the guest boot/serial log. No arg = curated view (where it stopped + errors + OpenCore image). Subs: tail oc patch err launch qemu all usb. Usage: maclog [sub]."
+"macdiag|Diagnostics|full shareable diagnostics bundle (host+guest+logs)|Collects host CPU/KVM/memory + QEMU version/cmdline + OpenCore image + macOS version + all logs into ONE folder. 'macdiag usb' copies it to a USB (also auto-saved to USB on every VM exit). Usage: macdiag [usb]."
+"erasevm|Lifecycle|delete the VM so the first-run wizard runs again|Deletes the VM disk + recovery/installer image + UEFI NVRAM, so the next boot reopens the first-run wizard (reinstall, or pick a different macOS version). Refuses while QEMU runs unless -y. Usage: erasevm [-y]."
+)
 
-printf 'Display / VM\n'
-printf '  gpu <vmware|reims|std>  Graphics adapter next launch: vmware=reliable,\n'
-printf '                          reims=accelerated (alpha), std=stock VGA.\n'
-printf '  verbose <on|off>        Verbose macOS boot log (+ serial/OpenCore\n'
-printf '                          logging in a debug build).\n'
-printf '  audio <on|off>          Attach a usb-audio device.\n'
-printf '  relaunch                Restart just the VM to apply a gpu/verbose/audio\n'
-printf '                          change (no reboot, no flicker).\n\n'
-
-printf 'Diagnostics\n'
-printf '  macstatus               Current gpu/verbose/audio + VM disk summary.\n'
-printf '  maclog [sub]            View the guest serial log. subs: tail oc patch\n'
-printf '                          err launch qemu all usb.\n'
-printf '  macdiag [usb]           Full shareable diagnostics bundle (host + guest\n'
-printf '                          + config + all logs in one folder).\n\n'
-
-printf 'Lifecycle\n'
-printf '  erasevm [-y]            Delete the VM + recovery + NVRAM so the first-run\n'
-printf '                          wizard runs again (reinstall / pick a version).\n'
-printf '  commands                Show this list.\n\n'
-
-if [ "$MODE" = debug ]; then
-    printf 'Terminal: F2 (in the graphical session) or Ctrl+Alt+F2 (tty2).\n'
-else
-    printf 'Note: this is a locked release build -- host shortcuts (F2, VT switch)\n'
-    printf 'are disabled. Build in debug mode for a shell / these commands.\n'
+# Single-command lookup
+if [ -n "${1:-}" ]; then
+    for row in "${CMDS[@]}"; do
+        IFS='|' read -r name group short long <<<"$row"
+        if [ "$name" = "$1" ]; then
+            printf '%s — %s\n\n%s\n' "$name" "$short" "$long"
+            exit 0
+        fi
+    done
+    echo "No such command: $1" >&2
+    echo "Run 'commands' for the full list." >&2
+    exit 2
 fi
-printf 'State files: /var/lib/layerosx/{gfx,verbose,audio}\n'
+
+# Full list, grouped, one aligned line per command
+printf 'LayerOSX commands  (user "mac", build mode: %s)\n' "$MODE"
+printf "Type 'commands <name>' for the full description of one.\n"
+_last=""
+for row in "${CMDS[@]}"; do
+    IFS='|' read -r name group short long <<<"$row"
+    if [ "$group" != "$_last" ]; then printf '\n%s\n' "$group"; _last="$group"; fi
+    printf '  %-11s %s\n' "$name" "$short"
+done
+printf '\nApply a setting change with `relaunch` (no reboot) or a reboot.\n'
+if [ "$MODE" = debug ]; then
+    printf 'Terminal: F2 (graphical) or Ctrl+Alt+F2 (tty2).\n'
+else
+    printf 'Note: locked release build — host shortcuts (F2, VT switch) are off.\n'
+fi

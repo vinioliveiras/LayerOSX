@@ -41,7 +41,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 
 | command | what it does |
 |---------|--------------|
-| `commands` | Print this list of kiosk commands and what each does — the discoverable index, so you don't have to remember them. |
+| `commands [name]` | List every kiosk command (one line + short description each, grouped). `commands <name>` prints the full description + usage of a single command. The discoverable index, so you don't have to remember them. |
 | `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer, the "no linesize" A/B test). |
 | `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log (in a **debug**-mode ISO also OpenCore's own logging + serial kernel log); `off` is a clean Apple-logo boot. Default follows the build mode: **off** in release, **on** in debug. |
 | `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Default follows the build mode: **on** in release, **off** in debug; safe either way — it skips itself if the build has no audio backend. |
