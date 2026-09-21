@@ -81,7 +81,14 @@ else:
 PYEOF
 
 SHORTNAME_ARGS=()
-if [ -n "$MACOS_SHORTNAME" ]; then
+if [ "$MACOS_SHORTNAME" = "ventura" ]; then
+    # Pin Ventura to an explicit board-id instead of trusting kholia's -s table
+    # (whose ventura entry is os_type=latest and could drift). Mac-4B682C642B45593E
+    # is an iMac18,x-class board OpenCore's boards.json caps at 13.7.8, so
+    # os_type=latest = the newest Ventura point release, never Sonoma/Sequoia.
+    # Only for the ventura selection; every other version still uses -s.
+    SHORTNAME_ARGS=(-b Mac-4B682C642B45593E -os latest)
+elif [ -n "$MACOS_SHORTNAME" ]; then
     SHORTNAME_ARGS=(-s "$MACOS_SHORTNAME")
 fi
 
