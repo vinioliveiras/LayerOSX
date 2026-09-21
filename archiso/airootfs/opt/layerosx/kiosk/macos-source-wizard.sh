@@ -123,6 +123,58 @@ run_convert_with_progress() {
     return "$rc"
 }
 
+# Real progress bar for the "download from Apple" path. fetch-macOS-v2.py DOES
+# print a live percentage ("<MB>/<MB> MB |=== | 42.3% downloaded", carriage-
+# return updated) -- the earlier note that its download "isn't reliably
+# parseable" was wrong. Parse that into a real zenity percentage instead of a
+# pulsating guess. The download maps to 0-95% of the bar; the verify + dmg2img
+# + qemu-img phases that follow emit no parseable %, so the label switches and
+# the bar holds at 95 until the whole command returns (closed at 100). Every
+# line is still echoed, so F2's live log tail stays complete.
+run_download_with_progress() {
+    local title="$1" text="$2"
+    shift 2
+
+    echo "----- $text -----"
+
+    local fifo
+    fifo=$(mktemp -u /tmp/layerosx-wizard-progress.XXXXXX)
+    mkfifo "$fifo"
+    zenity --progress --no-cancel --auto-close \
+        --title="$title" --text="$text" --width=520 \
+        < "$fifo" 2>/dev/null &
+    local zpid=$!
+    exec 4>"$fifo"
+    rm -f "$fifo"
+
+    "$@" 2>&1 | stdbuf -oL tr '\r' '\n' | while IFS= read -r line; do
+        printf '%s\n' "$line"                 # keep the raw log intact (F2)
+        case "$line" in
+            *"% downloaded"*)
+                # ".../ 650.0 MB |== | 42.3% downloaded" -> "42"
+                local pct="${line%% downloaded*}"
+                pct="${pct##* }"; pct="${pct%\%}"; pct="${pct%.*}"
+                case "$pct" in
+                    ''|*[!0-9]*) : ;;
+                    *) printf '%s\n' "$(( pct * 95 / 100 ))" >&4
+                       printf '#%s  (%s%%)\n' "$text" "$pct" >&4 ;;
+                esac
+                ;;
+            *"Download complete"*)
+                printf '95\n' >&4
+                printf '#Verifying and preparing the image…\n' >&4 ;;
+            *"Verifying image"*)
+                printf '#Verifying downloaded image…\n' >&4 ;;
+        esac
+    done
+    local rc=${PIPESTATUS[0]}
+
+    printf '100\n' >&4
+    exec 4>&-
+    wait "$zpid" 2>/dev/null || true
+    return "$rc"
+}
+
 # Confirmed on real hardware: this used to point at
 # /usr/share/edk2-ovmf/x64/OVMF_VARS.fd, which doesn't exist --
 # Arch's edk2-ovmf package actually installs to /usr/share/edk2/x64/
@@ -210,7 +262,7 @@ case "$CHOICE" in
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
         copy_ovmf_vars
         [ -n "$MACOS_SHORTNAME" ] && printf '%s\n' "$MACOS_SHORTNAME" > "$MACOS_VERSION_FILE"
-        if ! run_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press F2 for details)" \
+        if ! run_download_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press F2 for details)" \
             bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK" "$MACOS_SHORTNAME"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
                 --text="Couldn't download the macOS recovery image. Press F2 to see the details, check your internet connection, and try again."

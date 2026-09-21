@@ -1824,6 +1824,19 @@ The wizard now shows a version picker right after choosing "download from Apple,
 
 Also means there's no more need to go hunting for a macOS installer `.dmg` on a Hackintosh forum (unreliable in general — no way to verify integrity of an unofficial re-upload, and see the `.dmg`-corruption bug above for what an old `dmg2img` does with modern Apple DMGs anyway) just to test an older/specific macOS version — the automatic download path can just be asked for that version directly now.
 
+## Feature: real progress bar for the macOS download
+
+The "download from Apple" path used a *pulsating* zenity bar because an earlier
+note assumed `fetch-macOS-v2.py`'s download printed nothing parseable. It does:
+a carriage-return-updated `"<MB>/<MB> MB |=== | 42.3% downloaded"` line.
+`run_download_with_progress()` now parses that into a **real** percentage. The
+download maps to 0-95% of the bar; the verify/`dmg2img`/`qemu-img` phases after
+it emit no parseable %, so the label switches ("Verifying and preparing…") and
+the bar holds at 95 until the whole thing finishes (closed at 100). Every line
+is still echoed so the F2 live log stays complete. (`qemu-img convert -p` for
+the "I already have a disk" paths was already a real bar via
+`run_convert_with_progress()`.)
+
 ## Bug: "Ventura" selection could install Sequoia (stale cache + `os_type: latest`)
 
 Selecting **Ventura** in the wizard once came up as **Sequoia 15.4** (Darwin
