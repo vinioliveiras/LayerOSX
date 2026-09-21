@@ -108,6 +108,13 @@ if mode == "debug":
     dbg["DisableWatchDog"] = True
     dbg["AppleDebug"] = True
     dbg["ApplePanic"] = True
+    # The DEBUG swap below puts a FULL OpenCore.efi at \EFI\BOOT\BOOTx64.efi.
+    # With kholia's LauncherOption set, OpenCore-as-BOOTx64 tries to relaunch
+    # \EFI\OC\OpenCore.efi (the same running image) -> "Found previous image,
+    # aborting / Already started / Halting on critical error" (seen on real HW
+    # once the NVRAM stopped pointing straight at \EFI\OC). Disabling it makes
+    # OpenCore run in place as a single instance regardless of boot path.
+    cfg.setdefault("Misc", {}).setdefault("Boot", {})["LauncherOption"] = "Disabled"
 
 # 3) debug only: enable kholia's own kernel serial-output patches, which ship
 #    DISABLED. They route XNU's early boot log and its panic string to the

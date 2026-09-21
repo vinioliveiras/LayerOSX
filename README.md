@@ -2530,6 +2530,17 @@ exclusive keyboard grab. The openbox F2 keybind keeps working while the VM is
 focused, and macOS still receives every other key through normal window focus.
 (`Ctrl+Alt+F2` still works too — it's a kernel VT switch, below X entirely.)
 
+## Bug: DEBUG OpenCore swap caused "Already started / Halting on critical error"
+
+The DEBUG swap copies a full `OpenCore.efi` over `\EFI\BOOT\BOOTx64.efi`. With
+kholia's `LauncherOption` set, OpenCore launched as BOOTx64 tries to relaunch
+`\EFI\OC\OpenCore.efi` (the same image) -> `OC: Found previous image, aborting`
+-> `Already started` -> `Halting on critical error`. It booted fine while NVRAM
+still pointed straight at `\EFI\OC\OpenCore.efi`, then failed once that changed
+(e.g. after the first macOS boot). Fix: the debug config now sets
+`Misc>Boot>LauncherOption = Disabled`, so OpenCore runs in place as a single
+instance whatever path it was booted from. Debug image only.
+
 ## Getting OpenCore's OCAK log: swap the verbose image to a DEBUG OpenCore
 
 kholia's `OpenCore.qcow2` ships a **RELEASE** OpenCore build, which prints
