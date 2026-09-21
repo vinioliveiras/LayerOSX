@@ -2299,3 +2299,15 @@ The in-session F2 log terminal (openbox, inside X) runs at the full refresh, but
 isn't always reachable when the fullscreen SDL VM has grabbed input — which is
 exactly when you need the VT. Proper fix (setting a sane console mode/refresh)
 is still open; tracked in the TODO section.
+
+### Observability: the launcher now logs which OpenCore image it chose
+
+Chasing why `verbose on` sometimes still boots the non-verbose image cost a
+round-trip (boot → run commands → photo). The launcher now prints, on every
+launch, the exact OpenCore image it selected and the verbose state, e.g.
+`OpenCore image: OpenCore-amd-verbose.qcow2  [verbose=on]`, and calls out the
+common failure explicitly: `[verbose=ON requested, but
+OpenCore-amd-verbose.qcow2 is MISSING/empty -> using non-verbose]`. It goes to
+`~/mac-vm.log`, and `maclog` now surfaces the last such line at the top of its
+diagnostic view — so a boot that comes up non-verbose explains itself with no
+extra diagnostic session.

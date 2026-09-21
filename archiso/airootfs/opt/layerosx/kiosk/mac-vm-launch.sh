@@ -317,6 +317,16 @@ configure_toggles() {
         echo "         Rebuild the ISO so build.sh generates the AMD OpenCore variant." >&2
     fi
 
+    # Observability: record which OpenCore image actually won, and why. A boot
+    # that comes up non-verbose despite `verbose on` then explains itself in the
+    # log (surfaced by `maclog`) -- no separate diagnostic boot needed. The most
+    # common cause is the verbose image being absent from the installed system.
+    if [ "$VERBOSE_STATE" = on ] && [ ! -s "$_oc_verb" ]; then
+        echo "OpenCore image: $(basename "$OPENCORE_IMG")  [verbose=ON requested, but $(basename "$_oc_verb") is MISSING/empty -> using non-verbose]"
+    else
+        echo "OpenCore image: $(basename "$OPENCORE_IMG")  [verbose=$VERBOSE_STATE]"
+    fi
+
     # --- Graphics device --------------------------------------------------------
     # reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
     # but it is alpha software on an alpha driver stack, and Reims' own docs say

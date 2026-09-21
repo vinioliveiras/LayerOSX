@@ -11,6 +11,7 @@
 #   maclog usb        copy the log to the USB stick
 set -uo pipefail
 LOG="$HOME/mac-vm-serial.log"
+LAUNCHLOG="$HOME/mac-vm.log"   # launcher stdout (which OpenCore image / verbose state)
 [ -r "$LOG" ] || LOG="/home/mac/mac-vm-serial.log"
 if [ ! -r "$LOG" ]; then
     echo "No serial log yet at $LOG -- launch the VM first." >&2; exit 1
@@ -18,6 +19,8 @@ fi
 case "${1:-}" in
     ""|view|diag)
         echo "===== macOS VM serial log: $LOG ($(wc -l <"$LOG") lines) ====="
+        _ocline="$(grep -a "OpenCore image:" "$LAUNCHLOG" 2>/dev/null | tail -1)"
+        [ -n "$_ocline" ] && echo "--- launch: ${_ocline} ---"
         echo "--- last 25 lines (where it stopped) ---"
         tail -25 "$LOG"
         echo
