@@ -27,8 +27,27 @@ OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"     # base default; reselected below
 GOP_ROM="/usr/share/qemu/reims-vgpu-gop.rom"
 MACOS_VERSION_FILE="$STATE_DIR/macos-version"   # written by macos-source-wizard.sh
 GFX_FILE="$STATE_DIR/gfx"                       # optional: "vmware" to bypass Reims
-VERBOSE_FILE="$STATE_DIR/verbose"                # optional: "off" for a clean Apple-logo boot (default: on)
-AUDIO_FILE="$STATE_DIR/audio"                    # optional: "on" to attach a usb-audio device (default: off)
+VERBOSE_FILE="$STATE_DIR/verbose"                # optional: overrides the per-mode default (see BUILD_MODE)
+AUDIO_FILE="$STATE_DIR/audio"                    # optional: overrides the per-mode default (see BUILD_MODE)
+MODE_FILE="/etc/layerosx/mode"                   # baked at build time (build.sh): release|debug
+
+# Per-mode RUNTIME defaults, used ONLY when the user hasn't set the matching
+# toggle file yet (an explicit `verbose`/`audio`/`gpu` choice always wins):
+#   release -- the shipping experience: clean Apple-logo boot (verbose off),
+#              sound on, and Reims-vGPU acceleration on (the point of the
+#              project).
+#   debug   -- the troubleshooting build: verbose on (see the boot log),
+#              plain VMware SVGA (isolates the display from the Reims path),
+#              audio off (one less variable). The verbose image also carries
+#              the serial kernel logging + DEBUG OpenCore (patch-opencore-
+#              verbose.sh). A user toggle still overrides any of these.
+BUILD_MODE="$(cat "$MODE_FILE" 2>/dev/null || echo release)"
+case "$BUILD_MODE" in debug) : ;; *) BUILD_MODE=release ;; esac
+if [ "$BUILD_MODE" = debug ]; then
+    VERBOSE_DEFAULT=on;  AUDIO_DEFAULT=off; GFX_DEFAULT=vmware
+else
+    VERBOSE_DEFAULT=off; AUDIO_DEFAULT=on;  GFX_DEFAULT=reims
+fi
 VM_RAM_MB=8192
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
@@ -296,7 +315,7 @@ configure_toggles() {
     # image per family (build.sh makes all four), so toggling it needs no slow
     # re-patch -- the `verbose` command just flips $VERBOSE_FILE. Default is verbose
     # ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
-    VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
+    VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo "$VERBOSE_DEFAULT")"
     case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
     if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
         _oc_norm="$OPENCORE_DIR/OpenCore-amd.qcow2"
@@ -339,7 +358,7 @@ configure_toggles() {
     # single most useful A/B switch for telling "Reims can't draw yet" apart from
     # "macOS isn't booting at all": if it boots on vmware but not reims, it's the
     # Reims path; if it fails the same way on both, it isn't Reims.
-    GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
+    GFX="$(cat "$GFX_FILE" 2>/dev/null || echo "$GFX_DEFAULT")"
     case "$GFX" in
         reims|reims-vgpu-pci) GFX="reims-vgpu-pci" ;;
         std|std-vga|vga) GFX="std-vga" ;;
@@ -408,7 +427,7 @@ configure_toggles() {
     # they're missing, rather than handing QEMU an argument it rejects and turning
     # a working boot into a launch failure. `audio on|off` flips $AUDIO_FILE.
     AUDIO_ARGS=()
-    AUDIO_STATE="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
+    AUDIO_STATE="$(cat "$AUDIO_FILE" 2>/dev/null || echo "$AUDIO_DEFAULT")"
     case "$AUDIO_STATE" in on|1|yes|true|ON|On) AUDIO_STATE=on ;; *) AUDIO_STATE=off ;; esac
     if [ "$AUDIO_STATE" = on ]; then
         _qhelp="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -audiodev help 2>/dev/null || true)"

@@ -21,6 +21,18 @@ commands, so this file doesn't drift out of sync with it).
 This step alone will already show if anything is missing from
 `packages.x86_64` (names change, versions leave the repos, etc.).
 
+## 1.5. Build mode (release / debug)
+
+- `build.sh` / `./rebuild.sh` prompt for a mode (or take it: `./rebuild.sh
+  debug`, or `LAYEROSX_MODE=debug ./build.sh`). Confirm the banner prints the
+  mode you chose and that `archiso/airootfs/etc/layerosx/mode` contains it.
+- **release** should boot the ISO to: verbose OFF (clean Apple logo, no boot
+  log), audio ON, Reims-vGPU ON — check `macstatus` in the running kiosk.
+- **debug** should boot to: verbose ON, VMware SVGA, audio OFF, and the verbose
+  image should log `OC:`/`OCAK:` + a kernel serial log (`maclog`).
+- Either way, a manual `verbose`/`audio`/`gpu` toggle must still override the
+  per-mode default (the toggle file wins over `/etc/layerosx/mode`).
+
 ## 2. `prepare-qemu-macos.sh` — the biggest source of uncertainty
 
 Update (found by actually reading the qemus/qemu-macos repo instead of
@@ -591,6 +603,17 @@ actually run the detection logic against real hardware yet.
   still wrong after that, run `xrandr --query` from a tty2 shell
   (Ctrl+Alt+F2, login `mac`/`mac`) to see what mode it actually
   landed on.
+
+## 4.6. Downloaded macOS version is the one you picked
+
+- After the "download from Apple" path finishes, confirm the macOS that boots
+  is the version you selected (e.g. Ventura, not Sequoia). `fetch-recovery.sh`
+  now wipes any previous download (`rm -rf recovery BaseSystem.img`) before
+  fetching, so a stale cross-version `BaseSystem.dmg` can no longer be picked
+  up — but kholia's `os_type: "latest"` on the Ventura entry can still let
+  Apple hand back a newer image (see README's "Ventura selection could install
+  Sequoia" bug). If it does, `erasevm` and re-run, and if it persists pin an
+  explicit board-id in `fetch-recovery.sh`.
 
 ## 4.5. Validate the QEMU command line before building (no hardware needed)
 

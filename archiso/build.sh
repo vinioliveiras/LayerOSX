@@ -8,6 +8,46 @@ cd "$(dirname "$0")"
 WORKDIR="${1:-./work}"
 OUTDIR="${2:-./out}"
 
+# ---------------------------------------------------------------------------
+# Build mode: `release` (default -- the clean build for normal use) or `debug`
+# (the verbose OpenCore image additionally ships serial kernel logging + a
+# public DEBUG OpenCore so a stuck macOS boot can be traced on the serial log;
+# see patch-opencore-verbose.sh / README.md). ONLY the verbose image differs --
+# `verbose off` is identical in both modes. Set it non-interactively with
+# `LAYEROSX_MODE=debug ./build.sh`, or pick it at the prompt below.
+# ---------------------------------------------------------------------------
+MODE="${LAYEROSX_MODE:-}"
+if [ -z "$MODE" ]; then
+    if [ -t 0 ]; then
+        echo "LayerOSX build mode?"
+        echo "  1) release  -- clean build for normal use (default)"
+        echo "  2) debug    -- verbose image logs the kernel to serial for troubleshooting"
+        read -r -p "Select [1/2, Enter=release]: " _m || _m=""
+        case "$_m" in
+            2|debug|d|D) MODE="debug" ;;
+            *)           MODE="release" ;;
+        esac
+    else
+        MODE="release"
+    fi
+fi
+case "$MODE" in
+    debug|release) : ;;
+    *) echo "build.sh: unknown LAYEROSX_MODE='$MODE' -- using release." >&2; MODE="release" ;;
+esac
+export LAYEROSX_MODE="$MODE"
+echo "==================================================================="
+echo "  LayerOSX build mode: $MODE"
+[ "$MODE" = "debug" ] && echo "  (verbose image ships serial kernel logging + DEBUG OpenCore)"
+echo "==================================================================="
+# Bake the chosen mode into the image so the RUNTIME launcher can pick
+# mode-appropriate defaults (release: verbose off / audio on / Reims on;
+# debug: verbose on / VMware / audio off -- see mac-vm-launch.sh). A plain
+# marker file the launcher reads; the live-ISO rootfs (and the installed
+# system rsynced from it) both carry it. Regenerated every build, gitignored.
+mkdir -p airootfs/etc/layerosx
+printf '%s\n' "$MODE" > airootfs/etc/layerosx/mode
+
 command -v mkarchiso >/dev/null 2>&1 || {
     echo "mkarchiso not found — install the 'archiso' package first (sudo pacman -S archiso)." >&2
     exit 1

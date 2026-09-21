@@ -39,8 +39,8 @@ problem without rebuilding the ISO — settings are plain-text files under
 | command | what it does |
 |---------|--------------|
 | `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer, the "no linesize" A/B test). |
-| `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log **and** OpenCore's own logging (uses the debug OpenCore image); `off` is a clean Apple-logo boot. Default on while bringing macOS up. |
-| `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Off by default; safe to try — it skips itself if the build has no audio backend. |
+| `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log (in a **debug**-mode ISO also OpenCore's own logging + serial kernel log); `off` is a clean Apple-logo boot. Default follows the build mode: **off** in release, **on** in debug. |
+| `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Default follows the build mode: **on** in release, **off** in debug; safe either way — it skips itself if the build has no audio backend. |
 | `relaunch` | Restart just the macOS VM to apply a `gpu`/`verbose`/`audio` change — kills QEMU only (not Xorg), so no reboot and no screen flicker. |
 | `maclog [sub]` | View the guest boot/serial log (`~/mac-vm-serial.log`). No arg = curated view (where it stopped + errors + which OpenCore image booted). Subs: `tail`, `oc`, `patch`, `err`, `all`, `usb` (copy to a mounted USB). |
 | `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
@@ -48,6 +48,33 @@ problem without rebuilding the ISO — settings are plain-text files under
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
 not something you invoke by hand. State files: `/var/lib/layerosx/{gfx,verbose,audio}`.
+
+## Build modes: `release` vs `debug`
+
+`build.sh` (and `./rebuild.sh`) asks which build you want, or takes it
+non-interactively:
+
+```
+./rebuild.sh release     # or: LAYEROSX_MODE=release ./build.sh
+./rebuild.sh debug
+```
+
+The mode is baked into the ISO (`/etc/layerosx/mode`) and only changes two
+things — everything else is identical:
+
+- **Per-mode runtime defaults** (first boot, before you touch any toggle):
+  - `release` — the shipping experience: **verbose off** (clean Apple-logo
+    boot), **audio on**, **Reims-vGPU on** (the whole point of the project).
+  - `debug` — the troubleshooting build: **verbose on**, **VMware SVGA**
+    (isolates the display from the Reims path), **audio off** (one variable
+    fewer). A user toggle (`verbose`/`audio`/`gpu`) always overrides the
+    default.
+- **The verbose OpenCore image.** In `debug` it additionally ships serial
+  kernel logging (`serial=3 debug=0x108 keepsyms=1`), OpenCore's own Misc>Debug
+  logging, kholia's kernel serial patches, and a public **DEBUG OpenCore** so
+  `OC:`/`OCAK:` lines actually print (see the OCAK section below). In `release`
+  the verbose image is just `-v` on stock RELEASE OpenCore. This is why there is
+  nothing to strip out by hand once the boot is fixed — just build `release`.
 
 ## TODO / polish (deferred until macOS boots cleanly)
 
@@ -1769,6 +1796,31 @@ Come up while looking for a Ventura `.dmg` to test with (see the `.dmg`-corrupti
 The wizard now shows a version picker right after choosing "download from Apple," defaulting to **Ventura (13)** — recommended specifically because that's what Reims-vGPU's own README recommends for initial testing (its alpha-stage driver is most tested against it), which is a different reason than upstream OSX-KVM's own "Sonoma — RECOMMENDED" default (that one's about general Hackintosh/OSX-KVM compatibility, not this project's specific GPU driver). `lib/fetch-recovery.sh` takes the chosen shortname as an optional second argument and passes it straight through to `fetch-macOS-v2.py -s`.
 
 Also means there's no more need to go hunting for a macOS installer `.dmg` on a Hackintosh forum (unreliable in general — no way to verify integrity of an unofficial re-upload, and see the `.dmg`-corruption bug above for what an old `dmg2img` does with modern Apple DMGs anyway) just to test an older/specific macOS version — the automatic download path can just be asked for that version directly now.
+
+## Bug: "Ventura" selection could install Sequoia (stale cache + `os_type: latest`)
+
+Selecting **Ventura** in the wizard once came up as **Sequoia 15.4** (Darwin
+`24.4.0`) on the real machine. Two things conspire here:
+
+1. **Stale download cache.** `fetch-recovery.sh` downloads into
+   `/var/lib/layerosx/fetch-work/recovery/`, which persists across boots, and
+   the wizard re-runs for a different version after a failed/erased attempt.
+   It then did `find recovery -iname BaseSystem.dmg | head -n1` — which, if a
+   *previous* run had left a different version's `BaseSystem.dmg` there, would
+   pick up the stale image. Fixed: `fetch-recovery.sh` now `rm -rf recovery
+   BaseSystem.img` before every download, so `find` can only ever see the image
+   we just asked for.
+
+2. **`os_type: "latest"` on kholia's Ventura entry.** In
+   `fetch-macOS-v2.py`'s product table the Ventura row is tagged
+   `os_type: "latest"`, i.e. it asks Apple for the *newest* recovery that
+   board-id serves, not Ventura specifically. `Mac-4B682C642B45593E` is capped
+   at 13.7.8 in OpenCore's `boards.json`, but the `latest` request defers to
+   Apple's live server, so it can hand back something newer than the label
+   promises. If a fresh, cache-cleared `-s ventura` still returns too-new an
+   image on a given day, the deterministic fix is to pin an explicit board-id +
+   `os_type` in `fetch-recovery.sh` rather than trust the shortname table — the
+   cache fix above is the first, always-correct half of the problem.
 
 ## Feature: rebrand the installed system away from "Arch Linux"
 

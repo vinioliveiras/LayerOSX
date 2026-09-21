@@ -10,3 +10,6 @@ __pycache__/
 
 # Local agent memory / handoff notes -- kept on disk, not tracked.
 CLAUDE.md
+
+# Build-mode marker baked by build.sh (regenerated every build)
+archiso/airootfs/etc/layerosx/mode

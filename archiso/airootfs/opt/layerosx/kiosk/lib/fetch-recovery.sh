@@ -84,6 +84,18 @@ SHORTNAME_ARGS=()
 if [ -n "$MACOS_SHORTNAME" ]; then
     SHORTNAME_ARGS=(-s "$MACOS_SHORTNAME")
 fi
+
+# Clear any leftover download from a PREVIOUS run before fetching. $WORK
+# persists across boots (it's under /var/lib/layerosx), and the wizard can be
+# re-run for a different macOS version after a failed attempt. Without this,
+# an earlier version's BaseSystem.dmg stays in recovery/, and the
+# `find recovery -iname BaseSystem.dmg | head -n1` below could pick up that
+# STALE image instead of the one we just asked for -- i.e. select "Ventura"
+# but silently install whatever a previous run downloaded (seen in practice:
+# a Ventura selection that came up as Sequoia). Also drop the derived
+# BaseSystem.img so a half-finished dmg2img from a prior crash can't be reused.
+rm -rf recovery BaseSystem.img
+
 python3 fetch-macOS-v2.py --action download -o recovery "${SHORTNAME_ARGS[@]}"
 
 DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)
