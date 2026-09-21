@@ -59,8 +59,13 @@ if not targets:
 # INDEPENDENT of the framebuffer, so the kernel log survives even with a broken
 # FB -- which finally tells us whether XNU hangs at handoff or just boots
 # invisibly. keepsyms=1 + debug=0x100 give a symbolicated panic on serial if it
-# panics. (These join the kholia kernel serial patches enabled below.)
-extra_args = ["-v", "keepsyms=1", "debug=0x100", "serial=3"]
+# panics. debug=0x108 = 0x100 (DB_KERN_DUMP_ON_PANIC) | 0x08 (DB_KPRT), so
+# the kernel's kprintf() stream -- the running boot log, not just a panic --
+# is emitted on the serial port. That is what finally shows WHERE the kernel
+# spins after handoff (it is alive: qemu pins one core at ~100%), instead of
+# only a post-mortem if it panicked. (These join the kholia kernel serial
+# patches enabled below.)
+extra_args = ["-v", "keepsyms=1", "debug=0x108", "serial=3"]
 for sec in targets:
     toks = (sec.get("boot-args", "") or "").split()
     for a in extra_args:

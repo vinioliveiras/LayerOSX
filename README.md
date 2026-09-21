@@ -2376,12 +2376,18 @@ frame and the kernel is a black box. `-v` alone can't help: it writes to that
 same broken framebuffer console.
 
 The fix for *visibility* (not the boot itself): the verbose image now adds
-`serial=3` (plus `keepsyms=1 debug=0x100`) to boot-args, so XNU uses the **16550
+`serial=3` (plus `keepsyms=1 debug=0x108`) to boot-args, so XNU uses the **16550
 serial console** (COM1 / 0x3F8 — the port the launcher captures to
-`~/mac-vm-serial.log`), which is independent of the framebuffer. This is what the
-RELEASE OpenCore couldn't give us on its own: OpenCore's *own* debug log (OC:/
-OCAK:) needs a DEBUG OpenCore build, but the *kernel's* log only needs the
-kernel routed to serial, which a boot-arg does — no OpenCore swap required.
+`~/mac-vm-serial.log`), which is independent of the framebuffer. `debug=0x108`
+is `0x100` (`DB_KERN_DUMP_ON_PANIC`, symbolicated panic on serial) OR `0x08`
+(`DB_KPRT`, route the kernel's `kprintf()` stream to serial). The `0x08` bit is
+the important one now: it emits the **running boot log**, not just a post-mortem,
+so the serial log shows exactly *where* the kernel spins after handoff — we
+already know it is alive (qemu pins one core at ~100% CPU), it is just invisible.
+This is what the RELEASE OpenCore couldn't give us on its own: OpenCore's *own*
+debug log (OC:/OCAK:) needs a DEBUG OpenCore build, but the *kernel's* log only
+needs the kernel routed to serial, which a boot-arg does — no OpenCore swap
+required.
 
 With this, `verbose on` + rebuild + `maclog` should finally show XNU's own output
 after `HANDOFF`, which disambiguates the two possibilities the frozen screen
