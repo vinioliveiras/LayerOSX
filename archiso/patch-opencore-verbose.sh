@@ -9,9 +9,10 @@
 #
 #   debug -- the DIAGNOSTIC verbose image. On top of `-v` it adds serial kernel
 #     logging (serial=3 debug=0x108 keepsyms=1), turns on OpenCore's own Misc>
-#     Debug logging, enables kholia's kernel serial patches, and swaps in a
-#     public DEBUG OpenCore so OC:/OCB:/OCAK lines actually print. This is the
-#     "show me everything, find the hang" image -- see README.md / CLAUDE.md.
+#     Debug logging, and enables kholia's kernel serial patches so XNU's log
+#     reaches the serial port. This is the "show me everything, find the hang"
+#     image -- see README.md / CLAUDE.md. (No OpenCore BINARY swap: it caused an
+#     "Already started" halt and the kernel log doesn't need it -- see below.)
 #
 # Everything diagnostic is gated on debug mode, so there is nothing to strip out
 # by hand once the boot is fixed: just build in release mode.
@@ -108,13 +109,6 @@ if mode == "debug":
     dbg["DisableWatchDog"] = True
     dbg["AppleDebug"] = True
     dbg["ApplePanic"] = True
-    # The DEBUG swap below puts a FULL OpenCore.efi at \EFI\BOOT\BOOTx64.efi.
-    # With kholia's LauncherOption set, OpenCore-as-BOOTx64 tries to relaunch
-    # \EFI\OC\OpenCore.efi (the same running image) -> "Found previous image,
-    # aborting / Already started / Halting on critical error" (seen on real HW
-    # once the NVRAM stopped pointing straight at \EFI\OC). Disabling it makes
-    # OpenCore run in place as a single instance regardless of boot path.
-    cfg.setdefault("Misc", {}).setdefault("Boot", {})["LauncherOption"] = "Disabled"
 
 # 3) debug only: enable kholia's own kernel serial-output patches, which ship
 #    DISABLED. They route XNU's early boot log and its panic string to the
@@ -134,39 +128,15 @@ rc=$?
 if [ "$rc" -eq 0 ]; then
     mcopy -o -n -i "$_esp" "$_plist" ::/EFI/OC/config.plist
 
-    # --- debug only: swap in a DEBUG OpenCore so the verbose image LOGS --------
-    # kholia's OpenCore is a RELEASE build: it prints NOTHING regardless of the
-    # Misc>Debug flags above, so OCAK (kernel-patch results -- e.g. whether the
-    # AMD_Vanilla patches actually apply) is invisible. Swap the WHOLE OpenCore
-    # binary set (OpenCore.efi + Bootstrap + the revision-checked drivers) for
-    # the matching public DEBUG release -- all from ONE release so their driver
-    # revision matches OpenCore.efi (mixing a public OpenCore.efi with kholia's
-    # newer drivers is what gave "Invalid revision"). Config + kexts stay
-    # kholia's. Verified booting in TCG: 1.0.5 DEBUG loads kholia's config
-    # cleanly and logs OC:/OCB:/OCAK to serial. release keeps the RELEASE
-    # OpenCore. Needs curl + python3 (both present in the build env); degrades to
-    # a warning (keeps RELEASE) if the download fails.
-    if [ "$MODE" = "debug" ]; then
-        OC_DEBUG_VER="${OC_DEBUG_VER:-1.0.5}"
-        _ocz="/tmp/layerosx-oc-${OC_DEBUG_VER}-DEBUG.zip"
-        _ocd="$(mktemp -d)"
-        if [ ! -s "$_ocz" ]; then
-            curl -fsSL -o "$_ocz" "https://github.com/acidanthera/OpenCorePkg/releases/download/${OC_DEBUG_VER}/OpenCore-${OC_DEBUG_VER}-DEBUG.zip" 2>/dev/null \
-                || echo "patch-opencore-verbose: WARNING could not download OpenCore ${OC_DEBUG_VER} DEBUG -- verbose image keeps the RELEASE OpenCore (no OC:/OCAK log)." >&2
-        fi
-        if [ -s "$_ocz" ] && python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$_ocz" "$_ocd" 2>/dev/null && [ -s "$_ocd/X64/EFI/OC/OpenCore.efi" ]; then
-            _ocx="$_ocd/X64/EFI"
-            mcopy -o -n -i "$_esp" "$_ocx/OC/OpenCore.efi"  ::/EFI/OC/OpenCore.efi
-            mcopy -o -n -i "$_esp" "$_ocx/BOOT/BOOTx64.efi" ::/EFI/BOOT/BOOTx64.efi
-            for _d in OpenCanopy OpenRuntime OpenPartitionDxe ResetNvramEntry ToggleSipEntry OpenHfsPlus; do
-                [ -f "$_ocx/OC/Drivers/$_d.efi" ] && mcopy -o -n -i "$_esp" "$_ocx/OC/Drivers/$_d.efi" "::/EFI/OC/Drivers/$_d.efi"
-            done
-            echo "patch-opencore-verbose: swapped OpenCore -> ${OC_DEBUG_VER} DEBUG (OC:/OCAK logging) in $OUT"
-        else
-            echo "patch-opencore-verbose: NOTE keeping RELEASE OpenCore in $OUT (no DEBUG swap) -- OCAK log will be empty." >&2
-        fi
-        rm -rf "$_ocd"
-    fi
+    # NOTE: no OpenCore BINARY swap. We used to swap in a public DEBUG OpenCore
+    # here (to get OC:/OCAK logging), but that put a full OpenCore.efi at
+    # \EFI\BOOT\BOOTx64.efi, which relaunched \EFI\OC\OpenCore.efi and halted
+    # with "Found previous image, aborting / Already started" once NVRAM stopped
+    # pointing straight at \EFI\OC. We already have the OCAK data we needed, and
+    # the KERNEL serial log (what we need for the "no linesize" framebuffer hang)
+    # comes from the boot-args (serial=3 debug=0x108) + kholia's kernel serial
+    # patches above -- NOT from a DEBUG OpenCore. So the verbose image keeps
+    # kholia's stock RELEASE OpenCore; only boot-args + kernel patches differ.
 
     qemu-img convert -O qcow2 "$_raw" "$OUT"
     chmod 644 "$OUT"
