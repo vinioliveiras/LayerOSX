@@ -29,9 +29,12 @@ Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 ## Kiosk commands (runtime cheat-sheet)
 
 Once LayerOSX is running the macOS VM, these commands are on `PATH` for the
-`mac` user. Open a terminal with **F2** (inside the graphical session, full
-refresh), or switch to a text console with **Ctrl+Alt+F2** (tty2, autologin as
-`mac`). Each one changes how the *next* launch behaves; apply a change with
+`mac` user. **In a `debug` build** you reach a shell to run them via **F2**
+(a terminal inside the graphical session) or **Ctrl+Alt+F2** (tty2, autologin
+as `mac`). **A `release` build is a locked kiosk** — F2, VT switching and every
+other host shortcut are disabled (see "Build modes" and "Kiosk lockdown"), so
+these commands are a debug-build tool. Each one changes how the *next* launch
+behaves; apply a change with
 **`relaunch`** (no reboot) or a full reboot. This is the fastest way to A/B a
 problem without rebuilding the ISO — settings are plain-text files under
 `/var/lib/layerosx/`, so they can be scripted too.
@@ -75,6 +78,30 @@ things — everything else is identical:
   `OC:`/`OCAK:` lines actually print (see the OCAK section below). In `release`
   the verbose image is just `-v` on stock RELEASE OpenCore. This is why there is
   nothing to strip out by hand once the boot is fixed — just build `release`.
+
+## Kiosk lockdown (no host shortcuts)
+
+A running VM should be the only thing on screen, with no accidental (or
+deliberate) way out to the Linux host underneath. `lib/install-f2-keybind.sh`
+(run from `.xinitrc` before `openbox &`) edits a copy of openbox's own stock
+`rc.xml` to:
+
+- drop the desktop count 4 -> 1,
+- remove **every** `<keybind>` — Ctrl+Alt+arrows (which the user hit to switch
+  windows/desktops), Alt+Tab, Alt+F4, the Reconfigure/Restart binds, all of it,
+- remove the desktop-switch mousebinds (scroll-on-root -> GoToDesktop),
+- strip the right-click root menu (Log Out / settings panels),
+- pin the QEMU/SDL window focused and above everything on the one desktop.
+
+`build.sh` additionally disables the two shortcuts openbox can't (they're
+X-server options): **VT switching** (Ctrl+Alt+Fn) and **Ctrl+Alt+Backspace**
+(zap X), via `/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf`.
+
+All of this is **mode-aware**: a `release` build strips everything for a fully
+locked appliance, while a `debug` build keeps the **F2** log terminal, VT
+switching and Ctrl+Alt+Backspace so the developer still has an escape hatch.
+`SDL_GRAB_KEYBOARD=0` (so F2 keeps reaching openbox instead of the guest) is why
+these shortcuts reach the host at all — hence the need to disable them here.
 
 ## TODO / polish (deferred until macOS boots cleanly)
 

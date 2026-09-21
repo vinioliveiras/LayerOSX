@@ -13,3 +13,4 @@ CLAUDE.md
 
 # Build-mode marker baked by build.sh (regenerated every build)
 archiso/airootfs/etc/layerosx/mode
+archiso/airootfs/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf

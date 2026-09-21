@@ -33,6 +33,12 @@ This step alone will already show if anything is missing from
 - Either way, a manual `verbose`/`audio`/`gpu` toggle must still override the
   per-mode default (the toggle file wins over `/etc/layerosx/mode`).
 
+- **Kiosk lockdown.** In a `release` build, confirm none of these do anything
+  while the VM is on screen: Ctrl+Alt+arrows (no desktop/window switch),
+  Alt+Tab, right-click-on-desktop (no menu), Ctrl+Alt+F2..F6 (no VT switch),
+  Ctrl+Alt+Backspace (X does not die), and F2 (no terminal). In a `debug`
+  build, F2, Ctrl+Alt+F2 (tty2) and Ctrl+Alt+Backspace must still work.
+
 ## 2. `prepare-qemu-macos.sh` — the biggest source of uncertainty
 
 Update (found by actually reading the qemus/qemu-macos repo instead of
