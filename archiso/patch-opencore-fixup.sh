@@ -69,13 +69,20 @@ if out.get("ProvideConsoleGop") is not True:
     out["ProvideConsoleGop"] = True; changed_fb = True
 if out.get("ClearScreenOnModeSwitch") is not True:
     out["ClearScreenOnModeSwitch"] = True; changed_fb = True
+# DirectGopRendering: OpenCore renders straight to the GOP linear framebuffer
+# (its own Blt) instead of leaning on the firmware's text output. On QEMU/OVMF
+# this is what actually establishes a framebuffer with a valid stride that
+# survives into XNU -- the missing piece behind "no linesize" (forcing a
+# Resolution alone didn't fix it). Safe/idempotent.
+if out.get("DirectGopRendering") is not True:
+    out["DirectGopRendering"] = True; changed_fb = True
 
 if disabled or changed_fb:
     plistlib.dump(cfg, open(cfg_path, "wb"))
 for b in disabled:
     sys.stderr.write("  disabled missing kext: %s\n" % b)
 if changed_fb:
-    sys.stderr.write("  set UEFI>Output Resolution=1920x1080 (framebuffer/no-linesize fix)\n")
+    sys.stderr.write("  set UEFI>Output Resolution=1920x1080 + DirectGopRendering (no-linesize fix)\n")
 sys.exit(0 if (disabled or changed_fb) else 3)
 PYF
 rc=$?
