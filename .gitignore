@@ -7,3 +7,6 @@ archiso/airootfs/opt/layerosx/bin/
 archiso/airootfs/usr/share/qemu/
 __pycache__/
 *.pyc
+
+# Local agent memory / handoff notes -- kept on disk, not tracked.
+CLAUDE.md
