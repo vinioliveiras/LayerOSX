@@ -7,11 +7,17 @@
 #   maclog oc         OpenCore's own log lines (OC:/OCB:/OCABC:/OCAK:)
 #   maclog patch      kernel-patch results (needs the debug OpenCore / verbose on)
 #   maclog err        errors / panics / halts only
-#   maclog all        the whole log, paged
+#   maclog launch     the launcher log (OpenCore image, launch profile, cmdline)
+#   maclog qemu       QEMU's -d guest_errors log (debug builds)
+#   maclog all        the whole serial log, paged
 #   maclog usb        copy the log to the USB stick
+#   (for a full shareable bundle of ALL logs + host/config, use `macdiag`)
 set -uo pipefail
 LOG="$HOME/mac-vm-serial.log"
 LAUNCHLOG="$HOME/mac-vm.log"   # launcher stdout (which OpenCore image / verbose state)
+QEMU_D_LOG="$HOME/mac-vm-qemu.log"  # QEMU -d guest_errors (debug builds)
+[ -r "$LAUNCHLOG" ] || LAUNCHLOG="/home/mac/mac-vm.log"
+[ -r "$QEMU_D_LOG" ] || QEMU_D_LOG="/home/mac/mac-vm-qemu.log"
 [ -r "$LOG" ] || LOG="/home/mac/mac-vm-serial.log"
 if [ ! -r "$LOG" ]; then
     echo "No serial log yet at $LOG -- launch the VM first." >&2; exit 1
@@ -35,10 +41,25 @@ case "${1:-}" in
     patch|patches|ocak) grep -i "OCAK" "$LOG" || echo "No OCAK lines -- run 'verbose on' (debug OpenCore) and relaunch." ;;
     err|errors|panic) grep -inE "halting|panic|fatal|died|Aborted|Unable|Err\(0x[^E]|not a valid" "$LOG" | grep -viE "wake-failure|root_hash|\.development" || echo "(no hard errors)" ;;
     all|full) less -R "$LOG" ;;
+    launch|profile|oc-image)
+        if [ ! -r "$LAUNCHLOG" ]; then echo "No launcher log at $LAUNCHLOG yet." >&2; exit 1; fi
+        echo "===== launcher log: $LAUNCHLOG ====="
+        echo "--- OpenCore image chosen ---";  grep -a "OpenCore image:" "$LAUNCHLOG" | tail -3 || echo "(none)"
+        echo "--- launch profile ---";         grep -a "Launch profile:" "$LAUNCHLOG" | tail -3 || echo "(none)"
+        echo "--- exact QEMU cmdline ---";      grep -a "QEMU cmdline:"   "$LAUNCHLOG" | tail -1 || echo "(none)"
+        echo "--- last 20 lines ---";           tail -20 "$LAUNCHLOG"
+        ;;
+    qemu|guest|guest-errors|d)
+        if [ -r "$QEMU_D_LOG" ] && [ -s "$QEMU_D_LOG" ]; then
+            echo "===== QEMU -d guest_errors: $QEMU_D_LOG ====="; less -R "$QEMU_D_LOG"
+        else
+            echo "No QEMU guest-errors log (that log only exists in a DEBUG build, and stays empty if the guest raised none)."
+        fi
+        ;;
     usb)
         DST=""
         for m in /run/media/mac/* /mnt/usb /media/*; do [ -d "$m" ] && [ -w "$m" ] && DST="$m" && break; done
         if [ -n "$DST" ]; then cp "$LOG" "$DST/mac-vm-serial-$(date +%H%M%S).log" && echo "Copied to $DST"; else echo "No writable USB mount found." >&2; fi
         ;;
-    *) echo "usage: maclog [tail|oc|patch|err|all|usb]   (no arg = diagnostic view)" >&2; exit 2 ;;
+    *) echo "usage: maclog [tail|oc|patch|err|launch|qemu|all|usb]   (no arg = diagnostic view; full bundle = macdiag)" >&2; exit 2 ;;
 esac
