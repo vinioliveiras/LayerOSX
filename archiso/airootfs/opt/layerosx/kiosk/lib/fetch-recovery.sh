@@ -101,6 +101,56 @@ python3 fetch-macOS-v2.py --action download -o recovery "${SHORTNAME_ARGS[@]}"
 DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)
 if [ -n "$DMG" ] && command -v dmg2img >/dev/null 2>&1; then
     dmg2img "$DMG" BaseSystem.img
+
+    # Best-effort: report the macOS version ACTUALLY downloaded, so the wizard
+    # can confirm it (and warn if it doesn't match what the user picked -- e.g.
+    # kholia's os_type:"latest" Ventura entry handing back Sequoia). Reads
+    # ProductVersion/ProductBuildVersion straight out of SystemVersion.plist in
+    # the decompressed BaseSystem.img -- format-agnostic (HFS+/APFS) as long as
+    # that tiny plist isn't compressed. Prints nothing and writes no file if it
+    # can't find it (the wizard then just shows the selected version). Written
+    # where the wizard looks: <vmdir>/downloaded-version, as "<ver>|<build>".
+    DL_VER_FILE="$(dirname "$VM_DISK")/downloaded-version"
+    rm -f "$DL_VER_FILE"
+    _detected="$(python3 - BaseSystem.img <<'PYEOF'
+import sys, re
+img = sys.argv[1]
+vpat = re.compile(rb'ProductVersion</key>\s*<string>([0-9]+(?:\.[0-9]+)*)</string>')
+bpat = re.compile(rb'ProductBuildVersion</key>\s*<string>([0-9A-Za-z]+)</string>')
+ver = build = None
+prev = b''
+CH = 8 << 20
+try:
+    with open(img, 'rb') as f:
+        while True:
+            chunk = f.read(CH)
+            if not chunk:
+                break
+            buf = prev + chunk
+            if ver is None:
+                m = vpat.search(buf)
+                if m:
+                    ver = m.group(1).decode()
+            if build is None:
+                m = bpat.search(buf)
+                if m:
+                    build = m.group(1).decode()
+            if ver and build:
+                break
+            prev = buf[-256:]
+except OSError:
+    pass
+if ver:
+    print(ver + (('|' + build) if build else ''))
+PYEOF
+)"
+    if [ -n "$_detected" ]; then
+        printf '%s\n' "$_detected" > "$DL_VER_FILE"
+        echo "Detected downloaded macOS version: ${_detected/|/ build }"
+    else
+        echo "NOTE: couldn't read the downloaded macOS version from the image (will show the selected version instead)." >&2
+    fi
+
     qemu-img convert -O qcow2 BaseSystem.img "${VM_DISK%.qcow2}-recovery.qcow2"
     echo "Recovery ready at ${VM_DISK%.qcow2}-recovery.qcow2 — mac-vm-launch.sh needs to attach it as a second disk on first boot so you can actually install macOS."
 else

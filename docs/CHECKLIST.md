@@ -620,6 +620,11 @@ actually run the detection logic against real hardware yet.
   Apple hand back a newer image (see README's "Ventura selection could install
   Sequoia" bug). If it does, `erasevm` and re-run, and if it persists pin an
   explicit board-id in `fetch-recovery.sh`.
+- After a download, the wizard should pop a confirmation of the REAL version
+  ("Downloaded macOS <ver> (build <build>)."), or, on a mismatch with what you
+  picked, a warning with Install-anyway / Start-over. Confirm that choosing
+  "Install anyway" on a mismatch leaves `/var/lib/layerosx/macos-version` set to
+  the REAL version's shortname (so the launcher's CPU model matches).
 
 ## 4.5. Validate the QEMU command line before building (no hardware needed)
 

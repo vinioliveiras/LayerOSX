@@ -25,6 +25,7 @@ OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 RECOVERY_DISK="${VM_DISK%.qcow2}-recovery.qcow2"
 INSTALLER_DISK="${VM_DISK%.qcow2}-installer.qcow2"
 VERSION_FILE="$STATE_DIR/macos-version"
+DL_VERSION_FILE="$STATE_DIR/downloaded-version"
 
 FORCE=0
 if [ "${1:-}" = "-y" ] || [ "${1:-}" = "--force" ]; then
@@ -43,7 +44,7 @@ fi
 
 echo "This deletes the current macOS VM state:"
 FOUND=0
-for f in "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS" "$VERSION_FILE"; do
+for f in "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS" "$VERSION_FILE" "$DL_VERSION_FILE"; do
     if [ -e "$f" ]; then
         echo "  $f"
         FOUND=1
@@ -62,5 +63,5 @@ if [ "$FORCE" -ne 1 ]; then
     esac
 fi
 
-rm -f "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS" "$VERSION_FILE"
+rm -f "$VM_DISK" "$RECOVERY_DISK" "$INSTALLER_DISK" "$OVMF_VARS" "$VERSION_FILE" "$DL_VERSION_FILE"
 echo "Done. Reboot the machine (or switch to tty1 and re-run mac-vm-launch.sh) -- the first-run wizard will open again, letting you pick a different macOS source/version."

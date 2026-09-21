@@ -26,7 +26,7 @@ cleanup_failed_attempt() {
     local ec=$?
     if [ "$ec" -ne 0 ]; then
         echo "Wizard failed (exit $ec) -- removing any partial VM disk so the options are shown again on the next boot instead of a stuck black screen." >&2
-        rm -f "$VM_DISK" "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2" "$OVMF_VARS" "$MACOS_VERSION_FILE" 2>/dev/null || true
+        rm -f "$VM_DISK" "${VM_DISK%.qcow2}-recovery.qcow2" "${VM_DISK%.qcow2}-installer.qcow2" "$OVMF_VARS" "$MACOS_VERSION_FILE" "$(dirname "$VM_DISK")/downloaded-version" 2>/dev/null || true
     fi
 }
 trap cleanup_failed_attempt EXIT
@@ -267,6 +267,45 @@ case "$CHOICE" in
             zenity --error --width=520 --title="LayerOSX — first run" \
                 --text="Couldn't download the macOS recovery image. Press F2 to see the details, check your internet connection, and try again."
             exit 1
+        fi
+
+        # Confirm the version we ACTUALLY got. fetch-recovery.sh writes the real
+        # ProductVersion (read from the recovery image) to <vmdir>/downloaded-
+        # version as "<ver>|<build>" when it can. If it doesn't match what was
+        # picked (Apple's os_type:latest can hand back a newer OS than the
+        # label), warn and let the user keep it or start over. Keeping it also
+        # rewrites $MACOS_VERSION_FILE to the REAL version's shortname, so
+        # mac-vm-launch.sh masks a matching CPU model (a Sequoia image under
+        # Ventura's Haswell mask is itself a boot hazard).
+        DL_VER_FILE="$(dirname "$VM_DISK")/downloaded-version"
+        if [ -s "$DL_VER_FILE" ]; then
+            _dv="$(cat "$DL_VER_FILE")"
+            _dver="${_dv%%|*}"
+            _dbuild="${_dv#*|}"; [ "$_dbuild" = "$_dv" ] && _dbuild=""
+            _bmsg=""; [ -n "$_dbuild" ] && _bmsg=" (build $_dbuild)"
+            _major="${_dver%%.*}"; _minor="${_dver#*.}"; _minor="${_minor%%.*}"
+            case "$_major" in
+                10) case "$_minor" in 13) _real_sn=high-sierra ;; 14) _real_sn=mojave ;; *) _real_sn=catalina ;; esac ;;
+                11) _real_sn=big-sur ;;
+                12) _real_sn=monterey ;;
+                13) _real_sn=ventura ;;
+                14) _real_sn=sonoma ;;
+                15) _real_sn=sequoia ;;
+                26) _real_sn=tahoe ;;
+                *)  _real_sn="" ;;
+            esac
+            if [ -n "$MACOS_SHORTNAME" ] && [ -n "$_real_sn" ] && [ "$_real_sn" != "$MACOS_SHORTNAME" ]; then
+                if zenity --question --width=560 --title="LayerOSX — first run" \
+                    --ok-label="Install $_dver" --cancel-label="Start over" \
+                    --text="You picked $MACOS_VERSION, but Apple served macOS $_dver$_bmsg.\n\nThis happens when that board-id's recovery now defaults to a newer release. Install $_dver anyway, or start over and pick again?"; then
+                    printf '%s\n' "$_real_sn" > "$MACOS_VERSION_FILE"   # match the CPU model to reality
+                else
+                    exit 1   # cleanup_failed_attempt wipes the partial disk -> wizard reruns
+                fi
+            else
+                zenity --info --width=520 --title="LayerOSX — first run" \
+                    --text="Downloaded macOS $_dver$_bmsg." 2>/dev/null || true
+            fi
         fi
         ;;
     *"pick a file"*)

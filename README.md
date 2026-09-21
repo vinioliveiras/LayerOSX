@@ -1862,6 +1862,25 @@ Selecting **Ventura** in the wizard once came up as **Sequoia 15.4** (Darwin
    `os_type` in `fetch-recovery.sh` rather than trust the shortname table — the
    cache fix above is the first, always-correct half of the problem.
 
+## Feature: confirm the macOS version actually downloaded
+
+The picker shows the version you *ask* for; this shows the version you *get*.
+After the "download from Apple" path finishes, `fetch-recovery.sh` reads the
+real `ProductVersion` (+ build) straight out of `SystemVersion.plist` in the
+decompressed `BaseSystem.img` — a plain byte scan, so it's format-agnostic
+(HFS+ or APFS) and needs no mounting or extra tools; it writes
+`<vmdir>/downloaded-version` as `<ver>|<build>` (and simply skips this if the
+plist can't be read, e.g. if it were compressed).
+
+The wizard then either confirms it ("Downloaded macOS 13.7.8 (build 22H625).")
+or, if it doesn't match what you picked, warns and lets you **Install anyway**
+or **Start over**. Keeping a mismatched version also rewrites
+`$MACOS_VERSION_FILE` to the *real* version's shortname, so `mac-vm-launch.sh`
+masks a CPU model that matches the OS — important because e.g. a Sequoia image
+booting under Ventura's Haswell mask is itself a boot hazard. This is the
+user-facing companion to the `os_type: "latest"` caveat above: even when Apple
+hands back a newer release than the label, you see it and decide.
+
 ## Feature: rebrand the installed system away from "Arch Linux"
 
 Confirmed while installing on real hardware: past the wizard/VM
