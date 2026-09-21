@@ -2311,3 +2311,34 @@ OpenCore-amd-verbose.qcow2 is MISSING/empty -> using non-verbose]`. It goes to
 `~/mac-vm.log`, and `maclog` now surfaces the last such line at the top of its
 diagnostic view — so a boot that comes up non-verbose explains itself with no
 extra diagnostic session.
+
+## "no linesize" is guest-side (XNU) — new `gpu std` A/B test
+
+Reframing the `no linesize` stall after a closer look: it lands in
+`~/mac-vm-serial.log`, which is the **guest's COM1** (`-serial file:`), NOT
+QEMU's host stderr (that goes to `~/mac-vm.log`). And the format is `%s`-style —
+standard C printf, which is XNU's style, not EDK2/OVMF/OpenCore (those use `%a`).
+So `no linesize @%s:%d` is almost certainly **the macOS kernel itself**, failing
+to bring up its video console because the boot framebuffer it inherited has no
+valid stride (rowBytes=0). That strongly implies **macOS is alive but can't
+draw** — a framebuffer problem, not "the kernel died at handoff", and not the
+host SDL frontend. It also explains why switching vmware↔reims changes nothing
+(both hand XNU the same bad framebuffer) and why forcing the GOP resolution
+wasn't enough.
+
+New candidate, added as a third `gpu` mode so it needs no per-attempt rebuild:
+
+```
+gpu std      # stock std VGA; OVMF's QemuVideoDxe publishes a LINEAR framebuffer
+             # GOP with a valid stride, which boot.efi hands to XNU as the boot FB
+relaunch
+```
+
+`gpu std` uses `-device VGA` (with a build-capability probe that falls back to
+vmware if this QEMU lacks it). macOS has no accelerated driver for std VGA, but
+that's not the point — the boot/console framebuffer OVMF provides is linear with
+a real stride, which is exactly what "no linesize" is missing. So this is the
+direct A/B test: **if macOS draws on `gpu std` but not on vmware/reims, the
+framebuffer the vmvga/reims GOP hands XNU is the culprit** (and we then fix that
+GOP/framebuffer path); if it fails identically on std too, the problem is earlier
+than the framebuffer. Either outcome narrows it down without a rebuild per try.

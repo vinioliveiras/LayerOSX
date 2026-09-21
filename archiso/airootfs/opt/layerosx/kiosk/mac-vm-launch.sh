@@ -342,6 +342,7 @@ configure_toggles() {
     GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
     case "$GFX" in
         reims|reims-vgpu-pci) GFX="reims-vgpu-pci" ;;
+        std|std-vga|vga) GFX="std-vga" ;;
         *) GFX="vmware-svga" ;;
     esac
     GFX_ARGS=()
@@ -371,6 +372,23 @@ configure_toggles() {
             -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0,shpc=off
             -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
         )
+    elif [ "$GFX" = "std-vga" ]; then
+        # Stock std VGA. macOS has no native driver for it, but that is not the
+        # point: OVMF's QemuVideoDxe publishes a UEFI GOP on it with a LINEAR
+        # framebuffer and a VALID stride, and boot.efi hands exactly that to XNU
+        # as the boot framebuffer. The "no linesize" stall is XNU getting a boot
+        # framebuffer with rowBytes=0 on BOTH the vmvga and reims paths, so this
+        # is the direct A/B test: does a plain linear OVMF framebuffer get the
+        # kernel past its video-console setup? No acceleration -- boot/console
+        # framebuffer only -- but if it clears "no linesize", the culprit is the
+        # framebuffer the vmvga/reims GOP hands over, not macOS itself.
+        if ! LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -device help 2>/dev/null | grep -q '"VGA"'; then
+            echo "WARNING: this QEMU build has no 'VGA' device -- falling back to vmware-svga." >&2
+            GFX="vmware-svga"
+            GFX_ARGS=(-vga none -device vmvga)
+        else
+            GFX_ARGS=(-device VGA)
+        fi
     else
         # This build's VMware SVGA adapter is qemu-vmvga, whose PCI device is
         # registered as "vmvga" (confirmed in its source: hw/display/vmware_vga.c

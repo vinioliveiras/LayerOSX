@@ -7,6 +7,7 @@
 #   gpu            show the current setting
 #   gpu reims      Reims vGPU (hardware-accelerated, alpha) next launch
 #   gpu vmware     VMware SVGA (reliable, unaccelerated -- the default)
+#   gpu std        stock std VGA (OVMF gives a linear framebuffer -- "no linesize" A/B)
 #
 # After switching, relaunch the VM: run `relaunch` (or reboot).
 set -uo pipefail
@@ -16,6 +17,7 @@ current() {
     local v; v="$(cat "$GFX_FILE" 2>/dev/null || true)"
     case "$v" in
         reims|reims-vgpu-pci) echo "reims (hardware-accelerated, alpha)" ;;
+        std|std-vga|vga) echo "std (stock VGA, OVMF linear framebuffer)" ;;
         *) echo "vmware (reliable, unaccelerated -- the default)" ;;
     esac
 }
@@ -23,7 +25,7 @@ current() {
 case "${1:-}" in
     "")
         echo "macOS VM graphics adapter: $(current)"
-        echo "Change it with:  gpu reims   |   gpu vmware"
+        echo "Change it with:  gpu reims   |   gpu vmware   |   gpu std"
         echo "Then run:        relaunch          (or reboot)"
         ;;
     reims|reims-vgpu-pci)
@@ -39,8 +41,16 @@ case "${1:-}" in
         echo "Graphics set to VMware SVGA (reliable, unaccelerated)."
         echo "Relaunch to apply:  relaunch       (or reboot)"
         ;;
+    std|std-vga|vga)
+        sudo mkdir -p "$(dirname "$GFX_FILE")"
+        echo std | sudo tee "$GFX_FILE" >/dev/null
+        echo "Graphics set to stock std VGA -- OVMF publishes a linear framebuffer GOP."
+        echo "This is the A/B test for the 'no linesize' stall: if macOS draws on std"
+        echo "but not on vmware/reims, the framebuffer the vGPU hands XNU is the culprit."
+        echo "Relaunch to apply:  relaunch       (or reboot)"
+        ;;
     *)
-        echo "usage: gpu [reims|vmware]   (no argument = show current setting)" >&2
+        echo "usage: gpu [reims|vmware|std]   (no argument = show current setting)" >&2
         exit 2
         ;;
 esac
