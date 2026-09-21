@@ -2402,3 +2402,31 @@ Fix: launch QEMU with `SDL_GRAB_KEYBOARD=0`, so the SDL window never takes an
 exclusive keyboard grab. The openbox F2 keybind keeps working while the VM is
 focused, and macOS still receives every other key through normal window focus.
 (`Ctrl+Alt+F2` still works too — it's a kernel VT switch, below X entirely.)
+
+## Getting OpenCore's OCAK log: swap the verbose image to a DEBUG OpenCore
+
+kholia's `OpenCore.qcow2` ships a **RELEASE** OpenCore build, which prints
+nothing to serial/console/file no matter what `Misc>Debug` is set to. So the
+kernel-patch results (`OCAK: ... Success/Not found`) — the definitive answer to
+"are the AMD_Vanilla patches actually applying?" — were invisible.
+
+Swapping in a public DEBUG OpenCore hit an "Invalid revision" wall before,
+because kholia's build is custom (its version string is the un-substituted
+placeholder `REL-XXX-YYYY-MM-DD`) and its drivers are newer than any public
+RELEASE, so a public `OpenCore.efi` rejects kholia's drivers. Fix: swap the
+**whole** binary set from **one** public DEBUG release (OpenCore.efi + Bootstrap
++ the revision-checked drivers: OpenCanopy, OpenRuntime, OpenPartitionDxe,
+ResetNvramEntry, ToggleSipEntry, OpenHfsPlus), so their revisions match each
+other. Config, ACPI and kexts stay kholia's.
+
+`patch-opencore-verbose.sh` now does this for the **verbose image only**
+(`OC_DEBUG_VER`, pinned to `1.0.5`): it downloads the matching DEBUG release and
+mcopies those binaries into the ESP. `verbose off` keeps the clean RELEASE
+OpenCore. Verified by booting the swapped image in QEMU/TCG (no KVM needed):
+`OC: OpenCore DBG-105-... is loading`, drivers load, config parses, and the full
+`OC:/OCB:/OCABC:` log streams to serial — no "Invalid revision".
+
+This is diagnostic scaffolding (tracked for removal in CLAUDE.md). With it,
+`verbose on` + rebuild + booting macOS finally shows the `OCAK` kernel-patch
+results in `maclog`, so we can see whether the AMD patches apply and where the
+kernel actually dies.

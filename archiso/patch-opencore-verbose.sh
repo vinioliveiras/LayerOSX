@@ -98,6 +98,40 @@ PYV
 rc=$?
 if [ "$rc" -eq 0 ]; then
     mcopy -o -n -i "$_esp" "$_plist" ::/EFI/OC/config.plist
+
+    # --- Swap in a DEBUG OpenCore so the verbose image actually LOGS ----------
+    # DIAGNOSTIC / TEMPORARY (remove once the boot is fixed -- see CLAUDE.md).
+    # kholia's OpenCore is a RELEASE build: it prints NOTHING regardless of the
+    # Misc>Debug flags above, so OCAK (kernel-patch results -- e.g. whether the
+    # AMD_Vanilla patches actually apply) is invisible. Swap the WHOLE OpenCore
+    # binary set (OpenCore.efi + Bootstrap + the revision-checked drivers) for
+    # the matching public DEBUG release -- all from ONE release so their driver
+    # revision matches OpenCore.efi (mixing a public OpenCore.efi with kholia's
+    # newer drivers is what gave "Invalid revision"). Config + kexts stay
+    # kholia's. Verified booting in TCG: 1.0.5 DEBUG loads kholia's config
+    # cleanly and logs OC:/OCB:/OCAK to serial. Verbose image only; `verbose off`
+    # keeps the RELEASE OpenCore. Needs curl + python3 (both present in the build
+    # env); degrades to a warning (keeps RELEASE) if the download fails.
+    OC_DEBUG_VER="${OC_DEBUG_VER:-1.0.5}"
+    _ocz="/tmp/layerosx-oc-${OC_DEBUG_VER}-DEBUG.zip"
+    _ocd="$(mktemp -d)"
+    if [ ! -s "$_ocz" ]; then
+        curl -fsSL -o "$_ocz" "https://github.com/acidanthera/OpenCorePkg/releases/download/${OC_DEBUG_VER}/OpenCore-${OC_DEBUG_VER}-DEBUG.zip" 2>/dev/null \
+            || echo "patch-opencore-verbose: WARNING could not download OpenCore ${OC_DEBUG_VER} DEBUG -- verbose image keeps the RELEASE OpenCore (no OC:/OCAK log)." >&2
+    fi
+    if [ -s "$_ocz" ] && python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extractall(sys.argv[2])" "$_ocz" "$_ocd" 2>/dev/null && [ -s "$_ocd/X64/EFI/OC/OpenCore.efi" ]; then
+        _ocx="$_ocd/X64/EFI"
+        mcopy -o -n -i "$_esp" "$_ocx/OC/OpenCore.efi"  ::/EFI/OC/OpenCore.efi
+        mcopy -o -n -i "$_esp" "$_ocx/BOOT/BOOTx64.efi" ::/EFI/BOOT/BOOTx64.efi
+        for _d in OpenCanopy OpenRuntime OpenPartitionDxe ResetNvramEntry ToggleSipEntry OpenHfsPlus; do
+            [ -f "$_ocx/OC/Drivers/$_d.efi" ] && mcopy -o -n -i "$_esp" "$_ocx/OC/Drivers/$_d.efi" "::/EFI/OC/Drivers/$_d.efi"
+        done
+        echo "patch-opencore-verbose: swapped OpenCore -> ${OC_DEBUG_VER} DEBUG (OC:/OCAK logging) in $OUT"
+    else
+        echo "patch-opencore-verbose: NOTE keeping RELEASE OpenCore in $OUT (no DEBUG swap) -- OCAK log will be empty." >&2
+    fi
+    rm -rf "$_ocd"
+
     qemu-img convert -O qcow2 "$_raw" "$OUT"
     chmod 644 "$OUT"
     echo "patch-opencore-verbose: verbose boot (-v) + OpenCore logging enabled -> $OUT"
