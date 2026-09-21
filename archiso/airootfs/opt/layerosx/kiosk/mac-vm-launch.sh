@@ -52,6 +52,7 @@ VM_RAM_MB=8192
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
 SERIAL_LOG="$HOME/mac-vm-serial.log"
+QEMU_D_LOG="$HOME/mac-vm-qemu.log"   # QEMU -d diagnostics (debug builds only)
 
 # Every line gets a timestamp on its way into the log. This log is append-only
 # across every boot (tee -a), so without one there is no telling which of two
@@ -529,6 +530,21 @@ while true; do
             -device ide-hd,bus=sata.3,drive=InstallMedia
         )
     fi
+
+    # Debug builds capture extra QEMU-side diagnostics that would be pure
+    # overhead + noise on a clean release boot: guest_errors (illegal or
+    # unimplemented instructions -- the FIRST thing to check when the CPU model
+    # is masked for an AMD host) and unimp (unimplemented device features),
+    # each written to its own file so they don't drown the serial log.
+    if [ "$BUILD_MODE" = debug ]; then
+        : > "$QEMU_D_LOG" 2>/dev/null || true
+        QEMU_ARGS+=(-d guest_errors,unimp -D "$QEMU_D_LOG")
+    fi
+
+    # Always record the EXACT command line this boot used, %q-quoted so it can
+    # be pasted back verbatim -- a future postmortem then never has to guess
+    # which args produced a given log (and `macdiag` picks this line up).
+    { printf 'QEMU cmdline:'; printf ' %q' "$QEMU_BIN" "${QEMU_ARGS[@]}"; printf '\n'; } 2>/dev/null || true
 
     LAUNCHED_AT=$(date +%s)
     # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an

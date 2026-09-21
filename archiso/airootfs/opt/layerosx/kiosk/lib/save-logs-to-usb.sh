@@ -114,6 +114,11 @@ save_to_one() {
     lsblk -f > "$dest/lsblk.txt" 2>/dev/null || true
     cp -f "$STATUS_LOG" "$dest/save-logs-status.log" 2>/dev/null || true
 
+    # Full diagnostics bundle (host+guest+config summary AND the serial /
+    # launch / QEMU raw logs) -- one folder that carries everything a
+    # postmortem needs, dropped automatically after every VM exit.
+    bash /opt/layerosx/kiosk/lib/collect-diag.sh "$dest" >/dev/null 2>&1 || true
+
     sync 2>/dev/null || true
     status "saved to /dev/$dev at $dest"
 

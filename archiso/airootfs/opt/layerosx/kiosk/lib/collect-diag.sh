@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# One-shot LayerOSX diagnostics collector. Writes a single human-readable
+# diag.txt (host + guest + config, everything we've ever wanted mid-postmortem)
+# into $1, plus copies of the raw logs, so one artifact carries the full
+# picture. Best-effort: every probe is guarded; a missing tool/file just prints
+# "(n/a)". Shared by `macdiag` (on demand) and save-logs-to-usb.sh (which runs
+# automatically on every VM exit), so the same bundle lands on the USB after a
+# black-screen/crash with no command typed.
+set -uo pipefail
+OUT="${1:-.}"
+mkdir -p "$OUT" 2>/dev/null || true
+
+HOMEDIR="${HOME:-/home/mac}"
+STATE_DIR="/var/lib/layerosx"
+# Resolve each log against the invoker's HOME first, then the kiosk user's home
+# (this runs as root from save-logs-to-usb.sh, and as `mac` from macdiag).
+_resolve() { local c; for c in "$HOMEDIR/$1" "/home/mac/$1" "/root/$1"; do [ -r "$c" ] && { printf '%s\n' "$c"; return; }; done; printf '%s\n' "$HOMEDIR/$1"; }
+SERIAL_LOG="$(_resolve mac-vm-serial.log)"
+LAUNCHLOG="$(_resolve mac-vm.log)"
+QEMU_D_LOG="$(_resolve mac-vm-qemu.log)"
+QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
+OCDIR="/opt/layerosx/opencore"
+DIAG="$OUT/diag.txt"
+
+_sec() { printf '\n===== %s =====\n' "$1"; }
+
+{
+    printf 'LayerOSX diagnostics — %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'build mode: %s\n' "$(cat /etc/layerosx/mode 2>/dev/null || echo '(unknown)')"
+    printf 'host: %s\n' "$(uname -srm 2>/dev/null)"
+
+    _sec "HOST CPU"
+    grep -m1 '^model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ //' || echo '(n/a)'
+    printf 'vendor=%s  cores(nproc)=%s\n' \
+        "$(grep -m1 '^vendor_id' /proc/cpuinfo 2>/dev/null | awk '{print $3}')" "$(nproc 2>/dev/null)"
+    printf 'virt: '; grep -m1 -oE '\b(svm|vmx)\b' /proc/cpuinfo 2>/dev/null | head -1 || echo '(none)'
+    printf 'flags of interest: '
+    grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | grep -oE '\b(svm|vmx|nx|lm|sse4_1|sse4_2|avx|avx2|rdtscp|hypervisor)\b' | tr '\n' ' '
+    echo
+
+    _sec "KVM"
+    [ -e /dev/kvm ] && echo '/dev/kvm: present' || echo '/dev/kvm: MISSING (no hardware virt!)'
+    lsmod 2>/dev/null | grep -E '^(kvm|kvm_amd|kvm_intel)' || echo '(no kvm modules listed)'
+    dmesg 2>/dev/null | grep -iE 'kvm|svm' | tail -8 || echo '(no dmesg access)'
+
+    _sec "MEMORY"
+    free -h 2>/dev/null || echo '(n/a)'
+
+    _sec "QEMU"
+    LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+        "$QEMU_BIN" --version 2>/dev/null | head -2 || echo '(qemu not runnable here)'
+    echo '-- last launch profile --'; grep -a 'Launch profile:' "$LAUNCHLOG" 2>/dev/null | tail -1 || echo '(none)'
+    echo '-- OpenCore image chosen --'; grep -a 'OpenCore image:' "$LAUNCHLOG" 2>/dev/null | tail -1 || echo '(none)'
+    echo '-- exact QEMU cmdline --'; grep -a 'QEMU cmdline:' "$LAUNCHLOG" 2>/dev/null | tail -1 || echo '(none — pre-argv-dump build?)'
+
+    _sec "OPENCORE IMAGES (installed)"
+    ls -la "$OCDIR"/*.qcow2 2>/dev/null || echo '(none found)'
+
+    _sec "MACOS VERSION"
+    printf 'selected shortname: %s\n' "$(cat "$STATE_DIR/macos-version" 2>/dev/null || echo '(none)')"
+    printf 'downloaded version: %s\n' "$(cat "$STATE_DIR/downloaded-version" 2>/dev/null || echo '(none)')"
+
+    _sec "TOGGLES (state files; empty = per-mode default)"
+    for t in gfx verbose audio; do
+        printf '%s=%s  ' "$t" "$(cat "$STATE_DIR/$t" 2>/dev/null || echo default)"
+    done; echo
+
+    _sec "SERIAL LOG — last 40 lines (where it stopped)"
+    [ -r "$SERIAL_LOG" ] && tail -40 "$SERIAL_LOG" || echo '(no serial log yet)'
+
+    _sec "SERIAL LOG — errors / panics / 'no linesize'"
+    if [ -r "$SERIAL_LOG" ]; then
+        grep -inE 'halting|panic|fatal|no linesize|Unable|not a valid|Err\(0x[^E]' "$SERIAL_LOG" \
+            | grep -viE 'wake-failure|root_hash|\.development' | tail -30 || echo '(none)'
+    else echo '(no serial log yet)'; fi
+
+    _sec "SERIAL LOG — OCAK kernel-patch results"
+    [ -r "$SERIAL_LOG" ] && { grep -a 'OCAK' "$SERIAL_LOG" | tail -40 || echo '(none)'; } \
+        || echo '(none — needs debug OpenCore / a debug build with verbose on)'
+
+    _sec "QEMU -d guest_errors/unimp (debug builds)"
+    [ -r "$QEMU_D_LOG" ] && tail -40 "$QEMU_D_LOG" || echo '(none — release build, or no guest errors)'
+} > "$DIAG" 2>&1
+
+# Raw logs alongside the summary, so nothing is lost to truncation.
+for f in "$SERIAL_LOG" "$LAUNCHLOG" "$QEMU_D_LOG"; do
+    [ -r "$f" ] && cp -f "$f" "$OUT/" 2>/dev/null || true
+done
+
+printf '%s\n' "$DIAG"

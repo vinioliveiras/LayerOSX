@@ -39,6 +39,12 @@ This step alone will already show if anything is missing from
   Ctrl+Alt+Backspace (X does not die), and F2 (no terminal). In a `debug`
   build, F2, Ctrl+Alt+F2 (tty2) and Ctrl+Alt+Backspace must still work.
 
+- **Diagnostics bundle.** Run `macdiag` on the running kiosk (debug build):
+  confirm it writes `~/mac-vm-diag-*/diag.txt` with the host CPU/KVM section,
+  the QEMU cmdline line, the chosen OpenCore image, and the serial-log tail.
+  `macdiag usb` should drop the folder on a plugged-in USB; the same bundle
+  should also appear on the USB automatically after a VM exit (save-logs).
+
 ## 2. `prepare-qemu-macos.sh` — the biggest source of uncertainty
 
 Update (found by actually reading the qemus/qemu-macos repo instead of

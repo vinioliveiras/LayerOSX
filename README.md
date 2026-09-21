@@ -47,6 +47,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `relaunch` | Restart just the macOS VM to apply a `gpu`/`verbose`/`audio` change — kills QEMU only (not Xorg), so no reboot and no screen flicker. |
 | `maclog [sub]` | View the guest boot/serial log (`~/mac-vm-serial.log`). No arg = curated view (where it stopped + errors + which OpenCore image booted). Subs: `tail`, `oc`, `patch`, `err`, `all`, `usb` (copy to a mounted USB). |
 | `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
+| `macdiag [usb]` | Collect a FULL diagnostics bundle into one folder — host CPU/flags/KVM/memory, QEMU version + the exact launch cmdline + which OpenCore image booted, the selected vs downloaded macOS version, the toggles, and the serial + QEMU logs (summary + raw copies). `macdiag usb` copies it to a USB stick. The same bundle is also saved to any USB automatically on every VM exit. |
 | `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
@@ -78,6 +79,14 @@ things — everything else is identical:
   `OC:`/`OCAK:` lines actually print (see the OCAK section below). In `release`
   the verbose image is just `-v` on stock RELEASE OpenCore. This is why there is
   nothing to strip out by hand once the boot is fixed — just build `release`.
+
+A `debug` build also turns on **extra logging** aimed at exactly the kind of
+stall we're chasing: QEMU's `-d guest_errors,unimp` (illegal / unimplemented
+instructions — the first suspect when the CPU model is masked for an AMD host)
+to its own `~/mac-vm-qemu.log`, and `msgbuf=524288` so XNU's early `kprintf`
+can't scroll off before capture. Every boot (both modes) also records the exact
+`%q`-quoted QEMU command line to `~/mac-vm.log`. `macdiag` gathers all of this
+into one shareable bundle.
 
 ## Kiosk lockdown (no host shortcuts)
 

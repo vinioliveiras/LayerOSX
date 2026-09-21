@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Collect a full LayerOSX diagnostics bundle -- host (CPU/flags/KVM/mem), QEMU
+# (version + exact cmdline + chosen OpenCore image), the macOS version, the
+# toggles, and the serial + QEMU logs (summary + raw copies) -- into ONE folder.
+# This is the thing to grab or share when a boot goes wrong.
+#   macdiag        write the bundle under the home dir and print where it is
+#   macdiag usb    also copy the whole bundle to a mounted USB stick
+set -uo pipefail
+HOMEDIR="${HOME:-/home/mac}"
+COLLECT="/opt/layerosx/kiosk/lib/collect-diag.sh"
+OUT="$HOMEDIR/mac-vm-diag-$(date +%Y%m%d-%H%M%S)"
+
+DIAG="$(bash "$COLLECT" "$OUT" 2>/dev/null || true)"
+[ -n "$DIAG" ] || DIAG="$OUT/diag.txt"
+echo "Diagnostics bundle: $OUT"
+echo "  summary: $DIAG   (raw logs copied alongside it)"
+
+case "${1:-}" in
+    usb)
+        DST=""
+        for m in /run/media/mac/* /run/media/*/* /mnt/usb /media/*; do
+            [ -d "$m" ] && [ -w "$m" ] && DST="$m" && break
+        done
+        if [ -n "$DST" ]; then
+            cp -r "$OUT" "$DST/" 2>/dev/null && sync 2>/dev/null || true
+            echo "Copied the bundle to $DST/$(basename "$OUT")"
+        else
+            echo "No writable USB mount found. Plug one in and retry, or reboot -- the VM also auto-saves logs to any USB on every exit." >&2
+        fi
+        ;;
+    ""|show)
+        echo "----- diag.txt (top) -----"
+        sed -n '1,50p' "$DIAG" 2>/dev/null || true
+        echo "----- (full file above; 'macdiag usb' copies the bundle to a USB) -----"
+        ;;
+    *) echo "usage: macdiag [usb]" >&2; exit 2 ;;
+esac

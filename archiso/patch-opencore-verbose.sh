@@ -82,7 +82,9 @@ if not targets:
 #   the serial log shows WHERE the kernel spins after handoff (it is alive: qemu
 #   pins one core at ~100%), not just a post-mortem. keepsyms=1 symbolicates it.
 if mode == "debug":
-    extra_args = ["-v", "keepsyms=1", "debug=0x108", "serial=3"]
+    # msgbuf=524288 enlarges XNU's kernel message buffer so early kprintf
+    # output can't scroll off before we capture it.
+    extra_args = ["-v", "keepsyms=1", "debug=0x108", "serial=3", "msgbuf=524288"]
 else:
     extra_args = ["-v"]
 for sec in targets:

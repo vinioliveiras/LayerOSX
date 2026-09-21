@@ -59,6 +59,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/wifi-setup.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/install-f2-keybind.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/peek-terminal.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/collect-diag.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/pick-source-file.py"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
   ["/usr/local/bin/erasevm"]="0:0:755"
@@ -68,4 +69,5 @@ file_permissions=(
   ["/usr/local/bin/maclog"]="0:0:755"
   ["/usr/local/bin/relaunch"]="0:0:755"
   ["/usr/local/bin/macstatus"]="0:0:755"
+  ["/usr/local/bin/macdiag"]="0:0:755"
 )
