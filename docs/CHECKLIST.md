@@ -926,6 +926,21 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   grub-mkconfig -o /boot/grub/grub.cfg`) after editing
   `/etc/default/grub` by hand, since it doesn't regenerate on its own.
 
+## 5.5b. `relaunch` applies a toggle without flicker
+
+- After `gpu`/`verbose`/`audio` + `relaunch`, the VM should come back
+  with a brief black (QEMU restarting) and **no** continuous flicker.
+  `relaunch` now kills only QEMU (`pkill -f .../qemu-system-x86_64`),
+  not Xorg, and `mac-vm-launch.sh` re-reads the toggle files inside its
+  loop (`configure_toggles`) so the change actually takes effect. If the
+  screen flickers non-stop after a relaunch, something is restarting the
+  whole X session again -- check that `relaunch` isn't touching Xorg and
+  that the launcher didn't hit `fatal()` (5 fast crashes in a row).
+- `verbose on` + `relaunch` should make the next `maclog` show kernel
+  serial output (the `kernel-patch results (OCAK)` section populates,
+  and lines appear after `HANDOFF TO XNU`). Default is already verbose
+  on; a stuck-off boot means `/var/lib/layerosx/verbose` holds `off`.
+
 ## 5.6. Not losing the VM window to another desktop
 
 - Confirmed on real hardware: openbox's stock 4 desktops (never used by

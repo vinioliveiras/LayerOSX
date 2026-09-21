@@ -1,6 +1,16 @@
 #!/usr/bin/env bash
-# Relaunch the macOS VM to apply a gpu/verbose/audio change, without rebooting
-# the whole machine. Kills Xorg; the kiosk autostart brings the VM right back.
+# Relaunch just the macOS VM to apply a gpu/verbose/audio change, WITHOUT
+# restarting Xorg. Killing Xorg (what this used to do) tore down the whole
+# graphical session, and the kiosk autostart + the launcher's own retry loop
+# raced each other bringing it back -- that was the "screen flickers forever"
+# after a relaunch. QEMU runs as this same "mac" user, so we can signal it
+# directly (no sudo). The launcher's loop then re-reads the gpu/verbose/audio
+# toggle files (see mac-vm-launch.sh's configure_toggles) and brings the VM
+# right back IN THE SAME X SESSION -- so there's no Xorg restart and no flicker,
+# just a brief black while QEMU comes back.
 echo "Relaunching the macOS VM (applies any gpu/verbose/audio change)..."
-sudo pkill Xorg 2>/dev/null
-echo "Done -- the VM should relaunch on tty1 in a couple of seconds."
+pkill -TERM -f '/opt/layerosx/bin/qemu-system-x86_64' 2>/dev/null
+# A frozen QEMU may ignore SIGTERM; make sure it actually goes.
+sleep 1
+pkill -KILL -f '/opt/layerosx/bin/qemu-system-x86_64' 2>/dev/null
+echo "Done -- the VM comes back in a couple of seconds (no screen flicker now)."

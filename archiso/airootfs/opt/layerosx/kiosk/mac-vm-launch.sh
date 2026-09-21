@@ -285,123 +285,130 @@ if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
     VM_CORES=4
 fi
 
-# --- OpenCore image: pick by host CPU vendor and the verbose toggle ---------
-# Intel boots the stock (Intel-only) OpenCore; AMD needs the AMD_Vanilla-patched
-# image or XNU hangs at EXITBS->HANDOFF. Verbose (-v) is a separate prebuilt
-# image per family (build.sh makes all four), so toggling it needs no slow
-# re-patch -- the `verbose` command just flips $VERBOSE_FILE. Default is verbose
-# ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
-VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
-case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
-if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
-    _oc_norm="$OPENCORE_DIR/OpenCore-amd.qcow2"
-    _oc_verb="$OPENCORE_DIR/OpenCore-amd-verbose.qcow2"
-else
-    _oc_norm="$OPENCORE_DIR/OpenCore.qcow2"
-    _oc_verb="$OPENCORE_DIR/OpenCore-verbose.qcow2"
-fi
-if [ "$VERBOSE_STATE" = on ] && [ -s "$_oc_verb" ]; then
-    OPENCORE_IMG="$_oc_verb"
-elif [ -s "$_oc_norm" ]; then
-    OPENCORE_IMG="$_oc_norm"
-else
-    OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"   # last-ditch fallback to the base
-fi
-if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ]; then
-    echo "WARNING: AMD host but no OpenCore-amd image found -- macOS will likely hang at boot." >&2
-    echo "         Rebuild the ISO so build.sh generates the AMD OpenCore variant." >&2
-fi
-
-# --- Graphics device --------------------------------------------------------
-# reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
-# but it is alpha software on an alpha driver stack, and Reims' own docs say
-# to provision the macOS guest on the plain VMware SVGA adapter FIRST and
-# only switch to Reims once there's a working, installed system. So the
-# DEFAULT here is vmware-svga: boring, unaccelerated, but reliable enough to
-# actually get macOS installed. Reims is opt-in -- `echo reims > $GFX_FILE`
-# (then `sudo pkill Xorg`, or a reboot) turns it on for the next launch,
-# `echo vmware > $GFX_FILE` (or `rm $GFX_FILE`) goes back. This is also the
-# single most useful A/B switch for telling "Reims can't draw yet" apart from
-# "macOS isn't booting at all": if it boots on vmware but not reims, it's the
-# Reims path; if it fails the same way on both, it isn't Reims.
-GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
-case "$GFX" in
-    reims|reims-vgpu-pci) GFX="reims-vgpu-pci" ;;
-    *) GFX="vmware-svga" ;;
-esac
-GFX_ARGS=()
-if [ "$GFX" = "reims-vgpu-pci" ]; then
-    # Straight from Reims' boot-x86.sh: `-vga none` because the UEFI GOP lives
-    # on this same PCI device (its option ROM, rombar=1) and must never share
-    # the guest with a second display; the device itself sits behind a
-    # conventional pci-bridge (their default attach, "IOFBIntegrated=No; OVMF
-    # maps BAR0"). romfile is an absolute path on purpose -- a bare name only
-    # works if QEMU's firmware search path happens to include where
-    # prepare-qemu-macos.sh staged it.
-    if [ ! -s "$GOP_ROM" ]; then
-        fatal "$GOP_ROM is missing." "The ISO was built without prepare-qemu-macos.sh staging the Reims GOP ROM — see docs/CHECKLIST.md. (Or write 'vmware' into $GFX_FILE -- or just delete it -- to go back to the default VMware display.)"
-    fi
-    GFX_ARGS=(
-        -vga none
-        # shpc=off is not in Reims' own boot-x86.sh -- they run a QEMU fork that
-        # accepts the device at slot 0 of the bridge. Confirmed on real hardware
-        # that stock QEMU 11.1 (what qemus/qemu-macos builds) does NOT: with the
-        # bridge's default Standard Hot-Plug Controller on, slot 0 is reserved
-        # ("Unsupported PCI slot 0 for standard hotplug controller. Valid slots
-        # are between 1 and 31."), QEMU refuses the device and exits instantly,
-        # which the retry loop then repeats 5x into a fatal(). Turning the
-        # hotplug controller off frees slot 0, so the Reims device stays exactly
-        # where its own launcher puts it (addr=00.0) instead of being moved to a
-        # different slot, which its BAR/GOP mapping comments suggest matters.
-        -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0,shpc=off
-        -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
-    )
-else
-    # This build's VMware SVGA adapter is qemu-vmvga, whose PCI device is
-    # registered as "vmvga" (confirmed in its source: hw/display/vmware_vga.c
-    # -> TypeInfo .name = "vmvga"), NOT stock QEMU's "vmware-svga". Confirmed
-    # on real hardware: "-device vmware-svga: 'vmware-svga' is not a valid
-    # device model name", QEMU exits instantly, 5x -> fatal, screen flickering.
-    GFX_ARGS=(-vga none -device vmvga)
-fi
-
-# --- Audio (opt-in) ---------------------------------------------------------
-# Off by default. macOS drives a USB Audio Class device with its own built-in
-# AppleUSBAudio driver (no kext, unlike the intel-hda + AppleALC route), so
-# `-device usb-audio` is the lowest-risk way to get sound -- IF two things hold
-# on this build: the custom qemu-macos binary has an audio backend compiled in
-# (it's built for VNC/noVNC, so it may not), and the host has that backend's
-# library. We probe for both and simply skip audio (with a warning) when
-# they're missing, rather than handing QEMU an argument it rejects and turning
-# a working boot into a launch failure. `audio on|off` flips $AUDIO_FILE.
-AUDIO_ARGS=()
-AUDIO_STATE="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
-case "$AUDIO_STATE" in on|1|yes|true|ON|On) AUDIO_STATE=on ;; *) AUDIO_STATE=off ;; esac
-if [ "$AUDIO_STATE" = on ]; then
-    _qhelp="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -audiodev help 2>/dev/null || true)"
-    _has_usbaudio="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -device help 2>/dev/null | grep -c '"usb-audio"' || true)"
-    _snd_backend=""
-    # Prefer alsa: it talks straight to the kernel with no sound daemon, which
-    # a bare kiosk (no PipeWire/PulseAudio running) is. The others are listed
-    # as fallbacks only.
-    for _b in alsa pipewire pa sdl oss; do
-        if printf '%s\n' "$_qhelp" | grep -qw "$_b"; then _snd_backend="$_b"; break; fi
-    done
-    if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
-        AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
-        echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+# Re-read the user toggle files (gpu/verbose/audio) and (re)compute the
+# OpenCore image + device args from them. Called at the top of EVERY loop
+# iteration so `relaunch` (which just kills QEMU, not Xorg) picks up a
+# gpu/verbose/audio change with no flicker and no full session restart.
+configure_toggles() {
+    # --- OpenCore image: pick by host CPU vendor and the verbose toggle ---------
+    # Intel boots the stock (Intel-only) OpenCore; AMD needs the AMD_Vanilla-patched
+    # image or XNU hangs at EXITBS->HANDOFF. Verbose (-v) is a separate prebuilt
+    # image per family (build.sh makes all four), so toggling it needs no slow
+    # re-patch -- the `verbose` command just flips $VERBOSE_FILE. Default is verbose
+    # ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
+    VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
+    case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
+    if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+        _oc_norm="$OPENCORE_DIR/OpenCore-amd.qcow2"
+        _oc_verb="$OPENCORE_DIR/OpenCore-amd-verbose.qcow2"
     else
-        echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
-        echo "         The custom qemu-macos build needs an audio backend compiled in; see README's audio note. Boot is unaffected." >&2
+        _oc_norm="$OPENCORE_DIR/OpenCore.qcow2"
+        _oc_verb="$OPENCORE_DIR/OpenCore-verbose.qcow2"
     fi
-fi
+    if [ "$VERBOSE_STATE" = on ] && [ -s "$_oc_verb" ]; then
+        OPENCORE_IMG="$_oc_verb"
+    elif [ -s "$_oc_norm" ]; then
+        OPENCORE_IMG="$_oc_norm"
+    else
+        OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"   # last-ditch fallback to the base
+    fi
+    if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ]; then
+        echo "WARNING: AMD host but no OpenCore-amd image found -- macOS will likely hang at boot." >&2
+        echo "         Rebuild the ISO so build.sh generates the AMD OpenCore variant." >&2
+    fi
 
-echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
-echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the F2 terminal)."
+    # --- Graphics device --------------------------------------------------------
+    # reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
+    # but it is alpha software on an alpha driver stack, and Reims' own docs say
+    # to provision the macOS guest on the plain VMware SVGA adapter FIRST and
+    # only switch to Reims once there's a working, installed system. So the
+    # DEFAULT here is vmware-svga: boring, unaccelerated, but reliable enough to
+    # actually get macOS installed. Reims is opt-in -- `echo reims > $GFX_FILE`
+    # (then `relaunch`, or a reboot) turns it on for the next launch,
+    # `echo vmware > $GFX_FILE` (or `rm $GFX_FILE`) goes back. This is also the
+    # single most useful A/B switch for telling "Reims can't draw yet" apart from
+    # "macOS isn't booting at all": if it boots on vmware but not reims, it's the
+    # Reims path; if it fails the same way on both, it isn't Reims.
+    GFX="$(cat "$GFX_FILE" 2>/dev/null || true)"
+    case "$GFX" in
+        reims|reims-vgpu-pci) GFX="reims-vgpu-pci" ;;
+        *) GFX="vmware-svga" ;;
+    esac
+    GFX_ARGS=()
+    if [ "$GFX" = "reims-vgpu-pci" ]; then
+        # Straight from Reims' boot-x86.sh: `-vga none` because the UEFI GOP lives
+        # on this same PCI device (its option ROM, rombar=1) and must never share
+        # the guest with a second display; the device itself sits behind a
+        # conventional pci-bridge (their default attach, "IOFBIntegrated=No; OVMF
+        # maps BAR0"). romfile is an absolute path on purpose -- a bare name only
+        # works if QEMU's firmware search path happens to include where
+        # prepare-qemu-macos.sh staged it.
+        if [ ! -s "$GOP_ROM" ]; then
+            fatal "$GOP_ROM is missing." "The ISO was built without prepare-qemu-macos.sh staging the Reims GOP ROM — see docs/CHECKLIST.md. (Or write 'vmware' into $GFX_FILE -- or just delete it -- to go back to the default VMware display.)"
+        fi
+        GFX_ARGS=(
+            -vga none
+            # shpc=off is not in Reims' own boot-x86.sh -- they run a QEMU fork that
+            # accepts the device at slot 0 of the bridge. Confirmed on real hardware
+            # that stock QEMU 11.1 (what qemus/qemu-macos builds) does NOT: with the
+            # bridge's default Standard Hot-Plug Controller on, slot 0 is reserved
+            # ("Unsupported PCI slot 0 for standard hotplug controller. Valid slots
+            # are between 1 and 31."), QEMU refuses the device and exits instantly,
+            # which the retry loop then repeats 5x into a fatal(). Turning the
+            # hotplug controller off frees slot 0, so the Reims device stays exactly
+            # where its own launcher puts it (addr=00.0) instead of being moved to a
+            # different slot, which its BAR/GOP mapping comments suggest matters.
+            -device pci-bridge,chassis_nr=5,id=pci.5,bus=pcie.0,addr=1e.0,shpc=off
+            -device "reims-vgpu-pci,id=reimsvgpu,romfile=$GOP_ROM,rombar=1,bus=pci.5,addr=00.0"
+        )
+    else
+        # This build's VMware SVGA adapter is qemu-vmvga, whose PCI device is
+        # registered as "vmvga" (confirmed in its source: hw/display/vmware_vga.c
+        # -> TypeInfo .name = "vmvga"), NOT stock QEMU's "vmware-svga". Confirmed
+        # on real hardware: "-device vmware-svga: 'vmware-svga' is not a valid
+        # device model name", QEMU exits instantly, 5x -> fatal, screen flickering.
+        GFX_ARGS=(-vga none -device vmvga)
+    fi
+
+    # --- Audio (opt-in) ---------------------------------------------------------
+    # Off by default. macOS drives a USB Audio Class device with its own built-in
+    # AppleUSBAudio driver (no kext, unlike the intel-hda + AppleALC route), so
+    # `-device usb-audio` is the lowest-risk way to get sound -- IF two things hold
+    # on this build: the custom qemu-macos binary has an audio backend compiled in
+    # (it's built for VNC/noVNC, so it may not), and the host has that backend's
+    # library. We probe for both and simply skip audio (with a warning) when
+    # they're missing, rather than handing QEMU an argument it rejects and turning
+    # a working boot into a launch failure. `audio on|off` flips $AUDIO_FILE.
+    AUDIO_ARGS=()
+    AUDIO_STATE="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
+    case "$AUDIO_STATE" in on|1|yes|true|ON|On) AUDIO_STATE=on ;; *) AUDIO_STATE=off ;; esac
+    if [ "$AUDIO_STATE" = on ]; then
+        _qhelp="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -audiodev help 2>/dev/null || true)"
+        _has_usbaudio="$(LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" -device help 2>/dev/null | grep -c '"usb-audio"' || true)"
+        _snd_backend=""
+        # Prefer alsa: it talks straight to the kernel with no sound daemon, which
+        # a bare kiosk (no PipeWire/PulseAudio running) is. The others are listed
+        # as fallbacks only.
+        for _b in alsa pipewire pa sdl oss; do
+            if printf '%s\n' "$_qhelp" | grep -qw "$_b"; then _snd_backend="$_b"; break; fi
+        done
+        if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
+            AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
+            echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+        else
+            echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
+            echo "         The custom qemu-macos build needs an audio backend compiled in; see README's audio note. Boot is unaffected." >&2
+        fi
+    fi
+
+    echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
+    echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the F2 terminal)."
+}
 
 RETRIES=0
 while true; do
     rm -f "$QMP_SOCK"
+    configure_toggles
 
     QEMU_ARGS=(
         -name "macOS"
@@ -518,13 +525,17 @@ while true; do
             ;;
         vm-only|*)
             echo "QEMU exited without a clear guest request (action: ${ACTION}, ran ${RAN_FOR}s) — relaunching just the VM."
+            # A session that ran a while and then exited (or was killed by
+            # `relaunch`) is not a fast crash-loop -- reset the counter so a
+            # deliberate relaunch doesn't march toward fatal().
+            if [ "$RAN_FOR" -ge 30 ]; then RETRIES=0; fi
             RETRIES=$((RETRIES + 1))
             if [ "$RETRIES" -ge 5 ]; then
                 fatal "QEMU exited $RETRIES times in a row." \
                     "That's a boot that fails the same way every time, not a transient glitch -- rebooting the physical" \
                     "machine (what this used to do here) would just loop it faster. Read $LOG and $SERIAL_LOG" \
                     "(F2 terminal: 'logs' / 'serial'). The display defaults to plain VMware SVGA;" \
-                    "if you'd switched it to Reims, echo vmware > $GFX_FILE (or rm it) + sudo pkill Xorg to go back."
+                    "if you'd switched it to Reims, echo vmware > $GFX_FILE (or rm it) + relaunch to go back."
             fi
             sleep 3
             ;;

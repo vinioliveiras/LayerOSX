@@ -2256,3 +2256,46 @@ GitHub serves any commit reachable from the default branch to Docker's `ADD`, so
 a plain commit SHA works as the ref. The pin is the reason the whole rebuild —
 and therefore the untested "no linesize" framebuffer fix — can finally produce a
 working ISO again.
+
+## Bug: `relaunch` flicker-looped the screen (killed Xorg instead of the VM)
+
+`relaunch` (used to apply a `gpu`/`verbose`/`audio` change without a full
+reboot) did `sudo pkill Xorg`. That tore down the **whole graphical session**,
+and then two things raced to bring it back: getty's tty1 autologin re-running
+`.xinitrc`, and the launcher's own retry loop. On real hardware this showed up
+as the screen **flickering non-stop** after a relaunch (each restart is a blink,
+and they kept restarting).
+
+Root of why killing Xorg was even needed: `mac-vm-launch.sh` read the
+`gpu`/`verbose`/`audio` toggle files **once, before** its `while` loop, so the
+loop's own "QEMU exited → relaunch" path reused the old settings. The only way
+to pick up a new toggle was to restart the whole script — hence killing Xorg.
+
+Fix, two parts:
+- `mac-vm-launch.sh` now re-reads the toggles **inside** the loop
+  (`configure_toggles`, called every iteration), so the OpenCore image + display
+  + audio args are recomputed on every (re)launch.
+- `relaunch` now signals **QEMU** (`pkill -f /opt/layerosx/bin/qemu-system-x86_64`,
+  TERM then KILL for a frozen one), not Xorg. QEMU exits → the launcher's loop
+  re-reads the toggles and brings the VM straight back **in the same X session**.
+  No Xorg restart, no session race, **no flicker** — just a brief black while
+  QEMU comes back.
+
+Also hardened the loop's fast-crash guard: a session that ran for a while and
+then exited (or was killed by `relaunch`) resets the retry counter, so a
+deliberate relaunch no longer marches toward the 5×→`fatal()` limit that's meant
+for a genuine boot-crash loop. The `gpu`/`verbose`/`audio` commands now tell you
+to run `relaunch` (not `sudo pkill Xorg`).
+
+Note: `verbose` already defaults to **on** in `mac-vm-launch.sh` — if a boot
+comes up non-verbose, there's an explicit `off` saved in
+`/var/lib/layerosx/verbose`; `verbose on` + `relaunch` clears it cleanly now.
+
+### Known/next: the tty2 text console runs at a low refresh (monitor ghosting)
+
+Switching to the raw kernel VT (Ctrl+Alt+F2) to read `maclog`/`serial` puts the
+monitor on the console's low-refresh mode, which can smear/ghost on some panels.
+The in-session F2 log terminal (openbox, inside X) runs at the full refresh, but
+isn't always reachable when the fullscreen SDL VM has grabbed input — which is
+exactly when you need the VT. Proper fix (setting a sane console mode/refresh)
+is still open; tracked in the TODO section.

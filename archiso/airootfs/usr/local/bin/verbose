@@ -13,7 +13,7 @@
 # boot log is the only way to see where a boot stalls. Once it boots cleanly,
 # `verbose off` gives the polished Apple-logo experience.
 #
-# After switching, relaunch the VM: sudo pkill Xorg  (or reboot).
+# After switching, relaunch the VM: run `relaunch` (or reboot).
 set -uo pipefail
 VERBOSE_FILE="/var/lib/layerosx/verbose"
 
@@ -29,19 +29,19 @@ case "${1:-}" in
     "")
         echo "macOS VM verbose boot: $(current)"
         echo "Change it with:  verbose on   |   verbose off"
-        echo "Then relaunch:   sudo pkill Xorg   (or reboot)"
+        echo "Then run:        relaunch          (or reboot)"
         ;;
     on|1|yes|true)
         sudo mkdir -p "$(dirname "$VERBOSE_FILE")"
         echo on | sudo tee "$VERBOSE_FILE" >/dev/null
         echo "Verbose boot ON -- XNU's -v log AND OpenCore's logs shown next launch."
-        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        echo "Relaunch to apply:  relaunch       (or reboot)"
         ;;
     off|0|no|false)
         sudo mkdir -p "$(dirname "$VERBOSE_FILE")"
         echo off | sudo tee "$VERBOSE_FILE" >/dev/null
         echo "Verbose boot OFF -- clean Apple-logo boot, no logs, next launch."
-        echo "Relaunch to apply:  sudo pkill Xorg   (or reboot)"
+        echo "Relaunch to apply:  relaunch       (or reboot)"
         ;;
     *)
         echo "usage: verbose [on|off]   (no argument = show current setting)" >&2
