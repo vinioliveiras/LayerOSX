@@ -2365,3 +2365,27 @@ direct A/B test: **if macOS draws on `gpu std` but not on vmware/reims, the
 framebuffer the vmvga/reims GOP hands XNU is the culprit** (and we then fix that
 GOP/framebuffer path); if it fails identically on std too, the problem is earlier
 than the framebuffer. Either outcome narrows it down without a rebuild per try.
+
+## Getting the KERNEL log: `serial=3` (the framebuffer console is a dead end)
+
+The frozen VM screen at boot is Apple `boot.efi`'s log, and it stops at
+`EXITBS:START` — the handoff to the kernel. Past that, XNU takes the framebuffer,
+can't bring up its video console (the "no linesize" the boot framebuffer has no
+valid stride), and draws nothing — so the screen freezes on boot.efi's last
+frame and the kernel is a black box. `-v` alone can't help: it writes to that
+same broken framebuffer console.
+
+The fix for *visibility* (not the boot itself): the verbose image now adds
+`serial=3` (plus `keepsyms=1 debug=0x100`) to boot-args, so XNU uses the **16550
+serial console** (COM1 / 0x3F8 — the port the launcher captures to
+`~/mac-vm-serial.log`), which is independent of the framebuffer. This is what the
+RELEASE OpenCore couldn't give us on its own: OpenCore's *own* debug log (OC:/
+OCAK:) needs a DEBUG OpenCore build, but the *kernel's* log only needs the
+kernel routed to serial, which a boot-arg does — no OpenCore swap required.
+
+With this, `verbose on` + rebuild + `maclog` should finally show XNU's own output
+after `HANDOFF`, which disambiguates the two possibilities the frozen screen
+leaves open: **(a)** the kernel panics/hangs at handoff (the serial log names
+where), or **(b)** the kernel is booting fine but invisibly because only its
+video console failed (the serial log shows it marching on to the installer). The
+fix for the actual stall follows from which one it is.

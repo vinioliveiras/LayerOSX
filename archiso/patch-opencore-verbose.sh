@@ -50,10 +50,27 @@ if not targets:
     guid = "7C436110-AB2A-4BBB-A880-FE41995C9F82"
     nv.setdefault(guid, {})["boot-args"] = ""
     targets = [nv[guid]]
+# Add -v (verbose) AND route the KERNEL's console to the serial port. -v alone
+# only draws XNU's boot log on the framebuffer -- which is exactly what fails
+# here ("no linesize"): the OpenCore picker renders fine, but the instant the
+# kernel takes the framebuffer it can't bring up its video console, so the
+# screen freezes at HANDOFF and the kernel is a black box. serial=3 makes XNU
+# use the 16550 serial console (COM1 / 0x3F8, captured to ~/mac-vm-serial.log)
+# INDEPENDENT of the framebuffer, so the kernel log survives even with a broken
+# FB -- which finally tells us whether XNU hangs at handoff or just boots
+# invisibly. keepsyms=1 + debug=0x100 give a symbolicated panic on serial if it
+# panics. (These join the kholia kernel serial patches enabled below.)
+extra_args = ["-v", "keepsyms=1", "debug=0x100", "serial=3"]
 for sec in targets:
-    ba = sec.get("boot-args", "") or ""
-    if "-v" not in ba.split():
-        sec["boot-args"] = (ba + (" " if ba else "") + "-v")
+    toks = (sec.get("boot-args", "") or "").split()
+    for a in extra_args:
+        if "=" in a:
+            key = a.split("=", 1)[0]
+            toks = [t for t in toks if t.split("=", 1)[0] != key]
+            toks.append(a)
+        elif a not in toks:
+            toks.append(a)
+    sec["boot-args"] = " ".join(toks)
 
 # 2) Turn on OpenCore's own logging (serial+console+file, all levels) so kext
 #    injection and kernel-patch results are visible.
