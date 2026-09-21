@@ -135,6 +135,13 @@ None of these block a working boot; they make it nicer.
 - **Adaptive VM resolution** — the framebuffer resolution is a fixed 1920x1080
   (scaled to any monitor by SDL). Optionally match it to the host's real
   resolution for pixel-crisp, unscaled output.
+- **Access the host's other disks from the VM** — the guest only gets its own
+  qcow2 today. Add a way to reach the physical machine's other drives, in order
+  of safety: (1) an SMB share on the Arch host over the existing NAT NIC (mount
+  from Finder — safe, no risk to the real disks; likely a toggle/command);
+  (2) optional read-only passthrough of a specific disk/partition
+  (`-drive file=/dev/sdX`), HFS+/APFS only without extra kexts; (3) USB
+  passthrough for external drives. Post-boot feature, doesn't block the boot.
 - **Per-install unique SMBIOS identity** — every install currently ships the
   same serial/MLB/UUID baked into OpenCore.qcow2; generate a unique one per
   install so iMessage/App Store/FaceTime don't collide across machines.
