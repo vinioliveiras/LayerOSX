@@ -39,6 +39,27 @@ if [ "$ENGINE" = "docker" ]; then
     export DOCKER_BUILDKIT=1
 fi
 
+# ---------------------------------------------------------------------------
+# Dependency pins -- bump to update, set to a branch name to track upstream.
+# ---------------------------------------------------------------------------
+# qemu-vmvga (the VMware-vGPU code the upstream Dockerfile applies onto Reims'
+# QEMU 11.1 base) is pulled from its `master` branch by default. We pin it to a
+# specific commit, because upstream master moves fast and can ship a commit that
+# doesn't build against this QEMU base -- and did:
+#   commit 2c3cae7 (#508, 2026-09-21, "D3D9 switch lifetime and SO binding
+#   order") started calling vmsvga3d_screen_target_async_poll_present_live() and
+#   vmsvga3d_screen_target_async_discard_live() from inside vmware_vga_vgpu10.c,
+#   which is #included partway through vmware_vga_3d.c BEFORE those two static
+#   functions are defined -- so the compile dies under -Werror with "implicit
+#   declaration of function" + "static declaration follows non-static
+#   declaration". Purely an upstream ordering regression, nothing on our side.
+# c51c680 is the commit immediately before it (#507, 2026-09-20, "Implement DX2
+# whole-surface copy") -- the newest qemu-vmvga that still builds, carrying every
+# fix up to that point. To update: set this to a newer commit once upstream fixes
+# the ordering, or to "master" to track the branch again and take whatever's
+# latest. Override for one run without editing this file: QEMU_VMVGA_REF=... ./prepare-qemu-macos.sh
+QEMU_VMVGA_REF="${QEMU_VMVGA_REF:-c51c680b5d55f2ed66fc560bc9fd5e3ad962626c}"
+
 WORK=$(mktemp -d)
 CID=""
 VCID=""
@@ -78,6 +99,25 @@ sed -i \
     -e 's#git -C /src/qemu apply#git -C /src/reims/vendor/qemu-11.1 apply#g' \
     -e 's#git -C /src/qemu diff#git -C /src/reims/vendor/qemu-11.1 diff#g' \
     "$WORK/qemu-macos/Dockerfile"
+
+# LayerOSX-specific: pin qemu-vmvga to $QEMU_VMVGA_REF instead of the upstream
+# default of #master (see the QEMU_VMVGA_REF comment above for why). The upstream
+# Dockerfile fetches it with `ADD ...qemu-vmvga.git#master /src/qemu-vmvga`;
+# rewrite just that ref. GitHub serves any commit reachable from the default
+# branch to `ADD`, so a plain commit SHA works here. Setting QEMU_VMVGA_REF back
+# to "master" makes this a harmless no-op that tracks the branch again.
+python3 - "$WORK/qemu-macos/Dockerfile" "$QEMU_VMVGA_REF" <<'PYEOF_VMVGA'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); ref = sys.argv[2]
+text = path.read_text()
+anchor = "qemu-vmvga.git#master"
+if anchor not in text:
+    print("FAIL: qemu-vmvga.git#master anchor not found -- upstream Dockerfile may have changed how it fetches qemu-vmvga.", file=sys.stderr)
+    sys.exit(1)
+text = text.replace(anchor, "qemu-vmvga.git#" + ref, 1)
+path.write_text(text)
+print("==> patched Dockerfile: pinned qemu-vmvga to %s (was #master)" % ref)
+PYEOF_VMVGA
 
 # LayerOSX-specific: upstream builds this binary with --disable-sdl AND
 # --disable-gtk (confirmed by reading the Dockerfile's configure

@@ -55,6 +55,21 @@ ISO build like the original plan assumed. Instead:
   and let `build.sh` rebuild it from scratch.
 - Expect this single step to take 30-60+ minutes (it's compiling real
   QEMU from source) the first time you run it.
+- **qemu-vmvga is now pinned** (`QEMU_VMVGA_REF` near the top of
+  `prepare-qemu-macos.sh`). Upstream qemu-macos pulls `qemu-vmvga` from
+  its `master` branch, so a rebuild takes whatever is newest — and on
+  2026-09-21 the newest commit (`2c3cae7`, #508) didn't compile
+  (`implicit declaration of vmsvga3d_screen_target_async_poll_present_live`,
+  a pure upstream call-before-declaration ordering bug; see README.md).
+  We pin to `c51c680` (#507), the commit right before it. If a rebuild
+  fails to compile inside qemu-vmvga again, that almost always means
+  upstream moved and the pin needs bumping to a newer good commit — not
+  a bug on our side. To bump: set `QEMU_VMVGA_REF` to a newer SHA (or
+  `master` to track the branch again); or override for one run with
+  `QEMU_VMVGA_REF=<sha> ./prepare-qemu-macos.sh`. After a successful
+  build, confirm the ref actually took effect — the build log prints
+  `==> patched Dockerfile: pinned qemu-vmvga to <sha> (was #master)` and
+  `Using qemu-vmvga commit <sha>`.
 - Needs `docker-buildx` installed alongside `docker` (`pacman -S
   docker-buildx`), and `DOCKER_BUILDKIT=1` set — `prepare-qemu-macos.sh`
   now sets this itself. Without it, `docker build` silently falls back

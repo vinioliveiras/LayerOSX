@@ -2207,3 +2207,52 @@ universally supported by the emulated adapters.
 Also: `force-max-refresh.sh` is now idempotent -- it only switches an output's
 mode when it isn't already at its max refresh, which stops the screen flicker
 that a redundant mode-switch caused on every relaunch.
+
+## Gotcha: qemu-macos rebuild failed to compile (upstream qemu-vmvga master regression)
+
+Rebuilding the custom QEMU (needed to ship the framebuffer fix in a fresh ISO)
+failed at the compile step, under `-Werror`:
+
+```
+hw/display/vmware_vga_vgpu10.c:11326: error: implicit declaration of function
+    'vmsvga3d_screen_target_async_poll_present_live'
+... conflicting types for 'vmsvga3d_screen_target_async_poll_present_live'
+... static declaration of '...' follows non-static declaration
+```
+
+This is **not** caused by anything on our side. The upstream qemu-macos
+Dockerfile pulls `qemus/qemu-vmvga` from its `master` branch (`ADD
+...qemu-vmvga.git#master`), so every rebuild takes whatever is newest. The
+regression was the very latest commit at the time: `2c3cae7` (#508, 2026-09-21,
+"D3D9 switch lifetime and SO binding order"). It started **calling** the static
+functions `vmsvga3d_screen_target_async_poll_present_live()` and
+`vmsvga3d_screen_target_async_discard_live()` from inside
+`hw/display/vmware_vga_vgpu10.c` — but that file is `#include`d partway through
+`vmware_vga_3d.c` (around line 10144), while those functions are only **defined**
+much later (lines ~15068 / ~15296). So they're used before they're declared, and
+the build dies. A pure upstream ordering bug.
+
+### Fix: pin qemu-vmvga to a known-good commit instead of tracking `master`
+
+`prepare-qemu-macos.sh` now pins `qemu-vmvga` via a `QEMU_VMVGA_REF` variable
+near the top of the script, and patches the upstream Dockerfile's `ADD` line to
+use that ref instead of `#master`. It's set to `c51c680`
+(`c51c680b5d55f2ed66fc560bc9fd5e3ad962626c`, #507, 2026-09-20, "Implement DX2
+whole-surface copy") — the commit **immediately before** the broken one, i.e. the
+newest qemu-vmvga that still builds, carrying every fix up to that point. We only
+dropped the single regressing commit.
+
+This also makes dependency updates easy (a long-standing want): to move
+qemu-vmvga forward, bump `QEMU_VMVGA_REF` to a newer commit once upstream fixes
+the ordering; to go back to tracking the branch, set it to `master` (the
+Dockerfile patch then becomes a harmless no-op). It can also be overridden for a
+single run without editing the file:
+
+```
+QEMU_VMVGA_REF=<sha-or-branch> ./prepare-qemu-macos.sh
+```
+
+GitHub serves any commit reachable from the default branch to Docker's `ADD`, so
+a plain commit SHA works as the ref. The pin is the reason the whole rebuild —
+and therefore the untested "no linesize" framebuffer fix — can finally produce a
+working ISO again.
