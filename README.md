@@ -2389,3 +2389,16 @@ leaves open: **(a)** the kernel panics/hangs at handoff (the serial log names
 where), or **(b)** the kernel is booting fine but invisibly because only its
 video console failed (the serial log shows it marching on to the installer). The
 fix for the actual stall follows from which one it is.
+
+## Fix: the F2 log terminal stopped working once the VM grabbed the keyboard
+
+F2 opens the in-X (full-refresh) log terminal via an openbox keybind. It quietly
+stopped firing once the VM became interactive: clicking into the QEMU/SDL window
+(e.g. to pick macOS in the OpenCore menu) makes SDL take an **exclusive keyboard
+grab**, after which F2 goes to the guest instead of openbox — leaving only the
+raw `Ctrl+Alt+F2` VT, which is low-refresh and ghosts on some monitors.
+
+Fix: launch QEMU with `SDL_GRAB_KEYBOARD=0`, so the SDL window never takes an
+exclusive keyboard grab. The openbox F2 keybind keeps working while the VM is
+focused, and macOS still receives every other key through normal window focus.
+(`Ctrl+Alt+F2` still works too — it's a kernel VT switch, below X entirely.)

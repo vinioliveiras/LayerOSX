@@ -512,7 +512,14 @@ while true; do
     fi
 
     LAUNCHED_AT=$(date +%s)
-    LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
+    # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an
+    # exclusive keyboard grab. Without this, the moment you click into the VM
+    # (e.g. to pick macOS in the OpenCore menu) SDL grabs the keyboard and the
+    # openbox F2 log-terminal keybind stops firing -- you're stuck using the raw
+    # Ctrl+Alt+F2 VT (which is low-refresh and ghosts on some monitors). With
+    # the grab off, F2 keeps opening the in-X log terminal while the VM is
+    # focused, and macOS still receives every other key through normal focus.
+    SDL_GRAB_KEYBOARD=0 LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done
