@@ -26,6 +26,29 @@ will need iteration, mainly around the two most uncertain points: the
 Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 `docs/CHECKLIST.md` for the step-by-step test plan.
 
+## Kiosk commands (runtime cheat-sheet)
+
+Once LayerOSX is running the macOS VM, these commands are on `PATH` for the
+`mac` user. Open a terminal with **F2** (inside the graphical session, full
+refresh), or switch to a text console with **Ctrl+Alt+F2** (tty2, autologin as
+`mac`). Each one changes how the *next* launch behaves; apply a change with
+**`relaunch`** (no reboot) or a full reboot. This is the fastest way to A/B a
+problem without rebuilding the ISO — settings are plain-text files under
+`/var/lib/layerosx/`, so they can be scripted too.
+
+| command | what it does |
+|---------|--------------|
+| `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer, the "no linesize" A/B test). |
+| `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log **and** OpenCore's own logging (uses the debug OpenCore image); `off` is a clean Apple-logo boot. Default on while bringing macOS up. |
+| `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Off by default; safe to try — it skips itself if the build has no audio backend. |
+| `relaunch` | Restart just the macOS VM to apply a `gpu`/`verbose`/`audio` change — kills QEMU only (not Xorg), so no reboot and no screen flicker. |
+| `maclog [sub]` | View the guest boot/serial log (`~/mac-vm-serial.log`). No arg = curated view (where it stopped + errors + which OpenCore image booted). Subs: `tail`, `oc`, `patch`, `err`, `all`, `usb` (copy to a mounted USB). |
+| `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
+| `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
+
+`layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
+not something you invoke by hand. State files: `/var/lib/layerosx/{gfx,verbose,audio}`.
+
 ## TODO / polish (deferred until macOS boots cleanly)
 
 Running list of polish items we agreed to revisit once the VM boots to macOS.
