@@ -54,7 +54,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `macdiag [usb]` | Collect a FULL diagnostics bundle into one folder — host CPU/flags/KVM/memory, QEMU version + the exact launch cmdline + which OpenCore image booted, the selected vs downloaded macOS version, the toggles, and the serial + QEMU logs (summary + raw copies). `macdiag usb` copies it to a USB stick. The same bundle is also saved to any USB automatically on every VM exit. |
 | `wifi [status\|pick\|list]` | **Host** Wi-Fi (the Mac only sees a wired NAT link, so networks are picked on the Linux side). No arg = current network + internet check; `pick` = the Wi-Fi picker (zenity list + password; `nmtui` when there's no graphical session); `list` = nearby networks. **Hotkey: Ctrl+Alt+W** opens the picker from anywhere — in **both** build modes, so it also works in a locked release kiosk. No relaunch needed: macOS keeps its Ethernet link and rides the new uplink. |
 | `usb [list\|pick\|attach\|detach\|always\|forget] [VVVV:PPPP]` | **USB passthrough**: give a host USB device (pendrive, phone, webcam…) to the Mac or take it back. No arg = every device and where it is (Linux / Mac / always→Mac). `always` gives it to the Mac on every launch and re-plug. **Hotkey: Ctrl+Alt+U** opens a picker (both build modes). Keyboards/mice/touchpads and hubs are never passed (input already reaches the Mac); storage must be unmounted on the host first. |
-| **Ctrl+Alt+W** (menu) | The **kiosk menu**, both build modes, no password: status line (Wi-Fi, battery, graphics, boot log, audio, Mac running), **Wi-Fi…**, **USB devices…**, **Graphics…** (Reims / VMware / std), boot log and audio switches, **Restart the Mac** (relaunch the VM — the rescue for a stuck/black screen), **Restart / Shut down computer** (QEMU stopped cleanly first), **Save diagnostics to USB**, **Maintenance terminal…** (same policy as Ctrl+Alt+T). Everything asks before restarting anything. |
+| **Ctrl+Alt+W** (LayerOSX Settings) | **LayerOSX Settings** — a System-Settings-style window (see "LayerOSX Settings"); falls back to the zenity kiosk menu if GTK can't start. The zenity menu offers: status line (Wi-Fi, battery, graphics, boot log, audio, Mac running), **Wi-Fi…**, **USB devices…**, **Graphics…** (Reims / VMware / std), boot log and audio switches, **Restart the Mac** (relaunch the VM — the rescue for a stuck/black screen), **Restart / Shut down computer** (QEMU stopped cleanly first), **Save diagnostics to USB**, **Maintenance terminal…** (same policy as Ctrl+Alt+T). Everything asks before restarting anything. |
 | `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
@@ -131,11 +131,9 @@ None of these block a working boot; they make it nicer.
 - **Auto-switch to Reims after install** — provision the guest on VMware SVGA
   (reliable), then flip to the accelerated Reims vGPU automatically once macOS
   is actually installed, instead of the manual `gpu reims`.
-- **Kiosk menu as a native single-window app** — the Ctrl+Alt+W menu is
-  zenity dialogs (one window per screen, the menu re-opens after each action).
-  A small GTK app (python-gobject) could keep one window with pages, live
-  status and a real Back button; the future in-macOS menu-bar app would mirror
-  it.
+- [x] **Kiosk menu as a native single-window app** — done: LayerOSX Settings
+  (GTK4/libadwaita, `opt/layerosx/panel/`). Next: a Bluetooth section, a
+  "Displays > Resolution" option, and the in-macOS app mirroring it.
 - **Pre-boot settings menu** — (partly done: the Ctrl+Alt+W kiosk menu now
   switches gpu / boot log / audio and restarts the VM at any time) — a short countdown screen (~10s) before the VM
   launches, with a "continue to system" button and toggles for gpu / verbose /
@@ -2935,3 +2933,61 @@ Verified off-hardware with stubbed zenity/nmcli/sudo: menu status text,
 Graphics → vmware (file written, restart offered), Boot log toggle, Restart
 the Mac (relaunch), Restart computer (host-action file written), and the
 effective-setting defaults for a release build.
+
+## LayerOSX Settings (Ctrl+Alt+W): a System-Settings-style panel
+
+The zenity kiosk menu worked but was a chain of separate dialogs. Ctrl+Alt+W
+now opens **LayerOSX Settings**, a single GTK4/libadwaita window modelled on a
+simplified macOS System Settings: a sidebar with coloured icon badges, a
+content pane of rounded cards, macOS-style "traffic light" window controls
+(red = close, yellow = hide — the kiosk has no taskbar to restore a minimized
+window, so it closes and Ctrl+Alt+W brings it back — green = zoom), light
+theme by default (`LAYEROSX_PANEL_THEME=dark` for dark).
+
+| Section | What's there |
+|---|---|
+| Wi-Fi | Wi-Fi on/off (confirms before cutting the Mac off), connection status, current network, other networks with lock/signal icons and **Connect**, **Other…** for hidden networks |
+| Battery | Level + state, and what the low-battery guard does (20/10% warnings, safe shutdown at 5%, last resort at 3%) |
+| Displays | Brightness slider; Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations |
+| Sound | "Sound from the Mac" switch |
+| USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
+| Mac | Running/stopped, "Show startup log" switch, **Restart Mac…** (the black-screen rescue) |
+| General | Restart / Shut Down the computer, Save diagnostics, Terminal, About (build mode, terminal policy, shortcuts) |
+| Terminal | Open the maintenance terminal (password per `LAYEROSX_TERMINAL`), useful commands; hidden when the build has no terminal |
+
+A banner ("Restart the Mac to apply your changes" + Restart Mac) appears after
+changing graphics, sound or the startup log while the Mac runs. Status refreshes
+every 5 s; scans and restarts run in worker threads; dialogs are in-window
+(`Adw.AlertDialog`).
+
+**Architecture — the bridge to macOS starts here.** Everything the panel shows
+or does goes through `opt/layerosx/panel/layerosx_backend.py`: one `Backend`
+class with a fixed allow-list (settings, VM restart, host restart/shutdown,
+Wi-Fi status/scan/connect/radio, USB list/give/always, battery, brightness,
+diagnostics, terminal), reusing the existing pieces (gpu/verbose/audio/
+relaunch/macdiag, `lib/qmp-cmd.py`, nmcli, brightnessctl, sysfs). The panel is
+only a front-end. The planned in-macOS menu-bar app will be a second front-end
+calling the same `Backend` through a small host helper, so no host logic gets
+duplicated. `layerosx_backend.py status|wifi|usb` prints JSON (debugging, and
+the future helper's shape).
+
+- **Launch:** `kiosk/lib/panel.sh` (bound to Ctrl+Alt+W) checks that GTK4 +
+  libadwaita import, runs the panel, and falls back to the zenity
+  `kiosk-menu.sh` if GTK is missing or the panel crashes at start-up — the
+  machine is never left without a way to switch graphics or restart. Log:
+  `~/panel.log`. Single instance via a lock file (the kiosk X session has no
+  D-Bus session bus, so the app is `NON_UNIQUE`). The window title
+  "LayerOSX Settings" matches the openbox `LayerOSX*` rule, so it opens above
+  the fullscreen VM.
+- **Packages:** `python-gobject gtk4 libadwaita adwaita-icon-theme librsvg`
+  added to `packages.x86_64`.
+- **Preview on any desktop, no ISO build:** `tools/preview-panel.sh` (dry run:
+  changing actions show "Preview — would run: …"; status and Wi-Fi are real).
+  `LAYEROSX_PANEL_PAGE=<section>` opens on a section.
+- **Tests:** `tools/test-panel.sh` — 14 backend unit tests against a fake
+  machine (settings + per-mode defaults, validation, dry-run changes nothing,
+  nmcli parsing incl. escaped `:`, Wi-Fi radio, USB list/blocking/give/always,
+  battery, host actions) and, with a display (`xvfb-run`), a UI smoke test
+  that opens every section and drives the widgets (graphics, sound, startup
+  log, USB, Wi-Fi list, sidebar status). All green; screenshots were checked
+  under Xvfb.

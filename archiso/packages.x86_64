@@ -137,3 +137,8 @@ brightnessctl
 alsa-lib
 alsa-utils
 sof-firmware
+python-gobject
+gtk4
+libadwaita
+adwaita-icon-theme
+librsvg

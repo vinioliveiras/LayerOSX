@@ -24,7 +24,7 @@
 #   release -> Ctrl+Alt+T asks for the kiosk user's password before opening the
 #              terminal (lib/maint-terminal.sh); VT switching stays off. Kept
 #              in BOTH modes: Ctrl+Alt+W
-#              (kiosk menu), Ctrl+Alt+U (USB passthrough picker) and
+#              (LayerOSX Settings), Ctrl+Alt+U (USB passthrough picker) and
 #              the brightness keys (brightnessctl).
 #
 # Safe to call every boot: each edit is independently idempotent.
@@ -112,16 +112,17 @@ if "layerosx-f2-peek" not in content and "</keyboard>" in content:
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
 
-# 7) Both modes: Ctrl+Alt+W opens the kiosk menu (lib/kiosk-menu.sh): status,
-#    Wi-Fi, USB, graphics/boot-log/audio, restart the Mac or the computer,
-#    diagnostics, maintenance terminal. It runs fixed zenity dialogs, not a
+# 7) Both modes: Ctrl+Alt+W opens LayerOSX Settings (lib/panel.sh -> the
+#    GTK4/libadwaita panel in /opt/layerosx/panel; falls back to the zenity
+#    lib/kiosk-menu.sh if GTK can't start): Wi-Fi, battery, displays/graphics,
+#    sound, USB, Mac (boot log, restart), power, diagnostics, terminal. It runs fixed zenity dialogs, not a
 #    shell (the terminal entry still goes through maint-terminal.sh's policy),
 #    so it doesn't reopen an escape hatch in a locked release build.
 if "layerosx-wifi" not in content and "</keyboard>" in content:
     keybind = (
         '  <keybind key="C-A-w"> <!-- layerosx-wifi -->\n'
         '    <action name="Execute">\n'
-        "      <command>/opt/layerosx/kiosk/lib/kiosk-menu.sh</command>\n"
+        "      <command>/opt/layerosx/kiosk/lib/panel.sh</command>\n"
         "    </action>\n"
         "  </keybind>\n"
     )

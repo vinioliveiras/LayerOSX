@@ -1059,6 +1059,24 @@ allow-list and anything not coming from the guest.)
 - `gpu` / `verbose` / `audio` / `macstatus` on a fresh release install report
   reims / off / on "[release build default]".
 
+### 5.4g. LayerOSX Settings (Ctrl+Alt+W)
+
+- Before building: `tools/test-panel.sh` green; `tools/preview-panel.sh` on the
+  build machine looks right (sidebar badges, traffic lights, every section).
+- On the ISO: Ctrl+Alt+W opens "LayerOSX Settings" ON TOP of the fullscreen VM
+  (if the zenity menu appears instead, read `~/panel.log`: GTK4/libadwaita
+  didn't start).
+- Wi-Fi: status/current network correct; Connect to another network (password
+  dialog); Other… joins a hidden one; turning Wi-Fi off asks first.
+- Displays: brightness slider moves the panel backlight; switching Graphics
+  to VMware shows the "Restart the Mac" banner, and Restart Mac brings the VM
+  back on VMware.
+- USB: a pendrive switched on appears in macOS; star → survives re-plug.
+- General: Restart / Shut Down work without the VM relaunching in between.
+- Traffic lights: red closes, yellow hides (Ctrl+Alt+W reopens), green zooms.
+- Terminal section: Open… follows the build's password policy; hidden with
+  `LAYEROSX_TERMINAL=off`.
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

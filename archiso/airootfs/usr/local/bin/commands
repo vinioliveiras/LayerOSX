@@ -53,4 +53,4 @@ case "$TERMINAL" in
     off)      printf 'Terminal: none in this build (LAYEROSX_TERMINAL=off)' ;;
 esac
 if [ "$MODE" = debug ]; then printf '; Ctrl+Alt+F2 = tty2.\n'; else printf '; VT switching is off.\n'; fi
-printf 'Hotkeys (both build modes): Ctrl+Alt+W menu (Wi-Fi, USB, graphics, restart...), Ctrl+Alt+T terminal, Ctrl+Alt+U USB.\n'
+printf 'Hotkeys (both build modes): Ctrl+Alt+W LayerOSX Settings (Wi-Fi, USB, graphics, restart...), Ctrl+Alt+T terminal, Ctrl+Alt+U USB.\n'
