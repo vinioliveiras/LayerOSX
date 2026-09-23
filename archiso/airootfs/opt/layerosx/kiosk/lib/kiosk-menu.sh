@@ -10,8 +10,16 @@
 # restarts the computer). "Restart/Shut down computer" stop QEMU with QMP quit
 # (disk images flushed) and leave the action in $HOST_ACTION_FILE for
 # mac-vm-launch.sh, which then reboots/powers off instead of relaunching.
+#
+# Preview on any Linux desktop (no ISO build): tools/preview-kiosk-menu.sh, i.e.
+#   LAYEROSX_LIB=<repo>/archiso/airootfs/opt/layerosx/kiosk/lib LAYEROSX_DRY_RUN=1 kiosk-menu.sh
+# LAYEROSX_DRY_RUN=1 shows what each action WOULD run instead of doing it
+# (changing settings, relaunching, rebooting, terminal). Wi-Fi/USB pickers stay
+# real -- they only use NetworkManager / sysfs.
 set -uo pipefail
-LIB=/opt/layerosx/kiosk/lib
+LIB="${LAYEROSX_LIB:-/opt/layerosx/kiosk/lib}"
+BIN="${LAYEROSX_BIN:-/usr/local/bin}"
+DRY_RUN="${LAYEROSX_DRY_RUN:-0}"
 # shellcheck source=/dev/null
 source "$LIB/settings.sh"
 CTL_SOCK="/tmp/macvm-ctl.sock"
@@ -21,11 +29,20 @@ T="LayerOSX"
 exec 9>"/tmp/layerosx-menu-$(id -u).lock"
 flock -n 9 || exit 0
 
+# Run an action, or in preview mode just show it.
+act() {
+    if [ "$DRY_RUN" = 1 ]; then
+        zenity --info --width=420 --title="$T — preview" --text="Would run:\n$*" 2>/dev/null
+        return 0
+    fi
+    "$@"
+}
+
 ask() { zenity --question --width=440 --title="$T" --text="$1" 2>/dev/null; }
 note() { zenity --info --width=400 --timeout=5 --title="$T" --text="$1" 2>/dev/null; }
 
 vm_running() { [ -S "$CTL_SOCK" ]; }
-relaunch_vm() { /usr/local/bin/relaunch >/dev/null 2>&1; }
+relaunch_vm() { act "$BIN/relaunch"; }
 
 apply_and_offer_restart() {  # $1 = what changed (for the message)
     if vm_running && ask "$1\n\nRestart the Mac now to apply it?\n(macOS is stopped abruptly — save your work first.)"; then
@@ -36,6 +53,7 @@ apply_and_offer_restart() {  # $1 = what changed (for the message)
 }
 
 host_action() {  # $1 = reboot|poweroff
+    if [ "$DRY_RUN" = 1 ]; then act python3 "$LIB/qmp-cmd.py" "$CTL_SOCK" quit '&&' systemctl "$1"; return; fi
     printf '%s\n' "$1" > "$HOST_ACTION_FILE"
     if vm_running; then
         python3 "$LIB/qmp-cmd.py" "$CTL_SOCK" quit >/dev/null 2>&1 || relaunch_vm
@@ -68,7 +86,7 @@ menu_graphics() {
         "$([ "$cur" = std ] && echo TRUE || echo FALSE)"    std    "Standard VGA — diagnostics only" \
         2>/dev/null) || return
     [ -n "$choice" ] && [ "$choice" != "$cur" ] || return
-    /usr/local/bin/gpu "$choice" >/dev/null 2>&1
+    act "$BIN/gpu" "$choice"
     apply_and_offer_restart "Graphics set to $choice."
 }
 
@@ -76,7 +94,7 @@ toggle() {  # $1 = verbose|audio, $2 = label
     local cur new
     cur="$(effective_setting "$1")"; [ "$cur" = on ] && new=off || new=on
     ask "$2 is $cur. Turn it $new?" || return
-    "/usr/local/bin/$1" "$new" >/dev/null 2>&1
+    act "$BIN/$1" "$new"
     apply_and_offer_restart "$2 turned $new."
 }
 
@@ -112,9 +130,10 @@ main() {
         reboot)   ask "Restart the computer?\n\nSave your work in macOS first — it will be stopped." && host_action reboot ;;
         poweroff) ask "Shut down the computer?\n\nSave your work in macOS first — it will be stopped." && host_action poweroff ;;
         diag)
-            if /usr/local/bin/macdiag usb 2>&1 | grep -q '^Copied'; then note "Diagnostics saved to the USB drive."
+            if [ "$DRY_RUN" = 1 ]; then act "$BIN/macdiag" usb
+            elif "$BIN/macdiag" usb 2>&1 | grep -q '^Copied'; then note "Diagnostics saved to the USB drive."
             else zenity --warning --width=380 --title="$T" --text="Couldn't save — plug in a writable USB drive and try again." 2>/dev/null; fi ;;
-        terminal) exec "$LIB/maint-terminal.sh" "$HOME/mac-vm.log" ;;
+        terminal) act "$LIB/maint-terminal.sh" "$HOME/mac-vm.log" ;;
     esac
 }
 

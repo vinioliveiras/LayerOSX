@@ -1041,6 +1041,9 @@ allow-list and anything not coming from the guest.)
 
 ### 5.4f. Kiosk menu (Ctrl+Alt+W)
 
+- Before building: `tools/preview-kiosk-menu.sh` on the build machine shows
+  the menu (dry run) — layout, texts, status line, pickers.
+
 - Ctrl+Alt+W over the fullscreen VM opens the menu ON TOP; the status line
   shows the right Wi-Fi SSID, battery %, graphics (Reims on a fresh release
   install), boot log, audio, "Mac: running".

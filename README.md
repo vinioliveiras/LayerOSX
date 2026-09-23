@@ -2914,6 +2914,11 @@ release build actually launches with **reims / off / on**. They now share
 same per-mode defaults as `mac-vm-launch.sh` and says whether a value is
 "saved" or the "build default".
 
+**Preview without building an ISO:** `tools/preview-kiosk-menu.sh` runs the
+menu from the repo on any Linux desktop (needs `zenity`). It sets
+`LAYEROSX_LIB` to the repo copy and `LAYEROSX_DRY_RUN=1`, so every changing
+action only shows what it would run; the Wi-Fi/USB pickers are real.
+
 Verified off-hardware with stubbed zenity/nmcli/sudo: menu status text,
 Graphics → vmware (file written, restart offered), Boot log toggle, Restart
 the Mac (relaunch), Restart computer (host-action file written), and the
