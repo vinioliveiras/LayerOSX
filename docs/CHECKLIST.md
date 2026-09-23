@@ -970,6 +970,11 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   (`alsa-lib`, `alsa-utils`, `sof-firmware`) are already on the ISO. See
   README.md's "Audio: an opt-in usb-audio toggle" for the full picture.
 
+(Planned, not built yet — see README TODO "LayerOSX menu-bar app": once it
+exists, add its checks here: Wi-Fi join from inside macOS, battery level
+matches the host, brightness slider/keys work, helper refuses anything off its
+allow-list and anything not coming from the guest.)
+
 ### 5.4b. Wi-Fi while the VM runs (`wifi`, Ctrl+Alt+W)
 
 - With the VM fullscreen, press **Ctrl+Alt+W**: the Wi-Fi picker must open

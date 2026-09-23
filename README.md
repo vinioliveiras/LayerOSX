@@ -143,6 +143,35 @@ None of these block a working boot; they make it nicer.
   (2) optional read-only passthrough of a specific disk/partition
   (`-drive file=/dev/sdX`), HFS+/APFS only without extra kexts; (3) USB
   passthrough for external drives. Post-boot feature, doesn't block the boot.
+- **LayerOSX menu-bar app (macOS guest) + host helper** — make the Linux host
+  invisible by managing the physical laptop from inside macOS. A small Swift
+  menu-bar app in the guest talks to a host-side helper daemon over the QEMU
+  user-net gateway (`10.0.2.2`, no extra setup; a virtio-serial channel is the
+  alternative), with a Wi-Fi-style menu for:
+  - **Wi-Fi**: list/join/forget networks (host `nmcli`) — the guest itself only
+    has a wired NAT NIC, so this is the in-macOS answer to the `wifi` command.
+  - **Battery**: level/charging/time left (host `/sys/class/power_supply`),
+    low-battery warning.
+  - **Brightness**: slider + map the brightness keys (host backlight).
+  - **Bluetooth**: pair/connect mice, keyboards, headphones on the host.
+  - **Power profile / GPU mode** (asusctl / supergfxctl on ASUS), keyboard
+    backlight.
+  - **USB passthrough**: pick a plugged device (pendrive, phone, webcam) to hand
+    to the VM.
+  - **Host status/updates**: LayerOSX version, host update check.
+  Security: bind the helper to the NAT gateway only, expose a fixed allow-list
+  of actions (no arbitrary commands), authenticate the app with a per-install
+  token. The in-guest app must be installed into macOS (first-run step or a
+  shared folder).
+- **Host integration without the app (interim)** — each item above also needs
+  a host-side baseline so it works before/without the app: brightness keys
+  handled by the host, battery exposed to the guest (ACPI battery) or shown as
+  an overlay, lid-close/suspend behaviour tested (the VM must resume cleanly),
+  macOS "Sleep" wired to the host like Restart/Shutdown already are,
+  automatic USB passthrough (never the keyboard or the system USB), a
+  Bluetooth picker like the Wi-Fi one, a controlled host update path
+  (kernel + NVIDIA driver must move together or Reims breaks), and qcow2
+  snapshots before macOS updates (`qemu-img snapshot`).
 - **Per-install unique SMBIOS identity** — every install currently ships the
   same serial/MLB/UUID baked into OpenCore.qcow2; generate a unique one per
   install so iMessage/App Store/FaceTime don't collide across machines.
