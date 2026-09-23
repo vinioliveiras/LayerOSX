@@ -1077,6 +1077,10 @@ allow-list and anything not coming from the guest.)
   system disk is never listed) → Save → `LayerOSX-logs/mac-vm-diag-*` on the
   stick, and the stick is unmounted again (safe to unplug).
 - Traffic lights: red closes, yellow hides (Ctrl+Alt+W reopens), green zooms.
+- About: This Computer shows the real model (ASUS TUF Gaming A15 FA507NV),
+  Ryzen 7 7735HS · 16 threads, ~62 GB, both GPUs, the NVMe; The Mac shows
+  macOS Ventura 13.5 (22G120), Haswell-noTSX · 4 cores, 8 GB, the current
+  graphics (after the Mac has started once); version = the built commit.
 - Terminal section: Open… follows the build's password policy; hidden with
   `LAYEROSX_TERMINAL=off`.
 

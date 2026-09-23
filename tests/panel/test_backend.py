@@ -97,7 +97,32 @@ class FakeMachine(unittest.TestCase):
                  "label": "VTOYEFI", "size": 33554432, "mountpoints": [None]}]},
         ]}
         write(os.path.join(t, "lsblk.json"), __import__("json").dumps(lsblk))
-        write(os.path.join(self.bin, "lsblk"), f'#!/bin/sh\ncat {t}/lsblk.json\n', x)
+        write(os.path.join(self.bin, "lsblk"), textwrap.dedent(f"""\
+            #!/bin/sh
+            case "$*" in
+              "-ndo PKNAME /dev/nvme0n1p6") echo nvme0n1 ;;
+              "-ndbo MODEL,SIZE /dev/nvme0n1") echo "WD PC SN560 SDDPNQE-1T00-1002 1000204886016" ;;
+              *) cat {t}/lsblk.json ;;
+            esac
+            """), x)
+        # About: DMI, /proc, lspci, findmnt, VM profile, version file
+        write(os.path.join(t, "dmi", "sys_vendor"), "ASUSTeK COMPUTER INC.\n")
+        write(os.path.join(t, "dmi", "product_name"), "ASUS TUF Gaming A15 FA507NV_FA507NV\n")
+        write(os.path.join(t, "dmi", "product_family"), "ASUS TUF Gaming A15\n")
+        write(os.path.join(t, "proc", "cpuinfo"),
+              "".join(f"processor\t: {i}\nmodel name\t: AMD Ryzen 7 7735HS with Radeon Graphics\n\n" for i in range(16)))
+        write(os.path.join(t, "proc", "meminfo"), "MemTotal:       65218560 kB\n")
+        write(os.path.join(self.bin, "lspci"), textwrap.dedent("""\
+            #!/bin/sh
+            echo '01:00.0 "VGA compatible controller" "NVIDIA Corporation" "AD107M [GeForce RTX 4060 Max-Q / Mobile]" -ra1 "ASUSTeK" "x"'
+            echo '05:00.0 "VGA compatible controller" "Advanced Micro Devices, Inc. [AMD/ATI]" "Rembrandt [Radeon 680M]" -rc7 "ASUSTeK" "x"'
+            echo '00:14.0 "SMBus" "Advanced Micro Devices, Inc. [AMD]" "FCH SMBus Controller" -r71 "" ""'
+            """), x)
+        write(os.path.join(self.bin, "findmnt"), "#!/bin/sh\necho /dev/nvme0n1p6\n", x)
+        write(os.path.join(self.state, "macos-version"), "ventura\n")
+        write(os.path.join(self.state, "downloaded-version"), "13.5|22G120\n")
+        write(os.path.join(t, "vm-profile"), "cpu_model=Haswell-noTSX\ncores=4\nram_mb=8192\ngfx=reims-vgpu-pci\nmacos=ventura\n")
+        write(os.path.join(self.etc, "version"), "version=4cac427\nbuilt=2026-09-24\nmode=release\n")
         self.ps = os.path.join(t, "power")
         write(os.path.join(self.ps, "BAT0", "capacity"), "63\n")
         write(os.path.join(self.ps, "BAT0", "status"), "Discharging\n")
@@ -106,7 +131,8 @@ class FakeMachine(unittest.TestCase):
             "LAYEROSX_ETC_DIR": self.etc, "LAYEROSX_CTL_SOCK": self.sock,
             "LAYEROSX_HOST_ACTION_FILE": os.path.join(t, "host-action"),
             "LAYEROSX_USB_SYSFS": self.usb, "LAYEROSX_POWER_SUPPLY": self.ps,
-            "LAYEROSX_DRY_RUN": "0", "PATH": self.bin + os.pathsep + os.environ["PATH"],
+            "LAYEROSX_DRY_RUN": "0", "LAYEROSX_DMI": os.path.join(t, "dmi"),
+            "LAYEROSX_PROC": os.path.join(t, "proc"), "LAYEROSX_VM_PROFILE": os.path.join(t, "vm-profile"), "PATH": self.bin + os.pathsep + os.environ["PATH"],
         }
         self._old = {k: os.environ.get(k) for k in env}
         os.environ.update(env)
@@ -240,6 +266,38 @@ class TestSaveLogs(FakeMachine):
         b = lb.Backend()
         self.assertTrue(b.save_logs_to("/dev/sda1")[0])
         self.assertIn("/dev/sda1", b.dry_log[-1])
+
+
+class TestAbout(FakeMachine):
+    def test_about_real_machine_fields(self):
+        a = lb.Backend().about()
+        self.assertEqual(a.machine, "ASUS TUF Gaming A15 FA507NV")
+        self.assertEqual(a.cpu, "AMD Ryzen 7 7735HS with Radeon Graphics")
+        self.assertEqual(a.cpu_threads, 16)
+        self.assertEqual(a.memory_gb, 62.2)
+        self.assertEqual(a.gpus, ["NVIDIA GeForce RTX 4060 Max-Q / Mobile", "AMD Radeon 680M"])
+        self.assertEqual(a.storage, "WD PC SN560 SDDPNQE-1T00-1002 · 1000 GB")
+        self.assertEqual(a.macos, "macOS Ventura 13.5 (22G120)")
+        self.assertEqual((a.vm_cpu, a.vm_cores, a.vm_ram_gb, a.vm_graphics),
+                         ("Haswell-noTSX", 4, 8.0, "Reims (accelerated)"))
+        self.assertEqual((a.layerosx_version, a.built), ("4cac427", "2026-09-24"))
+        self.assertTrue(a.creator and a.thanks)
+
+    def test_name_cleanup(self):
+        self.assertEqual(lb._machine_name("LENOVO", "ThinkPad X1", "21CB"), "LENOVO ThinkPad X1 21CB")
+        self.assertEqual(lb._machine_name("Micro-Star International Co., Ltd.", "", "MSI Katana"), "MSI Katana")
+        self.assertEqual(lb._machine_name("System manufacturer", "", "System Product Name"),
+                         "System manufacturer")
+        self.assertEqual(lb._gpu_name("Intel Corporation", "Alder Lake-P GT2 [Iris Xe Graphics]"),
+                         "Intel Iris Xe Graphics")
+
+    def test_about_before_install(self):
+        os.remove(os.path.join(self.state, "macos-version"))
+        os.remove(os.path.join(self.state, "downloaded-version"))
+        os.remove(os.path.join(self.tmp, "vm-profile"))
+        a = lb.Backend().about()
+        self.assertEqual(a.macos, "Not installed yet")
+        self.assertEqual(a.vm_cores, 0)
 
 
 class TestPowerAndStatus(FakeMachine):

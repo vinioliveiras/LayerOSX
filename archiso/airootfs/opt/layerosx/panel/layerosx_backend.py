@@ -22,6 +22,7 @@ CLI (handy for debugging and for the future helper):
     layerosx_backend.py wifi            JSON list of nearby networks
     layerosx_backend.py usb             JSON list of USB devices
     layerosx_backend.py drives          JSON list of drives diagnostics can be saved to
+    layerosx_backend.py about           JSON: this machine, the Mac, versions, credits
 """
 import json
 import os
@@ -94,6 +95,45 @@ class LogTarget:
         return ""
 
 
+# Credits shown in LayerOSX Settings > About. Edit here.
+CREATOR = "Vini"
+CREATOR_LINK = "github.com/vinioliveiras/LayerOSX"
+THANKS = [
+    ("Reims-vGPU", "accelerated macOS graphics in QEMU"),
+    ("qemus/qemu-macos", "the QEMU build LayerOSX ships"),
+    ("OSX-KVM (kholia)", "OpenCore image and macOS recovery tooling"),
+    ("OpenCore", "the bootloader that starts macOS"),
+    ("AMD_Vanilla (AMD-OSX)", "kernel patches for AMD processors"),
+    ("Arch Linux", "the system underneath"),
+]
+
+MACOS_NAMES = {"high-sierra": "macOS High Sierra", "mojave": "macOS Mojave", "catalina": "macOS Catalina",
+               "big-sur": "macOS Big Sur", "monterey": "macOS Monterey", "ventura": "macOS Ventura",
+               "sonoma": "macOS Sonoma", "sequoia": "macOS Sequoia", "tahoe": "macOS Tahoe"}
+
+
+@dataclass
+class About:
+    layerosx_version: str
+    built: str
+    mode: str
+    machine: str          # vendor + model from DMI
+    cpu: str
+    cpu_threads: int
+    memory_gb: float
+    gpus: List[str]
+    storage: str          # system disk model + size
+    kernel: str
+    macos: str            # "macOS Ventura 13.5 (22G120)"
+    vm_cpu: str
+    vm_cores: int
+    vm_ram_gb: float
+    vm_graphics: str
+    creator: str
+    creator_link: str
+    thanks: List[Tuple[str, str]]
+
+
 @dataclass
 class Status:
     mode: str
@@ -131,6 +171,9 @@ class Backend:
         self.usb_sysfs = _env("LAYEROSX_USB_SYSFS", "/sys/bus/usb/devices")
         self.power_supply = _env("LAYEROSX_POWER_SUPPLY", "/sys/class/power_supply")
         self.usb_file = os.path.join(self.state_dir, "usb-passthrough")
+        self.proc = _env("LAYEROSX_PROC", "/proc")
+        self.dmi = _env("LAYEROSX_DMI", "/sys/class/dmi/id")
+        self.vm_profile = _env("LAYEROSX_VM_PROFILE", "/tmp/layerosx-vm-profile")
         self.dry_run = _env("LAYEROSX_DRY_RUN", "0") == "1"
         self.dry_log: List[str] = []
 
@@ -487,6 +530,68 @@ class Backend:
                      os.path.expanduser("~/mac-vm.log")])
         return True, ""
 
+    # ------------------------------------------------------------------ about
+    def about(self) -> About:
+        """The real machine, the Mac it runs and the credits (read-only)."""
+        kv = lambda text: dict(l.split("=", 1) for l in text.splitlines() if "=" in l)  # noqa: E731
+        ver = kv(_read(os.path.join(self.etc_dir, "version")))
+        prof = kv(_read(self.vm_profile))
+
+        vendor = _read(os.path.join(self.dmi, "sys_vendor"))
+        product = _read(os.path.join(self.dmi, "product_name"))
+        family = _read(os.path.join(self.dmi, "product_family"))
+        machine = _machine_name(vendor, family, product)
+
+        cpuinfo = _read(os.path.join(self.proc, "cpuinfo"))
+        m = re.search(r"^model name\s*:\s*(.+)$", cpuinfo, re.M)
+        cpu = re.sub(r"\s+", " ", m.group(1)).strip() if m else "Unknown"
+        threads = len(re.findall(r"^processor\s*:", cpuinfo, re.M)) or (os.cpu_count() or 0)
+        m = re.search(r"^MemTotal:\s*(\d+) kB", _read(os.path.join(self.proc, "meminfo")), re.M)
+        mem = round(int(m.group(1)) / 1024 / 1024, 1) if m else 0.0
+
+        gpus = []
+        rc, out = self._run(["lspci", "-mm"], changes=False, timeout=10)
+        for line in out.splitlines() if rc == 0 else []:
+            f = re.findall(r'"([^"]*)"', line)
+            if len(f) >= 3 and ("VGA" in f[0] or "3D" in f[0] or "Display" in f[0]):
+                gpus.append(_gpu_name(f[1], f[2]))
+
+        storage = ""
+        rc, out = self._run(["findmnt", "-nro", "SOURCE", "/"], changes=False, timeout=5)
+        root = out.strip().split("[")[0] if rc == 0 else ""
+        if root:
+            rc, out = self._run(["lsblk", "-ndo", "PKNAME", root], changes=False, timeout=5)
+            disk = "/dev/" + out.strip() if rc == 0 and out.strip() else root
+            rc, out = self._run(["lsblk", "-ndbo", "MODEL,SIZE", disk], changes=False, timeout=5)
+            if rc == 0 and out.strip():
+                parts = out.strip().rsplit(None, 1)
+                model = parts[0].strip() if len(parts) == 2 else ""
+                size = int(parts[-1]) if parts[-1].isdigit() else 0
+                storage = f"{model} · {size / 1e9:.0f} GB".strip(" ·") if size else model
+
+        short = _read(os.path.join(self.state_dir, "macos-version")) or prof.get("macos", "")
+        dl = _read(os.path.join(self.state_dir, "downloaded-version"))
+        dl_ver, _, dl_build = dl.partition("|")
+        macos = MACOS_NAMES.get(short, "macOS")
+        if dl_ver and dl_ver != "1.0":   # 1.0 = the recovery image's own version, not macOS's
+            macos += f" {dl_ver}"
+        if dl_build:
+            macos += f" ({dl_build})"
+        if not short and not dl:
+            macos = "Not installed yet"
+
+        gfx_names = {"reims-vgpu-pci": "Reims (accelerated)", "reims": "Reims (accelerated)",
+                     "vmware-svga": "VMware", "vmware": "VMware", "std-vga": "Standard VGA", "std": "Standard VGA"}
+        gfx = prof.get("gfx") or self.setting("gfx")[0]
+        return About(
+            layerosx_version=ver.get("version", "development"), built=ver.get("built", ""),
+            mode=ver.get("mode", self.mode), machine=machine, cpu=cpu, cpu_threads=threads,
+            memory_gb=mem, gpus=gpus, storage=storage, kernel=os.uname().release, macos=macos,
+            vm_cpu=prof.get("cpu_model", ""), vm_cores=_int(prof.get("cores", "0")),
+            vm_ram_gb=round(_int(prof.get("ram_mb", "0")) / 1024, 1),
+            vm_graphics=gfx_names.get(gfx, gfx), creator=CREATOR, creator_link=CREATOR_LINK,
+            thanks=list(THANKS))
+
     # ----------------------------------------------------------------- status
     def status(self) -> Status:
         gfx, gfx_saved = self.setting("gfx")
@@ -497,6 +602,37 @@ class Backend:
         return Status(self.mode, self.terminal_policy, gfx, gfx_saved,
                       verbose == "on", verbose_saved, audio == "on", audio_saved,
                       self.vm_running(), ssid, sig, wired, bat, bat_status, self.brightness())
+
+
+_JUNK_DMI = ("to be filled by o.e.m.", "default string", "system product name", "not applicable", "")
+
+
+def _machine_name(vendor: str, family: str, product: str) -> str:
+    """'ASUSTeK COMPUTER INC.' + 'ASUS TUF Gaming A15 FA507NV_FA507NV' ->
+    'ASUS TUF Gaming A15 FA507NV' (drops a vendor the product already names,
+    collapses the 'X_X' duplicate some firmwares report)."""
+    vendor, family, product = (x.strip() for x in (vendor, family, product))
+    if product.lower() in _JUNK_DMI:
+        product = ""
+    product = re.sub(r"\b(\w+)_\1\b", r"\1", product)
+    if family and family.lower() not in _JUNK_DMI and family not in product:
+        product = f"{family} {product}".strip()
+    first = vendor.split()[0].lower().rstrip(",.") if vendor else ""
+    brand = {"asustek": "asus", "hewlett-packard": "hp", "micro-star": "msi"}.get(first, first)
+    if product and brand and product.lower().startswith(brand):
+        return product
+    return " ".join(x for x in (vendor if vendor.lower() not in _JUNK_DMI else "", product) if x) or "Unknown"
+
+
+def _gpu_name(vendor: str, device: str) -> str:
+    """'NVIDIA Corporation' + 'AD107M [GeForce RTX 4060 Max-Q / Mobile]' ->
+    'NVIDIA GeForce RTX 4060 Max-Q / Mobile'; AMD/ATI -> 'AMD Radeon 680M'."""
+    v = vendor.lower()
+    brand = "NVIDIA" if "nvidia" in v else "AMD" if ("advanced micro" in v or re.search(r"\bati\b", v)) else \
+        "Intel" if "intel" in v else re.sub(r"\s*(Corporation|Inc\.?|Co\.?,? Ltd\.?)\s*", " ", vendor).strip()
+    m = re.search(r"\[([^\]]+)\]", device)
+    name = m.group(1) if m else device
+    return name if name.lower().startswith(brand.lower()) else f"{brand} {name}"
 
 
 def _split_nmcli(line: str) -> List[str]:
@@ -531,12 +667,14 @@ def main(argv: List[str]) -> int:
         print(json.dumps(asdict(b.status()), indent=2))
     elif what == "wifi":
         print(json.dumps([asdict(n) for n in b.wifi_scan()], indent=2))
+    elif what == "about":
+        print(json.dumps(asdict(b.about()), indent=2))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about]", file=sys.stderr)
         return 2
     return 0
 

@@ -2952,8 +2952,9 @@ theme by default (`LAYEROSX_PANEL_THEME=dark` for dark).
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
 | Mac | Running/stopped, "Show startup log" switch, **Restart Mac…** (the black-screen rescue) |
-| General | Restart / Shut Down the computer, **Save diagnostics…** (asks which drive), Terminal, About (build mode, terminal policy, shortcuts) |
+| General | Restart / Shut Down the computer, **Save diagnostics…** (asks which drive), Terminal |
 | Terminal | Open the maintenance terminal (password per `LAYEROSX_TERMINAL`), useful commands; hidden when the build has no terminal |
+| About | "About This Mac"-style: LayerOSX version/build date/mode; **This Computer** (model, processor + threads, memory, graphics, storage, Linux kernel — read live from DMI, /proc, lspci, lsblk); **The Mac** (macOS version + build, the CPU model/cores, RAM and graphics the VM was given); **Credits** (creator) and **Built With** (the open-source projects LayerOSX builds on); shortcuts |
 
 A banner ("Restart the Mac to apply your changes" + Restart Mac) appears after
 changing graphics, sound or the startup log while the Mac runs. Status refreshes
@@ -3024,3 +3025,22 @@ theme was installed (a macOS-look theme in `~/.config/gtk-4.0` overrides
 button styles at USER priority). The panel's CSS now loads above USER priority
 and pins every button state; the dots also no longer take keyboard focus.
 Checked by rendering with a deliberately hostile user theme.
+
+### About section: real machine details + credits
+
+`Backend.about()` (`layerosx_backend.py about` prints it as JSON) reads, live:
+the machine model from DMI (cleaned up: "ASUSTeK COMPUTER INC." +
+"FA507NV_FA507NV" becomes "ASUS TUF Gaming A15 FA507NV"), the CPU model and
+thread count from `/proc/cpuinfo`, memory from `/proc/meminfo`, GPUs from
+`lspci -mm` (shown as "NVIDIA GeForce RTX 4060 …", "AMD Radeon 680M"), the
+system disk model/size via `findmnt`/`lsblk`, and the kernel. For the Mac: the
+macOS name + version + build (`/var/lib/layerosx/macos-version` and
+`downloaded-version`) and what the VM was given — `mac-vm-launch.sh` now
+writes `/tmp/layerosx-vm-profile` (cpu_model, cores, ram_mb, gfx, macos) on
+every launch. The LayerOSX version comes from `/etc/layerosx/version`, which
+`build.sh` now bakes (`git describe --always --dirty`, build date, mode;
+gitignored).
+
+Credits live at the top of `layerosx_backend.py` (`CREATOR`, `CREATOR_LINK`,
+`THANKS`) so they're edited in one place. Tests: 20 backend tests (About with a
+fake ASUS/Ryzen/RTX machine, before-install state, name clean-up rules).

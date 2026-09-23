@@ -460,6 +460,9 @@ configure_toggles() {
     fi
 
     echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
+    # Same profile, machine-readable, for LayerOSX Settings > About.
+    printf 'cpu_model=%s\ncores=%s\nram_mb=%s\ngfx=%s\nmacos=%s\n' \
+        "$CPU_MODEL" "$VM_CORES" "$VM_RAM_MB" "$GFX" "${MACOS_SHORTNAME:-}" > /tmp/layerosx-vm-profile 2>/dev/null || true
     echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the Ctrl+Alt+T terminal)."
 }
 

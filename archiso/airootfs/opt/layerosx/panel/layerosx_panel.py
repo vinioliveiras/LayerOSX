@@ -43,6 +43,7 @@ SECTIONS = [
     ("mac", "Mac", "computer-symbolic", "graphite"),
     ("general", "General", "emblem-system-symbolic", "gray"),
     ("terminal", "Terminal", "utilities-terminal-symbolic", "black"),
+    ("about", "About", "help-about-symbolic", "gray"),
 ]
 
 CSS = b"""
@@ -63,6 +64,11 @@ CSS = b"""
 .sidebar-status .title { font-weight: 700; }
 .sidebar-status .sub { opacity: .65; font-size: .9em; }
 .pane-title { font-weight: 800; font-size: 1.35em; }
+.about-name { font-weight: 800; font-size: 2em; }
+.about-version { opacity: .6; }
+.about-hero { margin: 8px 0 4px 0; }
+.about-icon { border-radius: 22px; padding: 18px; }
+.about-credit { font-weight: 700; }
 /* macOS-style window controls ("traffic lights"). Every state is spelled out
    and the provider is loaded above USER priority, so a user GTK theme (e.g. a
    macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
@@ -679,13 +685,6 @@ class Settings(Adw.ApplicationWindow):
             t.add_suffix(tb)
             m.add(t)
         page.add(m)
-        a = Adw.PreferencesGroup(title="About")
-        for title, value in (("Build", self.b.mode.capitalize()),
-                             ("Terminal", {"open": "Open", "password": "Password", "off": "Disabled"}[self.b.terminal_policy]),
-                             ("Shortcuts", "Ctrl+Alt+W settings · Ctrl+Alt+T terminal · Ctrl+Alt+U USB")):
-            r = Adw.ActionRow(title=title, subtitle=value, subtitle_selectable=True)
-            a.add(r)
-        page.add(a)
         return self._pane("General", page)
 
     # ------------------------------------------------------------- Terminal
@@ -719,6 +718,83 @@ class Settings(Adw.ApplicationWindow):
         k.add(Adw.ActionRow(title="Shortcut", subtitle="Ctrl+Alt+T opens it from anywhere"))
         page.add(k)
         return self._pane("Terminal", page)
+
+    # ---------------------------------------------------------------- About
+    def _page_about(self):
+        page = Adw.PreferencesPage()
+        self.about_page = page
+        hero = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, halign=Gtk.Align.CENTER,
+                       css_classes=["about-hero"])
+        icon = Gtk.Image.new_from_icon_name("computer-symbolic")
+        icon.set_pixel_size(64)
+        ib = Gtk.Box(css_classes=["badge", "badge-graphite", "about-icon"], halign=Gtk.Align.CENTER)
+        ib.append(icon)
+        hero.append(ib)
+        hero.append(Gtk.Label(label="LayerOSX", css_classes=["about-name"]))
+        self.about_version = Gtk.Label(label="", css_classes=["about-version"])
+        hero.append(self.about_version)
+        hg = Adw.PreferencesGroup()
+        hg.add(hero)
+        page.add(hg)
+        self.about_groups = []
+        run_async(self.b.about, self._show_about)
+        return self._pane("About", page)
+
+    def _show_about(self, a):
+        if isinstance(a, Exception):
+            return False
+        for g in self.about_groups:
+            self.about_page.remove(g)
+        self.about_groups = []
+        mode = {"release": "Release", "debug": "Debug"}.get(a.mode, a.mode)
+        self.about_version.set_label(
+            f"Version {a.layerosx_version}" + (f" · built {a.built}" if a.built else "") + f" · {mode}")
+
+        def group(title, rows, description=None):
+            g = Adw.PreferencesGroup(title=title, description=description)
+            for key, value in rows:
+                if not value:
+                    continue
+                r = Adw.ActionRow(title=esc(key))
+                long = max(len(x) for x in value.split("\n")) > 34
+                v = Gtk.Label(label=value, xalign=1, wrap=long, selectable=True,
+                              css_classes=["dim-label"], justify=Gtk.Justification.RIGHT)
+                if long:
+                    v.set_max_width_chars(40)
+                r.add_suffix(v)
+                g.add(r)
+            self.about_page.add(g)
+            self.about_groups.append(g)
+            return g
+
+        group("This Computer", [
+            ("Model", a.machine),
+            ("Processor", f"{a.cpu} · {a.cpu_threads} threads"),
+            ("Memory", f"{a.memory_gb:g} GB"),
+            ("Graphics", "\n".join(a.gpus)),
+            ("Storage", a.storage),
+            ("Linux kernel", a.kernel),
+        ])
+        vm_cpu = f"{a.vm_cpu} · {a.vm_cores} cores" if a.vm_cpu else ""
+        group("The Mac", [
+            ("macOS", a.macos),
+            ("Processor", vm_cpu),
+            ("Memory", f"{a.vm_ram_gb:g} GB" if a.vm_ram_gb else ""),
+            ("Graphics", a.vm_graphics),
+        ], description=None if a.vm_cpu else "Details appear after the Mac has started once.")
+        cg = Adw.PreferencesGroup(title="Credits")
+        who = Adw.ActionRow(title=f"Created by {esc(a.creator)}", subtitle=esc(a.creator_link),
+                            subtitle_selectable=True)
+        who.add_css_class("about-credit")
+        who.add_prefix(Gtk.Image.new_from_icon_name("emblem-favorite-symbolic"))
+        cg.add(who)
+        self.about_page.add(cg)
+        self.about_groups.append(cg)
+        tg = group("Built With", a.thanks,
+                   description="LayerOSX stands on these open-source projects — thank you.")
+        sg = group("Shortcuts", [("Ctrl+Alt+W", "LayerOSX Settings"), ("Ctrl+Alt+T", "Terminal"),
+                                 ("Ctrl+Alt+U", "USB devices")])
+        return False
 
     # --------------------------------------------------------- status sync
     def refresh(self):

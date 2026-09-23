@@ -47,6 +47,10 @@ echo "==================================================================="
 # system rsynced from it) both carry it. Regenerated every build, gitignored.
 mkdir -p airootfs/etc/layerosx
 printf '%s\n' "$MODE" > airootfs/etc/layerosx/mode
+# Version shown in LayerOSX Settings > About: git commit (+ "-dirty" when built
+# from uncommitted changes) and build date. Regenerated every build, gitignored.
+_ver="$(git -C .. describe --always --dirty 2>/dev/null || echo unknown)"
+printf 'version=%s\nbuilt=%s\nmode=%s\n' "$_ver" "$(date +%Y-%m-%d)" "$MODE" > airootfs/etc/layerosx/version
 
 # Maintenance terminal (Ctrl+Alt+T) policy, independent of the mode so any build can
 # ship with or without it -- just set LAYEROSX_TERMINAL:
