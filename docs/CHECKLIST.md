@@ -991,6 +991,9 @@ allow-list and anything not coming from the guest.)
 
 ### 5.4c. Laptop integration (brightness, battery, lid)
 
+- **Brightness memory:** set a low brightness (keys or Settings › Displays),
+  reboot → it comes back at that level a couple of seconds after the session
+  starts (`cat /var/lib/layerosx/brightness` shows the saved value).
 - **Brightness:** with the VM fullscreen, Fn+brightness keys change the panel
   brightness (both build modes) and never go fully black. If nothing happens:
   `xev` to see whether the keys arrive as `XF86MonBrightnessUp/Down`, and

@@ -3049,3 +3049,17 @@ gitignored).
 Credits live at the top of `layerosx_backend.py` (`CREATOR`, `CREATOR_LINK`,
 `THANKS`) so they're edited in one place. Tests: 20 backend tests (About with a
 fake ASUS/Ryzen/RTX machine, before-install state, name clean-up rules).
+
+### Brightness is remembered across reboots
+
+`kiosk/lib/brightness.sh` is now the one place that changes the panel
+backlight: the brightness keys (`up`/`down`) and LayerOSX Settings › Displays
+(`set <n>`, via `Backend.set_brightness`) go through it, and every change
+saves the resulting percentage to `/var/lib/layerosx/brightness`. The kiosk
+`.xinitrc` runs `brightness.sh restore` at session start (after a 2 s wait for
+the GPU driver) to put the last value back. systemd-backlight does something
+similar at boot, but on hybrid AMD+NVIDIA laptops it often misses (the
+backlight device changes name between boots, or the driver resets it later);
+this runs inside the session, after the drivers are up. Never below 5%.
+Tests: 2 more (set/down save, restore after a firmware reset, 5% floor, bad
+input) against a fake `brightnessctl` — 23 in total.

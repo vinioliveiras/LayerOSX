@@ -142,16 +142,16 @@ if "layerosx-usb" not in content and "</keyboard>" in content:
 
 # 7b) Both modes: the laptop's brightness keys. The panel backlight belongs to
 #     the host (macOS has nothing to drive), so openbox catches the keys before
-#     the VM window does and runs brightnessctl (kiosk user is in `video`,
-#     which brightnessctl's udev rule lets write the backlight). Never below
-#     5%, so the screen can't be dimmed to black.
+#     the VM window does and runs lib/brightness.sh (brightnessctl; the kiosk
+#     user is in `video`, which brightnessctl's udev rule lets write the
+#     backlight). It remembers the value across reboots; never below 5%.
 if "layerosx-brightness" not in content and "</keyboard>" in content:
     keybind = (
         '  <keybind key="XF86MonBrightnessUp"> <!-- layerosx-brightness -->\n'
-        '    <action name="Execute"><command>brightnessctl -q set 10%+</command></action>\n'
+        '    <action name="Execute"><command>/opt/layerosx/kiosk/lib/brightness.sh up</command></action>\n'
         "  </keybind>\n"
         '  <keybind key="XF86MonBrightnessDown"> <!-- layerosx-brightness -->\n'
-        '    <action name="Execute"><command>brightnessctl -q --min-value=5% set 10%-</command></action>\n'
+        '    <action name="Execute"><command>/opt/layerosx/kiosk/lib/brightness.sh down</command></action>\n'
         "  </keybind>\n"
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)

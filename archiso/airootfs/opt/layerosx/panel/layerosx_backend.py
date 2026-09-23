@@ -476,8 +476,9 @@ class Backend:
         return int(m.group(1)) if m else None
 
     def set_brightness(self, percent: int) -> Tuple[bool, str]:
+        """Set and remember (lib/brightness.sh saves it for the next boot)."""
         percent = max(5, min(100, int(percent)))   # never fully black
-        rc, out = self._run(["brightnessctl", "-q", "-c", "backlight", "set", f"{percent}%"])
+        rc, out = self._run([os.path.join(self.lib, "brightness.sh"), "set", str(percent)])
         return rc == 0, out.strip()
 
     # ------------------------------------------------------------ maintenance

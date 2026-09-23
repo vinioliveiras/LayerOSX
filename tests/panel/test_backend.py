@@ -268,6 +268,51 @@ class TestSaveLogs(FakeMachine):
         self.assertIn("/dev/sda1", b.dry_log[-1])
 
 
+class TestBrightnessScript(FakeMachine):
+    """kiosk/lib/brightness.sh against a fake brightnessctl (value in a file)."""
+    SCRIPT = os.path.join(os.path.dirname(os.path.dirname(HERE)), "archiso", "airootfs",
+                          "opt", "layerosx", "kiosk", "lib", "brightness.sh")
+
+    def setUp(self):
+        super().setUp()
+        self.val = os.path.join(self.tmp, "bl")
+        write(self.val, "40\n")
+        write(os.path.join(self.bin, "brightnessctl"), textwrap.dedent(f"""\
+            #!/bin/sh
+            v=$(cat {self.val})
+            for a in "$@"; do case "$a" in
+              10%+) v=$((v+10)) ;; 10%-) v=$((v-10)) ;; *%) case "$a" in --*) ;; *) v=${{a%\%}} ;; esac ;;
+            esac; done
+            [ "$v" -gt 100 ] && v=100; [ "$v" -lt 5 ] && v=5
+            echo $v > {self.val}
+            case "$*" in *-m*) echo "amdgpu_bl1,backlight,1,$v%,255" ;; esac
+            """), stat.S_IRWXU)
+        os.environ["LAYEROSX_BRIGHTNESS_DELAY"] = "0"
+
+    def sh(self, *args):
+        import subprocess
+        return subprocess.run(["bash", self.SCRIPT, *args], capture_output=True, text=True).stdout.strip()
+
+    def saved(self):
+        with open(os.path.join(self.state, "brightness")) as f:
+            return f.read().strip()
+
+    def test_set_saves_and_restore_reapplies(self):
+        self.sh("set", "70")
+        self.assertEqual(self.saved(), "70")
+        self.sh("down")
+        self.assertEqual(self.saved(), "60")
+        write(self.val, "100\n")            # e.g. the firmware reset it at boot
+        self.sh("restore")
+        self.assertEqual(self.sh("get"), "60")
+
+    def test_never_black_and_bad_input(self):
+        self.sh("set", "1")
+        self.assertEqual(self.saved(), "5")
+        self.assertEqual(self.sh("set", "abc"), "")
+        self.assertEqual(self.saved(), "5")
+
+
 class TestTheme(FakeMachine):
     def test_theme_default_save_env(self):
         os.environ.pop("LAYEROSX_PANEL_THEME", None)
