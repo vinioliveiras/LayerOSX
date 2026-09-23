@@ -927,6 +927,13 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   handoff is the exact point that used to hang; getting past it is the signal
   the AMD patches worked. If it still hangs there, capture the serial log
   (`~/mac-vm-serial.log`) — the last lines say how far XNU got.
+- **"no linesize" (fixed):** that serial line was XNU's `panic("no linesize")`
+  in `cpuid_set_cache_info()`, caused by the AMD_Vanilla patch that rewrites
+  CPUID leaf 4 to `0x8000001D` on an Intel-masked guest. After rebuilding,
+  `patch-opencore-amd.sh` must print `21 active; cache_info leaf-0x8000001D
+  rewrite disabled`. On boot, the verbose serial log should get PAST
+  `HANDOFF TO XNU` with no `no linesize` line. If a different panic appears,
+  it's the next blocker — capture `~/mac-vm-serial.log`.
 - The Intel path must be unchanged: on an Intel host the profile line should
   show `GenuineIntel host` and a power-of-two smp (up to 8), booting the
   untouched base `OpenCore.qcow2`. AMD patches must never reach an Intel guest.

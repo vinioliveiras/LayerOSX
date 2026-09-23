@@ -28,6 +28,21 @@
 # mac-vm-launch.sh pins the AMD guest to exactly that many cores. Keep the two
 # in sync: change AMD_CORES here => change the AMD pin there.
 #
+# CACHE-INFO PATCH DISABLED (the "no linesize" panic): one AMD_Vanilla patch,
+# "_cpuid_set_cache_info | Set CPUID proper instead of 4", rewrites XNU's
+# `mov eax, 4` (Intel's deterministic-cache leaf) to `mov eax, 0x8000001D`
+# (AMD's cache-topology leaf). That is right for a guest that SEES an AMD CPU
+# (`-cpu host`), but our launcher masks the guest as vendor=GenuineIntel
+# Haswell-noTSX, whose max extended leaf (xlevel) is 0x80000008. For an
+# out-of-range leaf, QEMU/KVM follow Intel semantics and return the highest
+# BASIC leaf instead (0xD, XSAVE), whose fields never decode as an L1D/L2
+# cache -> every linesize stays 0 -> xnu osfmk/i386/cpuid.c
+# cpuid_set_cache_info() does `panic("no linesize")`, printed as
+# "no linesize @cpuid.c:NNN" before any console exists. The masked Intel CPU
+# already answers leaf 4 correctly (QEMU encodes it for Intel vendors), so we
+# keep that patch in the list but set Enabled=False; the rest keep upstream's
+# own Enabled flags (21 of the 25 end up active).
+#
 # ProvideCurrentCpuInfo=True is set as well: on AMD this makes OpenCore feed
 # XNU a sane CPU topology/frequency (AMD_Vanilla's own sample config enables
 # it), which the core-count patches rely on.
@@ -100,6 +115,14 @@ if not already:
     existing.extend(amd)
     kern["Patch"] = existing
 
+# Disable the leaf-4 -> 0x8000001D cache-info rewrite (see the header: with a
+# GenuineIntel-masked guest it zeroes every cache linesize -> "no linesize"
+# panic). Applied to the whole list so an input that already carried the
+# AMD_Vanilla patches gets fixed too.
+for p in kern["Patch"]:
+    if isinstance(p, dict) and "_cpuid_set_cache_info" in (p.get("Comment", "") or ""):
+        p["Enabled"] = False
+
 kern.setdefault("Quirks", {})["ProvideCurrentCpuInfo"] = True
 
 plistlib.dump(cfg, open(cfg_path, "wb"))
@@ -112,13 +135,13 @@ case "$rc" in
         mcopy -o -n -i "$_esp" "$_plist" ::/EFI/OC/config.plist
         qemu-img convert -O qcow2 "$_raw" "$OUT"
         chmod 644 "$OUT"
-        echo "patch-opencore-amd: injected 25 AMD_Vanilla patches (cores=$AMD_CORES, ProvideCurrentCpuInfo=True) -> $OUT"
+        echo "patch-opencore-amd: injected 25 AMD_Vanilla patches (21 active; cache_info leaf-0x8000001D rewrite disabled; cores=$AMD_CORES, ProvideCurrentCpuInfo=True) -> $OUT"
         ;;
     3)
         mcopy -o -n -i "$_esp" "$_plist" ::/EFI/OC/config.plist
         qemu-img convert -O qcow2 "$_raw" "$OUT"
         chmod 644 "$OUT"
-        echo "patch-opencore-amd: input already carries AMD_Vanilla patches -- copied to $OUT (quirk re-asserted)."
+        echo "patch-opencore-amd: input already carries AMD_Vanilla patches -- copied to $OUT (quirk re-asserted, cache_info rewrite disabled)."
         ;;
     *) echo "patch-opencore-amd: failed to inject patches into $IN's config.plist -- not writing $OUT." >&2 ;;
 esac

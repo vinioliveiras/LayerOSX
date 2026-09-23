@@ -42,7 +42,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | command | what it does |
 |---------|--------------|
 | `commands [name]` | List every kiosk command (one line + short description each, grouped). `commands <name>` prints the full description + usage of a single command. The discoverable index, so you don't have to remember them. |
-| `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer, the "no linesize" A/B test). |
+| `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer; was the "no linesize" A/B test, which turned out to be a CPUID cache panic — see "ROOT CAUSE of \"no linesize\""). |
 | `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log (in a **debug**-mode ISO also OpenCore's own logging + serial kernel log); `off` is a clean Apple-logo boot. Default follows the build mode: **off** in release, **on** in debug. |
 | `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Default follows the build mode: **on** in release, **off** in debug; safe either way — it skips itself if the build has no audio backend. |
 | `relaunch` | Restart just the macOS VM to apply a `gpu`/`verbose`/`audio` change — kills QEMU only (not Xorg), so no reboot and no screen flicker. |
@@ -2575,3 +2575,53 @@ This is diagnostic scaffolding (tracked for removal in CLAUDE.md). With it,
 `verbose on` + rebuild + booting macOS finally shows the `OCAK` kernel-patch
 results in `maclog`, so we can see whether the AMD patches apply and where the
 kernel actually dies.
+
+## ROOT CAUSE of "no linesize": a CPUID cache panic, not the framebuffer
+
+Every framebuffer theory above was wrong. `no linesize @%s:%d` is a **kernel
+panic string** from XNU's `osfmk/i386/cpuid.c`, function
+`cpuid_set_cache_info()`:
+
+```c
+if (linesizes[L2U])       info_p->cache_linesize = linesizes[L2U];
+else if (linesizes[L1D])  info_p->cache_linesize = linesizes[L1D];
+else                      panic("no linesize");
+```
+
+"linesize" is the **CPU cache line size**, not the framebuffer stride. The
+panic fires during early CPU setup, before any console (video or serial kprintf)
+exists, which is why nothing followed it on serial and why it was identical on
+vmware, reims and std VGA — the display device was never involved.
+
+Why the kernel found no cache line size: the AMD_Vanilla patch
+`algrey | _cpuid_set_cache_info | Set CPUID proper instead of 4` rewrites
+`mov eax, 4` (Intel's deterministic-cache leaf) into `mov eax, 0x8000001D`
+(AMD's cache-topology leaf). That's correct for a guest that *sees* an AMD CPU
+(`-cpu host`). But our launcher masks the guest as `Haswell-noTSX,vendor=GenuineIntel`,
+whose maximum extended leaf (`xlevel`) is `0x80000008`. For an out-of-range
+leaf, QEMU (target/i386/cpu.c, `cpu_x86_cpuid`) follows Intel semantics and
+returns the highest **basic** leaf instead — leaf `0xD` (XSAVE). Its fields
+never decode as an L1D or L2 cache, so every `linesizes[]` entry stays 0 and XNU
+panics. The patch reported `Success` in the OCAK log precisely because it
+applied — applying it was the bug.
+
+This also rules out the "our QEMU fork broke the framebuffer" hypothesis: stock
+QEMU has the same leaf-clamping behaviour, so it would panic identically.
+
+### Fix
+
+`patch-opencore-amd.sh` now keeps that one patch in `Kernel > Patch` but sets
+`Enabled = False` (also on inputs that already carry AMD_Vanilla). The masked
+Intel CPU answers leaf 4 correctly on its own (QEMU encodes it for Intel
+vendors), so XNU gets real cache geometry. The other AMD_Vanilla patches keep
+upstream's own Enabled flags (21 of 25 active). Only the AMD images change; the
+Intel base image never carried these patches.
+
+The earlier framebuffer changes (`Resolution=1920x1080`, `DirectGopRendering`,
+`gpu std`) are harmless and stay for now; they are no longer believed to be
+needed and can be revisited once macOS boots.
+
+Rejected alternative: raising the guest's `xlevel` to `0x8000001D` (+`topoext`)
+so the AMD leaf answers. It works in principle, but mixes AMD cache leaves into
+an Intel-masked CPU; disabling the one patch is smaller and matches what
+Intel-masked macOS-on-KVM setups (OSX-KVM, dockur) run.
