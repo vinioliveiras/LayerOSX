@@ -18,6 +18,10 @@ See the README's **Build** section for the full setup (native
 Arch/CachyOS, or Windows via WSL2 — both documented there with exact
 commands, so this file doesn't drift out of sync with it).
 
+- Every script must be executable in git: `git ls-files -s | grep -E
+  '\.(sh|py)$' | grep ^100644` should print nothing (commits from Windows
+  with `core.filemode=false` drop the bit — `./rebuild.sh` then fails).
+
 This step alone will already show if anything is missing from
 `packages.x86_64` (names change, versions leave the repos, etc.).
 

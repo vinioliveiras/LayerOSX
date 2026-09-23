@@ -304,6 +304,13 @@ has been fixed going forward, but if you ever hit it again:
 find . -name '*.sh' -exec chmod +x {} \;
 ```
 
+(It happened again with `rebuild.sh`, `validate-qemu-args.sh`,
+`kiosk/lib/collect-diag.sh` and `kiosk/qmp-watch.py` — all four were stored as
+`100644`; fish refused `./rebuild.sh` with "exists but is not an executable
+file". They're now `100755` in the index. Check with
+`git ls-files -s | grep -E '\.(sh|py)$' | grep ^100644` — it should print
+nothing.)
+
 If `prepare-qemu-macos.sh` "succeeds" (no error, all 26 Docker steps
 print `Removed intermediate container`) but `build.sh` then fails to
 find the compiled binary, it's almost certainly this: a fresh
