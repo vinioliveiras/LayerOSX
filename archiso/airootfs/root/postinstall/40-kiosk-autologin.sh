@@ -34,6 +34,9 @@ cat > "/home/${MAC_USER}/.xinitrc" <<'EOF'
 openbox &
 sleep 1
 /opt/layerosx/kiosk/lib/force-max-refresh.sh &
+# Laptop battery guard (warnings + clean macOS shutdown at critical); exits
+# at once on machines without a battery.
+/opt/layerosx/kiosk/lib/battery-watch.sh &
 exec /opt/layerosx/kiosk/mac-vm-launch.sh
 EOF
 chmod +x "/home/${MAC_USER}/.xinitrc"

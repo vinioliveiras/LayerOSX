@@ -133,6 +133,7 @@ gparted
 # opt-in VM audio (the `audio on` toggle attaches a usb-audio device; QEMU's
 # alsa backend needs libasound at runtime, alsa-utils to unmute, and
 # sof-firmware so modern Intel/AMD sound cards are detected by the host at all)
+brightnessctl
 alsa-lib
 alsa-utils
 sof-firmware

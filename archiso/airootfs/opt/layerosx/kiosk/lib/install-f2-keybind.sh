@@ -22,8 +22,8 @@
 #   debug   -> re-add the F2 peek-terminal keybind (the developer's escape
 #              hatch to the live log). VT switching is left working too (that's
 #              an X-server option handled in build.sh, not here).
-#   release -> no F2: a fully locked appliance. The only shortcut kept (both
-#              modes) is Ctrl+Alt+W, which opens the Wi-Fi picker dialog.
+#   release -> no F2: a fully locked appliance. Kept in BOTH modes: Ctrl+Alt+W
+#              (Wi-Fi picker dialog) and the brightness keys (brightnessctl).
 #
 # Safe to call every boot: each edit is independently idempotent.
 set -uo pipefail
@@ -114,6 +114,22 @@ if "layerosx-wifi" not in content and "</keyboard>" in content:
         '    <action name="Execute">\n'
         "      <command>/opt/layerosx/kiosk/lib/wifi-setup.sh --pick</command>\n"
         "    </action>\n"
+        "  </keybind>\n"
+    )
+    content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
+# 7b) Both modes: the laptop's brightness keys. The panel backlight belongs to
+#     the host (macOS has nothing to drive), so openbox catches the keys before
+#     the VM window does and runs brightnessctl (kiosk user is in `video`,
+#     which brightnessctl's udev rule lets write the backlight). Never below
+#     5%, so the screen can't be dimmed to black.
+if "layerosx-brightness" not in content and "</keyboard>" in content:
+    keybind = (
+        '  <keybind key="XF86MonBrightnessUp"> <!-- layerosx-brightness -->\n'
+        '    <action name="Execute"><command>brightnessctl -q set 10%+</command></action>\n'
+        "  </keybind>\n"
+        '  <keybind key="XF86MonBrightnessDown"> <!-- layerosx-brightness -->\n'
+        '    <action name="Execute"><command>brightnessctl -q --min-value=5% set 10%-</command></action>\n'
         "  </keybind>\n"
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)

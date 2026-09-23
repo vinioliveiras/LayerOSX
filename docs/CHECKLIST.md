@@ -989,6 +989,27 @@ allow-list and anything not coming from the guest.)
 - Release build: confirm Ctrl+Alt+W is the ONLY shortcut that does anything
   (F2 / Ctrl+Alt+Fn still do nothing).
 
+### 5.4c. Laptop integration (brightness, battery, lid)
+
+- **Brightness:** with the VM fullscreen, Fn+brightness keys change the panel
+  brightness (both build modes) and never go fully black. If nothing happens:
+  `xev` to see whether the keys arrive as `XF86MonBrightnessUp/Down`, and
+  `brightnessctl -l` to see which backlight device it picks (hybrid AMD/NVIDIA
+  laptops can expose more than one).
+- **Battery:** unplug and watch `~/battery-watch.log` (debug build terminal).
+  Quick test without draining: from a terminal, stop the running
+  battery-watch and start one against a fake battery folder
+  (`BATTERY_PATH=/tmp/fb BATTERY_WATCH_INTERVAL=2`, with `capacity`/`status`
+  files you edit) — warnings must appear ON TOP of the VM.
+- **Critical battery:** at 5% macOS must shut down by itself (note whether it
+  shuts down directly or shows a "Shut Down?" dialog — if the dialog, the
+  3% / 3-minute fallback must still power the host off without relaunching
+  the VM).
+- **Lid:** close the lid for ~30 s with macOS running, reopen: the host
+  resumes, the VM continues where it was (clock catches up), no QEMU crash in
+  `~/mac-vm.log`. Repeat with `gpu reims` (NVIDIA VRAM preserve). With an
+  external monitor connected, closing the lid must NOT suspend.
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

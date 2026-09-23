@@ -163,15 +163,24 @@ None of these block a working boot; they make it nicer.
   of actions (no arbitrary commands), authenticate the app with a per-install
   token. The in-guest app must be installed into macOS (first-run step or a
   shared folder).
-- **Host integration without the app (interim)** — each item above also needs
-  a host-side baseline so it works before/without the app: brightness keys
-  handled by the host, battery exposed to the guest (ACPI battery) or shown as
-  an overlay, lid-close/suspend behaviour tested (the VM must resume cleanly),
-  macOS "Sleep" wired to the host like Restart/Shutdown already are,
-  automatic USB passthrough (never the keyboard or the system USB), a
-  Bluetooth picker like the Wi-Fi one, a controlled host update path
-  (kernel + NVIDIA driver must move together or Reims breaks), and qcow2
-  snapshots before macOS updates (`qemu-img snapshot`).
+- **Host integration without the app (interim)** — the host-side baseline so
+  each item works before/without the menu-bar app:
+  - [x] Brightness keys handled by the host (brightnessctl, both build modes).
+  - [x] Battery guard: warnings at 20%/10%, clean macOS shutdown at 5%, forced
+        stop + host poweroff at 3% (`lib/battery-watch.sh`).
+  - [x] Lid close: host suspends, VM paused/resumed around it (systemd-sleep
+        hook); docked = ignore; NVIDIA VRAM preserved across suspend.
+  - [ ] Battery level shown *inside* macOS (ACPI battery / VirtualSMC
+        SMCBatteryManager research, or via the menu-bar app).
+  - [ ] macOS "Sleep" wired to host suspend (needs S3 re-enabled in the guest
+        + QMP SUSPEND/WAKEUP handling), like Restart/Shut Down already are.
+  - [ ] Automatic USB passthrough of hot-plugged devices (never the keyboard,
+        touchpad or the LayerOSX boot USB), plus a picker to choose devices.
+  - [ ] Bluetooth picker like the Wi-Fi one (pair mice/keyboards/headphones on
+        the host).
+  - [ ] Controlled host update path (kernel + NVIDIA driver must move together
+        or Reims breaks) — or "update = flash a new ISO".
+  - [ ] qcow2 snapshots before macOS updates (`qemu-img snapshot`).
 - **Per-install unique SMBIOS identity** — every install currently ships the
   same serial/MLB/UUID baked into OpenCore.qcow2; generate a unique one per
   install so iMessage/App Store/FaceTime don't collide across machines.
@@ -2732,3 +2741,47 @@ talking to a host-side helper (reachable from the guest at the QEMU user-net
 gateway, `10.0.2.2`) could list and join the host's networks from inside
 macOS, with a Wi-Fi-style menu. A *native* macOS Wi-Fi menu would need a
 paravirtual 802.11 driver (IO80211Family), which is far beyond scope.
+
+## Laptop integration: brightness keys, battery guard, lid close
+
+macOS can't see the laptop's panel backlight, battery or lid, so the host
+handles them (first step of the "host integration" TODO; the in-macOS UI is the
+planned menu-bar app).
+
+- **Brightness keys** — `install-f2-keybind.sh` adds openbox keybinds for
+  `XF86MonBrightnessUp/Down` in **both** build modes, running `brightnessctl`
+  (new package; the kiosk user is in `video`, which brightnessctl's udev rule
+  lets write the backlight). Never below 5%, so the panel can't go black.
+  openbox grabs the keys before the VM window, so macOS doesn't see them.
+- **Battery guard** — `lib/battery-watch.sh`, started from the kiosk user's
+  `.xinitrc` (exits at once without a `BAT*` supply). While discharging:
+  zenity warning at 20% and 10% (re-armed when charging), at **5%** it sends
+  the guest an ACPI power-button press (`system_powerdown`) so macOS can shut
+  down cleanly (its Shut Down then powers the host off via the usual
+  `qmp-watch.py` path), and at **3%** — or 3 minutes after the request with
+  macOS still up — it does a QMP `quit` (QEMU stops and flushes its disk
+  images) and drops `/tmp/layerosx-battery-poweroff`, which makes
+  `mac-vm-launch.sh` power the host off instead of relaunching. Log:
+  `~/battery-watch.log`. Caveat: how macOS reacts to the ACPI power button
+  (shut down vs. a "Shut Down?" dialog) must be checked on hardware; the 3%
+  / 3-minute fallback covers the dialog case.
+- **Lid close** — `/etc/systemd/logind.conf.d/50-layerosx-lid.conf`: lid close
+  suspends the host (on battery and on AC), and does nothing when docked to an
+  external monitor. `/usr/lib/systemd/system-sleep/layerosx-vm` pauses the VM
+  (QMP `stop`) before the host sleeps and resumes it (`cont`) after it wakes, so
+  the guest never runs across the gap. On NVIDIA hosts `10-hardware-detect.sh`
+  now sets `NVreg_PreserveVideoMemoryAllocations=1` and enables
+  `nvidia-suspend/resume/hibernate.service`, so VRAM (the Reims/Vulkan side)
+  survives resume.
+- **Second QMP monitor** — both of the above talk to QEMU through
+  `/tmp/macvm-ctl.sock`, a second `-qmp` socket, because a QMP unix socket
+  serves one client and `qmp-watch.py` holds the first one all session.
+  `lib/qmp-cmd.py` is a one-shot client with a fixed allow-list
+  (`stop`, `cont`, `system_powerdown`, `quit`).
+
+Verified off-hardware: `qmp-cmd.py` + the sleep hook against a real QEMU
+(stop → paused, cont → running, quit → QEMU exits, unknown command refused,
+no VM → exit 1), and `battery-watch.sh` against a fake sysfs battery
+(19% → warning, 8% → warning, charging → re-armed, 5% → system_powerdown,
+3% → quit + flag + poweroff). Brightness keys, the power-button behaviour in
+macOS and suspend/resume need the real laptop — see CHECKLIST 5.4c.

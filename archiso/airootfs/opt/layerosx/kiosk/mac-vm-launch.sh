@@ -20,6 +20,8 @@ STATE_DIR="/var/lib/layerosx"
 VM_DISK="$STATE_DIR/macos.qcow2"
 OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 QMP_SOCK="/tmp/macvm-qmp.sock"
+QMP_CTL_SOCK="/tmp/macvm-ctl.sock"                 # 2nd QMP monitor: lib/qmp-cmd.py (sleep hook, battery-watch)
+BATTERY_POWEROFF_FLAG="/tmp/layerosx-battery-poweroff"  # set by lib/battery-watch.sh
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 OPENCORE_DIR="/opt/layerosx/opencore"
@@ -461,7 +463,14 @@ configure_toggles() {
 
 RETRIES=0
 while true; do
-    rm -f "$QMP_SOCK"
+    rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
+    # Critical-battery shutdown in progress (lib/battery-watch.sh stopped the
+    # VM on purpose): power the host off instead of relaunching.
+    if [ -e "$BATTERY_POWEROFF_FLAG" ]; then
+        echo "Battery critical -- powering off the physical machine."
+        sudo systemctl poweroff
+        exit 0
+    fi
     configure_toggles
 
     QEMU_ARGS=(
@@ -471,6 +480,12 @@ while true; do
         -no-reboot
         -rtc base=utc
         -qmp "unix:${QMP_SOCK},server,nowait"
+        # Second, independent QMP monitor for one-shot commands (a QMP unix
+        # socket serves one client at a time and qmp-watch.py holds the first
+        # one for the whole session): the systemd-sleep hook pauses/resumes
+        # the VM around host suspend, battery-watch.sh requests a clean
+        # shutdown at critical battery. See lib/qmp-cmd.py.
+        -qmp "unix:${QMP_CTL_SOCK},server,nowait"
         # Reims requirement, not a preference: the GPU command stream is
         # decoded out of guest RAM on the host side, which only works when
         # that RAM is a shared memfd mapping. Plain `-m` (what this used to

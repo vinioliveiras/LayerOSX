@@ -1,0 +1,14 @@
+#!/bin/sh
+# systemd-sleep hook (runs as root around every suspend/hibernate -- lid
+# close, idle, menu). Pauses the macOS VM before the host sleeps and resumes it
+# after it wakes, so the guest never runs across the gap (a frozen-then-jumping
+# clock and in-flight disk I/O are what trip guests up on resume). A no-op
+# when the VM isn't running.
+CTL_SOCK=/tmp/macvm-ctl.sock
+QMP_CMD=/opt/layerosx/kiosk/lib/qmp-cmd.py
+[ -S "$CTL_SOCK" ] || exit 0
+case "$1" in
+    pre)  python3 "$QMP_CMD" "$CTL_SOCK" stop ;;
+    post) python3 "$QMP_CMD" "$CTL_SOCK" cont ;;
+esac
+exit 0

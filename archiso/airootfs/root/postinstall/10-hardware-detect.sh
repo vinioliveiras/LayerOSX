@@ -62,8 +62,12 @@ if [ "$HAS_NVIDIA" -eq 1 ]; then
     mkdir -p /etc/modprobe.d
     cat > /etc/modprobe.d/nvidia.conf <<'EOF'
 options nvidia_drm modeset=1
+# Keep VRAM contents across suspend (lid close) so the Reims/Vulkan side of a
+# paused VM survives resume; needs the nvidia-suspend/resume services below.
+options nvidia NVreg_PreserveVideoMemoryAllocations=1
 EOF
     systemctl enable nvidia-persistenced.service 2>/dev/null || true
+    systemctl enable nvidia-suspend.service nvidia-resume.service nvidia-hibernate.service 2>/dev/null || true
 fi
 if [ "$HAS_AMD" -eq 1 ]; then
     echo "[10] GPU: AMD detected — amdgpu + Mesa/RADV Vulkan (no extra config needed)"
