@@ -2625,3 +2625,37 @@ Rejected alternative: raising the guest's `xlevel` to `0x8000001D` (+`topoext`)
 so the AMD leaf answers. It works in principle, but mixes AMD cache leaves into
 an Intel-masked CPU; disabling the one patch is smaller and matches what
 Intel-masked macOS-on-KVM setups (OSX-KVM, dockur) run.
+
+## Next blocker after "no linesize": "Haswell pre-C0 steppings are not supported"
+
+With the cache_info patch disabled, the AMD test machine got past `HANDOFF TO
+XNU` and hit a new kernel panic on serial:
+
+```
+Haswell pre-C0 steppings are not supported @%s:%d
+```
+
+Source: xnu `osfmk/i386/machine_check.c`, `mca_get_availability()`:
+`if (model == CPUID_MODEL_HASWELL && stepping < 3) panic(...)`. QEMU's
+`Haswell-noTSX` model reports family 6, model 0x3C, **stepping 1** — an early
+engineering stepping XNU refuses. It was always there; "no linesize" simply
+panicked earlier and hid it.
+
+Fix: `mac-vm-launch.sh` adds `stepping=3` (C0, the first production stepping)
+to the CPU flags whenever it picks `Haswell-noTSX` (AMD host + Ventura or
+older). The Skylake path is untouched.
+
+### Verified on the AMD test machine (stock Arch QEMU, no ISO rebuild)
+
+A/B-tested straight on the CachyOS host with stock `qemu-system-x86_64`, the
+launcher's CPU/SMP/SATA/vmware-svga profile, the Ventura 13.5 (22G120)
+recovery and the verbose AMD OpenCore image:
+
+| OpenCore AMD image | CPU | Result (serial) |
+|---|---|---|
+| old (cache_info patch on) | Haswell-noTSX | `no linesize` right after HANDOFF |
+| new (cache_info patch off) | Haswell-noTSX | `Haswell pre-C0 steppings are not supported` |
+| new | Haswell-noTSX,stepping=3 | boots Recovery to the installer's Language Chooser |
+
+Stock QEMU reproducing the same `no linesize` also clears the custom
+qemu-macos/Reims fork of that bug.

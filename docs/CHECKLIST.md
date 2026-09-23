@@ -934,6 +934,11 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   rewrite disabled`. On boot, the verbose serial log should get PAST
   `HANDOFF TO XNU` with no `no linesize` line. If a different panic appears,
   it's the next blocker — capture `~/mac-vm-serial.log`.
+- **"Haswell pre-C0 steppings are not supported" (fixed):** the next panic
+  after "no linesize". The launch profile line / `~/mac-vm.log` QEMU command
+  must show `Haswell-noTSX,...,stepping=3` on AMD + Ventura-or-older. Expected
+  result: recovery reaches the installer (Language Chooser) — confirmed on the
+  AMD test machine with stock QEMU.
 - The Intel path must be unchanged: on an Intel host the profile line should
   show `GenuineIntel host` and a power-of-two smp (up to 8), booting the
   untouched base `OpenCore.qcow2`. AMD patches must never reach an Intel guest.

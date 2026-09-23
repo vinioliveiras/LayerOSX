@@ -265,7 +265,13 @@ else
 fi
 if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
     case "$MACOS_SHORTNAME" in
-        high-sierra|mojave|catalina|big-sur|monterey|ventura) CPU_MODEL="Haswell-noTSX" ;;
+        # stepping=3: QEMU's Haswell-noTSX reports stepping 1, and XNU's
+        # machine_check.c mca_get_availability() panics "Haswell pre-C0
+        # steppings are not supported" for model 0x3C with stepping < 3.
+        # 3 = C0, the first production stepping (confirmed on the AMD test
+        # machine: stepping 1 panics right after HANDOFF, 3 reaches the
+        # installer).
+        high-sierra|mojave|catalina|big-sur|monterey|ventura) CPU_MODEL="Haswell-noTSX"; CPU_FLAGS+=",stepping=3" ;;
         *) CPU_MODEL="Skylake-Client-v4"; CPU_FLAGS+=",-spec-ctrl" ;;
     esac
     # An AMD host can't pass a real Intel model through unchanged: mirror the
