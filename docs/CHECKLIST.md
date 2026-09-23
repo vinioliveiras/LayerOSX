@@ -1076,7 +1076,10 @@ allow-list and anything not coming from the guest.)
 - General › Save diagnostics…: plug a USB stick → it's listed first (the
   system disk is never listed) → Save → `LayerOSX-logs/mac-vm-diag-*` on the
   stick, and the stick is unmounted again (safe to unplug).
-- Traffic lights: red closes, yellow hides (Ctrl+Alt+W reopens), green zooms.
+- Traffic lights: red closes, yellow hides (Ctrl+Alt+W reopens), green is
+  greyed out (fixed-size window, like System Settings; can't be maximized).
+- General › Appearance: Dark switches the whole window at once and is
+  remembered next time; Light switches back.
 - About: This Computer shows the real model (ASUS TUF Gaming A15 FA507NV),
   Ryzen 7 7735HS · 16 threads, ~62 GB, both GPUs, the NVMe; The Mac shows
   macOS Ventura 13.5 (22G120), Haswell-noTSX · 4 cores, 8 GB, the current

@@ -268,6 +268,19 @@ class TestSaveLogs(FakeMachine):
         self.assertIn("/dev/sda1", b.dry_log[-1])
 
 
+class TestTheme(FakeMachine):
+    def test_theme_default_save_env(self):
+        os.environ.pop("LAYEROSX_PANEL_THEME", None)
+        b = lb.Backend()
+        self.assertEqual(b.panel_theme(), "light")
+        self.assertTrue(b.set_panel_theme("dark")[0])
+        self.assertEqual(lb.Backend().panel_theme(), "dark")
+        self.assertFalse(b.set_panel_theme("neon")[0])
+        os.environ["LAYEROSX_PANEL_THEME"] = "light"
+        self.assertEqual(lb.Backend().panel_theme(), "light")
+        os.environ.pop("LAYEROSX_PANEL_THEME")
+
+
 class TestAbout(FakeMachine):
     def test_about_real_machine_fields(self):
         a = lb.Backend().about()

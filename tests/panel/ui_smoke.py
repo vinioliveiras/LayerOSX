@@ -31,6 +31,11 @@ def script(win):
     targets = b.log_targets()
     check("drives listed (USB first)", [t.path for t in targets][:1] == ["/dev/sda1"])
     win._choose_drive(targets)
+    win.theme_buttons["dark"].set_active(True)
+    check("dark theme saved", b.panel_theme() == "dark")
+    win.theme_buttons["light"].set_active(True)
+    check("window not resizable (fixed like System Settings)", not win.get_resizable())
+    win.select("about")
     win.select("wifi")
     def later():
         check("wifi rows listed", len(win._wifi_rows) >= 3)

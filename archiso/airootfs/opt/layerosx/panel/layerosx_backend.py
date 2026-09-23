@@ -237,6 +237,29 @@ class Backend:
         rc, out = self._run([os.path.join(self.bin, cmd), value])
         return rc == 0, out.strip()
 
+    # ------------------------------------------------------------ appearance
+    def panel_theme(self) -> str:
+        """LayerOSX Settings appearance: light (default) or dark. The
+        LAYEROSX_PANEL_THEME env var wins (previews/screenshots)."""
+        env = os.environ.get("LAYEROSX_PANEL_THEME", "")
+        if env in ("light", "dark"):
+            return env
+        return "dark" if _read(os.path.join(self.state_dir, "panel-theme")) == "dark" else "light"
+
+    def set_panel_theme(self, theme: str) -> Tuple[bool, str]:
+        if theme not in ("light", "dark"):
+            return False, "theme must be light or dark"
+        if self.dry_run:
+            self.dry_log.append(f"panel theme -> {theme}")
+            return True, ""
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            with open(os.path.join(self.state_dir, "panel-theme"), "w") as f:
+                f.write(theme + "\n")
+        except OSError as exc:
+            return False, str(exc)
+        return True, ""
+
     # --------------------------------------------------------------------- VM
     def vm_running(self) -> bool:
         return os.path.exists(self.ctl_sock)

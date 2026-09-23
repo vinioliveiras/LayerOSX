@@ -54,7 +54,7 @@ CSS = b"""
 .badge-orange { background: #ff9f0a; }
 .badge-graphite { background: #636366; }
 .badge-gray { background: #8e8e93; }
-.badge-black { background: #1c1c1e; }
+.badge-black { background: #1c1c1e; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
 .badge-big { border-radius: 10px; padding: 8px; }
 .dot { border-radius: 99px; min-width: 9px; min-height: 9px; }
 .dot-green { background: #30d158; }
@@ -102,6 +102,12 @@ CSS = b"""
 .traffic button.tl-zoom:active,
 .traffic button.tl-zoom:focus,
 .traffic button.tl-zoom:backdrop { background-color: #28c840; }
+.traffic button.tl-disabled,
+.traffic button.tl-disabled:hover,
+.traffic button.tl-disabled:backdrop { background-color: #d1d1d6; }
+.traffic.dark button.tl-disabled,
+.traffic.dark button.tl-disabled:backdrop { background-color: #4a4a4e; }
+.traffic:hover button.tl-disabled label { color: transparent; }
 .traffic button:active { filter: brightness(0.85); }
 .traffic button label { font-size: 9px; font-weight: 900; color: transparent; padding: 0; margin: 0; }
 .traffic:hover button label { color: rgba(0,0,0,.55); }
@@ -157,8 +163,10 @@ class Settings(Adw.ApplicationWindow):
         self.status = None
         self._updating = False
         self._bright_src = None
+        # Fixed size, like macOS System Settings (which can't be zoomed): the
+        # layout is designed for this width, so maximizing only added gaps.
         self.set_default_size(900, 640)
-        self.set_size_request(720, 480)
+        self.set_resizable(False)
 
         self.toasts = Adw.ToastOverlay()
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -245,17 +253,20 @@ class Settings(Adw.ApplicationWindow):
         panel (Ctrl+Alt+W reopens it): the kiosk has no taskbar to bring a
         minimized window back."""
         box = Gtk.Box(css_classes=["traffic"], valign=Gtk.Align.CENTER)
+        self.traffic = box
         for css, glyph, tip, cb in (("tl-close", "×", "Close", self.close),
                                     ("tl-min", "−", "Hide (Ctrl+Alt+W brings it back)", self.close),
-                                    ("tl-zoom", "+", "Zoom", self._toggle_zoom)):
+                                    ("tl-zoom", "+", None, None)):
             b = Gtk.Button(label=glyph, tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
                            focus_on_click=False, can_focus=False)
-            b.connect("clicked", lambda _b, f=cb: f())
+            if cb:
+                b.connect("clicked", lambda _b, f=cb: f())
+            else:
+                # Like System Settings: fixed-size window, zoom disabled (greyed).
+                b.add_css_class("tl-disabled")
+                b.set_can_target(False)
             box.append(b)
         return box
-
-    def _toggle_zoom(self):
-        self.unmaximize() if self.is_maximized() else self.maximize()
 
     def _sidebar(self):
         tv = Adw.ToolbarView()
@@ -658,6 +669,23 @@ class Settings(Adw.ApplicationWindow):
     # -------------------------------------------------------------- General
     def _page_general(self):
         page = Adw.PreferencesPage()
+        ap = Adw.PreferencesGroup(title="Appearance")
+        row = Adw.ActionRow(title="Appearance", subtitle="How LayerOSX Settings looks")
+        row.add_prefix(Gtk.Image.new_from_icon_name("preferences-desktop-appearance-symbolic"))
+        seg = Gtk.Box(css_classes=["linked"], valign=Gtk.Align.CENTER)
+        self.theme_buttons = {}
+        first = None
+        for key, label in (("light", "Light"), ("dark", "Dark")):
+            b = Gtk.ToggleButton(label=label, active=self.b.panel_theme() == key)
+            if first:
+                b.set_group(first)
+            first = first or b
+            b.connect("toggled", self._on_theme, key)
+            seg.append(b)
+            self.theme_buttons[key] = b
+        row.add_suffix(seg)
+        ap.add(row)
+        page.add(ap)
         p = Adw.PreferencesGroup(title="Power", description="Save your work in macOS first — it will be stopped.")
         for icon, title, kind, css in (("system-reboot-symbolic", "Restart", "reboot", None),
                                        ("system-shutdown-symbolic", "Shut Down", "poweroff", "destructive-action")):
@@ -863,6 +891,17 @@ class Settings(Adw.ApplicationWindow):
             self._pending_restart()
         self.refresh()
 
+    def _on_theme(self, btn, key):
+        if not btn.get_active():
+            return
+        ok, msg = self.b.set_panel_theme(key)
+        if not ok:
+            self.toast(msg)
+        apply_theme(key)
+        self.traffic.remove_css_class("dark")
+        if key == "dark":
+            self.traffic.add_css_class("dark")
+
     # ------------------------------------------------------- power actions
     def on_restart_mac(self):
         self.confirm("Restart the Mac?",
@@ -947,6 +986,11 @@ class Settings(Adw.ApplicationWindow):
             self.close()
 
 
+def apply_theme(theme):
+    Adw.StyleManager.get_default().set_color_scheme(
+        Adw.ColorScheme.FORCE_DARK if theme == "dark" else Adw.ColorScheme.FORCE_LIGHT)
+
+
 class App(Adw.Application):
     def __init__(self):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.NON_UNIQUE)
@@ -959,10 +1003,13 @@ class App(Adw.Application):
         # user theme in ~/.config/gtk-4.0 on a developer's desktop (preview).
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
                                                   Gtk.STYLE_PROVIDER_PRIORITY_USER + 10)
-        scheme = os.environ.get("LAYEROSX_PANEL_THEME", "light")
-        Adw.StyleManager.get_default().set_color_scheme(
-            Adw.ColorScheme.FORCE_DARK if scheme == "dark" else Adw.ColorScheme.FORCE_LIGHT)
-        Settings(app, Backend()).present()
+        backend = Backend()
+        theme = backend.panel_theme()
+        apply_theme(theme)
+        win = Settings(app, backend)
+        if theme == "dark":
+            win.traffic.add_css_class("dark")
+        win.present()
 
 
 def main():

@@ -2941,8 +2941,13 @@ now opens **LayerOSX Settings**, a single GTK4/libadwaita window modelled on a
 simplified macOS System Settings: a sidebar with coloured icon badges, a
 content pane of rounded cards, macOS-style "traffic light" window controls
 (red = close, yellow = hide — the kiosk has no taskbar to restore a minimized
-window, so it closes and Ctrl+Alt+W brings it back — green = zoom), light
-theme by default (`LAYEROSX_PANEL_THEME=dark` for dark).
+window, so it closes and Ctrl+Alt+W brings it back — green = disabled), light
+theme by default with a **Light / Dark** switch in General › Appearance
+(applied instantly, saved in `/var/lib/layerosx/panel-theme`;
+`LAYEROSX_PANEL_THEME=light|dark` overrides it for previews). The window has a
+**fixed size, like macOS System Settings**: the layout is designed for that
+width and maximizing only added empty space, so the green light is greyed out
+and does nothing.
 
 | Section | What's there |
 |---|---|
