@@ -375,8 +375,12 @@ class Settings(Adw.ApplicationWindow):
             join = Gtk.Button(label="Connect", valign=Gtk.Align.CENTER)
             join.connect("clicked", lambda *_: self._join(n))
             r.add_suffix(join)
-        if n.secure:
-            r.add_suffix(Gtk.Image.new_from_icon_name("system-lock-screen-symbolic"))
+        # The lock slot is always there (invisible on open networks) so the
+        # Connect buttons line up in one column, like System Settings.
+        lock = Gtk.Image.new_from_icon_name("system-lock-screen-symbolic")
+        lock.set_opacity(1.0 if n.secure else 0.0)
+        lock.set_tooltip_text("Secured" if n.secure else None)
+        r.add_suffix(lock)
         r.add_suffix(Gtk.Image.new_from_icon_name(wifi_icon(n.signal)))
         grp.add(r)
         self._wifi_rows.append((grp, r))
