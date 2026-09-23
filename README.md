@@ -134,6 +134,18 @@ None of these block a working boot; they make it nicer.
 - [x] **Kiosk menu as a native single-window app** — done: LayerOSX Settings
   (GTK4/libadwaita, `opt/layerosx/panel/`). Next: a Bluetooth section, a
   "Displays > Resolution" option, and the in-macOS app mirroring it.
+- **Update LayerOSX without wiping the Mac** — today the only way to get a new
+  ISO's changes onto an installed machine is reinstalling, which erases the
+  LayerOSX partition *including* the macOS disk (`/var/lib/layerosx/macos.qcow2`,
+  its recovery/installer images and `OVMF_VARS.fd`) and every saved setting.
+  Add an "Update" path to the installer: detect an existing LayerOSX root,
+  replace the system files (rsync of the live root with the same excludes as
+  install, then re-run postinstall) but keep `/var/lib/layerosx` (VM disk,
+  NVRAM, gpu/verbose/audio/theme/brightness/USB choices), the kiosk user's
+  home (logs) and NetworkManager connections (saved Wi-Fi). Offer to back up
+  the qcow2 to another drive first (same drive picker as Save diagnostics).
+  Later: an update that doesn't need the USB at all (download a signed image,
+  A/B root or pacman-based).
 - **Installer and first-run wizard in the LayerOSX Settings UI** — the
   install flow (`install-wizard.sh`: GParted, pick root/EFI partitions,
   maintenance password, progress) and the first-run wizard
