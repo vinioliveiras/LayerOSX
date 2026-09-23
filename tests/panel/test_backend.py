@@ -76,6 +76,28 @@ class FakeMachine(unittest.TestCase):
         dev("1-3", "05e3", "0610", "Genesys", "USB2.1 Hub", "removable", cls="09")
         dev("3-1", "3277", "0059", "Shinetech", "HD UVC WebCam", "fixed")
         write(os.path.join(self.usb, "usb1", "idVendor"), "1d6b\n")
+        # lsblk: laptop NVMe (Windows BitLocker, CachyOS root, ESP, DATA ntfs),
+        # a USB stick (exfat, not mounted), Ventoy (exfat data + VTOYEFI).
+        lsblk = {"blockdevices": [
+            {"name": "nvme0n1", "path": "/dev/nvme0n1", "type": "disk", "rm": False, "hotplug": False,
+             "tran": "nvme", "model": "WD SN560", "size": 1000204886016, "children": [
+                {"name": "nvme0n1p1", "path": "/dev/nvme0n1p1", "type": "part", "fstype": "vfat",
+                 "label": None, "size": 209715200, "mountpoints": ["/boot/efi"]},
+                {"name": "nvme0n1p3", "path": "/dev/nvme0n1p3", "type": "part", "fstype": "BitLocker",
+                 "label": None, "size": 727000000000, "mountpoints": [None]},
+                {"name": "nvme0n1p6", "path": "/dev/nvme0n1p6", "type": "part", "fstype": "ext4",
+                 "label": "layerosx", "size": 170000000000, "mountpoints": ["/"]},
+                {"name": "nvme0n1p7", "path": "/dev/nvme0n1p7", "type": "part", "fstype": "ntfs",
+                 "label": "DATA", "size": 4000000000000, "mountpoints": [None]}]},
+            {"name": "sda", "path": "/dev/sda", "type": "disk", "rm": True, "hotplug": True, "tran": "usb",
+             "model": "SanDisk 3.2Gen1", "size": 123000000000, "children": [
+                {"name": "sda1", "path": "/dev/sda1", "type": "part", "fstype": "exfat",
+                 "label": "Ventoy", "size": 123000000000, "mountpoints": [None]},
+                {"name": "sda2", "path": "/dev/sda2", "type": "part", "fstype": "vfat",
+                 "label": "VTOYEFI", "size": 33554432, "mountpoints": [None]}]},
+        ]}
+        write(os.path.join(t, "lsblk.json"), __import__("json").dumps(lsblk))
+        write(os.path.join(self.bin, "lsblk"), f'#!/bin/sh\ncat {t}/lsblk.json\n', x)
         self.ps = os.path.join(t, "power")
         write(os.path.join(self.ps, "BAT0", "capacity"), "63\n")
         write(os.path.join(self.ps, "BAT0", "status"), "Discharging\n")
@@ -196,6 +218,28 @@ class TestUsb(FakeMachine):
         self.assertNotIn("3277:0059", b.usb_always_set())
         self.assertIn("qmp usb-attach 3277 0059", self.calls())
         self.assertIn("qmp usb-detach 3277 0059", self.calls())
+
+
+class TestSaveLogs(FakeMachine):
+    def test_targets_exclude_system(self):
+        t = lb.Backend().log_targets()
+        self.assertEqual([x.path for x in t], ["/dev/sda1", "/dev/nvme0n1p7"])  # USB first
+        usb, data = t
+        self.assertTrue(usb.removable and not data.removable)
+        self.assertEqual((usb.title, usb.fstype, usb.mountpoint), ("Ventoy", "exfat", ""))
+        self.assertEqual(data.size_text, "4.0 TB")
+
+    def test_save_refuses_unlisted(self):
+        b = lb.Backend()
+        self.assertFalse(b.save_logs_to("/dev/nvme0n1p6")[0])   # the system root
+        self.assertFalse(b.save_logs_to("/dev/sda2")[0])        # VTOYEFI
+        self.assertFalse(b.save_logs_to("/etc/shadow")[0])
+
+    def test_save_dry_run(self):
+        os.environ["LAYEROSX_DRY_RUN"] = "1"
+        b = lb.Backend()
+        self.assertTrue(b.save_logs_to("/dev/sda1")[0])
+        self.assertIn("/dev/sda1", b.dry_log[-1])
 
 
 class TestPowerAndStatus(FakeMachine):

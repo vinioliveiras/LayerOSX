@@ -62,6 +62,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/maint-terminal.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/kiosk-menu.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/panel.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/save-logs-to.sh"]="0:0:755"
   ["/opt/layerosx/panel"]="0:0:755"
   ["/opt/layerosx/panel/layerosx_panel.py"]="0:0:755"
   ["/opt/layerosx/panel/layerosx_backend.py"]="0:0:755"

@@ -63,15 +63,39 @@ CSS = b"""
 .sidebar-status .title { font-weight: 700; }
 .sidebar-status .sub { opacity: .65; font-size: .9em; }
 .pane-title { font-weight: 800; font-size: 1.35em; }
-/* macOS-style window controls ("traffic lights") */
+/* macOS-style window controls ("traffic lights"). Every state is spelled out
+   and the provider is loaded above USER priority, so a user GTK theme (e.g. a
+   macOS-look theme in ~/.config/gtk-4.0) can't repaint them grey on
+   hover/press/focus. */
 .traffic { margin-left: 8px; }
-.traffic button {
+.traffic button,
+.traffic button:hover,
+.traffic button:active,
+.traffic button:checked,
+.traffic button:focus,
+.traffic button:focus-visible,
+.traffic button:backdrop {
   min-width: 12px; min-height: 12px; padding: 0; margin: 0 3px;
-  border-radius: 999px; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18);
+  border: none; border-radius: 999px; outline: none;
+  background-image: none; text-shadow: none;
+  box-shadow: inset 0 0 0 0.5px rgba(0,0,0,.18);
+  transition: none;
 }
-.traffic button.tl-close { background: #ff5f57; }
-.traffic button.tl-min   { background: #febc2e; }
-.traffic button.tl-zoom  { background: #28c840; }
+.traffic button.tl-close,
+.traffic button.tl-close:hover,
+.traffic button.tl-close:active,
+.traffic button.tl-close:focus,
+.traffic button.tl-close:backdrop { background-color: #ff5f57; }
+.traffic button.tl-min,
+.traffic button.tl-min:hover,
+.traffic button.tl-min:active,
+.traffic button.tl-min:focus,
+.traffic button.tl-min:backdrop { background-color: #febc2e; }
+.traffic button.tl-zoom,
+.traffic button.tl-zoom:hover,
+.traffic button.tl-zoom:active,
+.traffic button.tl-zoom:focus,
+.traffic button.tl-zoom:backdrop { background-color: #28c840; }
 .traffic button:active { filter: brightness(0.85); }
 .traffic button label { font-size: 9px; font-weight: 900; color: transparent; padding: 0; margin: 0; }
 .traffic:hover button label { color: rgba(0,0,0,.55); }
@@ -218,7 +242,8 @@ class Settings(Adw.ApplicationWindow):
         for css, glyph, tip, cb in (("tl-close", "×", "Close", self.close),
                                     ("tl-min", "−", "Hide (Ctrl+Alt+W brings it back)", self.close),
                                     ("tl-zoom", "+", "Zoom", self._toggle_zoom)):
-            b = Gtk.Button(label=glyph, tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER)
+            b = Gtk.Button(label=glyph, tooltip_text=tip, css_classes=[css], valign=Gtk.Align.CENTER,
+                           focus_on_click=False, can_focus=False)
             b.connect("clicked", lambda _b, f=cb: f())
             box.append(b)
         return box
@@ -638,9 +663,9 @@ class Settings(Adw.ApplicationWindow):
             p.add(r)
         page.add(p)
         m = Adw.PreferencesGroup(title="Maintenance")
-        d = Adw.ActionRow(title="Save diagnostics", subtitle="Copies logs to a USB drive for troubleshooting")
+        d = Adw.ActionRow(title="Save diagnostics", subtitle="Copies the logs to a drive you choose, for troubleshooting")
         d.add_prefix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
-        db = Gtk.Button(label="Save", valign=Gtk.Align.CENTER)
+        db = Gtk.Button(label="Save…", valign=Gtk.Align.CENTER)
         db.connect("clicked", lambda *_: self.on_diag())
         d.add_suffix(db)
         m.add(d)
@@ -783,10 +808,61 @@ class Settings(Adw.ApplicationWindow):
                      destructive=True)
 
     def on_diag(self):
+        """Ask which drive to save the diagnostics bundle to, then save it."""
+        run_async(self.b.log_targets, self._choose_drive)
+
+    def _choose_drive(self, targets):
+        if isinstance(targets, Exception):
+            targets = []
+        d = self._dialog("Save Diagnostics",
+                         "Choose where to save the logs. They go into a “LayerOSX-logs” folder on that drive."
+                         if targets else
+                         "No drive to save to. Plug in a USB drive and try again.")
+        chosen = {"path": targets[0].path if targets else None}
+        if targets:
+            lb = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
+            first = None
+            for t in targets:
+                row = Adw.ActionRow(title=esc(t.title), activatable=True,
+                                    subtitle=esc(" · ".join(x for x in (
+                                        t.size_text, t.fstype.upper(),
+                                        "USB drive" if t.removable else "internal drive",
+                                        os.path.basename(t.path)) if x)))
+                chk = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=first is None)
+                if first:
+                    chk.set_group(first)
+                first = first or chk
+                chk.connect("toggled", lambda c, p=t.path: c.get_active() and chosen.update(path=p))
+                row.add_prefix(chk)
+                row.set_activatable_widget(chk)
+                row.add_suffix(Gtk.Image.new_from_icon_name(
+                    "media-removable-symbolic" if t.removable else "drive-harddisk-symbolic"))
+                lb.append(row)
+            d.set_extra_child(lb)
+            d.add_response("cancel", "Cancel")
+            d.add_response("save", "Save")
+            d.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+            d.set_default_response("save")
+        else:
+            d.add_response("cancel", "OK")
+        d.set_close_response("cancel")
+        d.connect("response", lambda _d, r: r == "save" and chosen["path"] and self._save_to(chosen["path"]))
+        self._present(d)
+        return False
+
+    def _save_to(self, device):
         self.toast("Saving diagnostics…")
-        run_async(self.b.save_diagnostics,
-                  lambda r: self.after_action(*(r if not isinstance(r, Exception) else (False, str(r))),
-                                              "Diagnostics saved to the USB drive") or False)
+
+        def done(r):
+            ok, msg = r if not isinstance(r, Exception) else (False, str(r))
+            if self.b.dry_run:
+                self.after_action(ok, msg, "")
+            elif ok:
+                self.toast("Diagnostics saved — you can unplug the drive")
+            else:
+                self.toast(msg or "Couldn't save the diagnostics")
+            return False
+        run_async(lambda: self.b.save_logs_to(device), done)
 
     def on_terminal(self):
         ok, msg = self.b.open_terminal()
@@ -803,8 +879,10 @@ class App(Adw.Application):
     def _on_activate(self, app):
         prov = Gtk.CssProvider()
         prov.load_from_data(CSS)
+        # Above USER priority: our look (badges, traffic lights) must survive a
+        # user theme in ~/.config/gtk-4.0 on a developer's desktop (preview).
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), prov,
-                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+                                                  Gtk.STYLE_PROVIDER_PRIORITY_USER + 10)
         scheme = os.environ.get("LAYEROSX_PANEL_THEME", "light")
         Adw.StyleManager.get_default().set_color_scheme(
             Adw.ColorScheme.FORCE_DARK if scheme == "dark" else Adw.ColorScheme.FORCE_LIGHT)

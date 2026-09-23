@@ -1073,6 +1073,9 @@ allow-list and anything not coming from the guest.)
   back on VMware.
 - USB: a pendrive switched on appears in macOS; star → survives re-plug.
 - General: Restart / Shut Down work without the VM relaunching in between.
+- General › Save diagnostics…: plug a USB stick → it's listed first (the
+  system disk is never listed) → Save → `LayerOSX-logs/mac-vm-diag-*` on the
+  stick, and the stick is unmounted again (safe to unplug).
 - Traffic lights: red closes, yellow hides (Ctrl+Alt+W reopens), green zooms.
 - Terminal section: Open… follows the build's password policy; hidden with
   `LAYEROSX_TERMINAL=off`.

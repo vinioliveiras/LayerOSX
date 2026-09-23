@@ -27,6 +27,10 @@ def script(win):
     check("verbose on saved", b.setting("verbose") == ("on", True))
     ok, _ = b.usb_set_always("0781", "5583", True, "SanDisk")
     check("usb always", "0781:5583" in b.usb_always_set())
+    win.select("general")
+    targets = b.log_targets()
+    check("drives listed (USB first)", [t.path for t in targets][:1] == ["/dev/sda1"])
+    win._choose_drive(targets)
     win.select("wifi")
     def later():
         check("wifi rows listed", len(win._wifi_rows) >= 3)

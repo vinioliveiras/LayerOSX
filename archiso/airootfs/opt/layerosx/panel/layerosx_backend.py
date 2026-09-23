@@ -21,6 +21,7 @@ CLI (handy for debugging and for the future helper):
     layerosx_backend.py status          JSON snapshot of the machine
     layerosx_backend.py wifi            JSON list of nearby networks
     layerosx_backend.py usb             JSON list of USB devices
+    layerosx_backend.py drives          JSON list of drives diagnostics can be saved to
 """
 import json
 import os
@@ -67,6 +68,30 @@ class UsbDevice:
     @property
     def id(self) -> str:
         return f"{self.vid}:{self.pid}"
+
+
+@dataclass
+class LogTarget:
+    path: str             # /dev/sdb1
+    label: str
+    model: str
+    size: int             # bytes
+    fstype: str
+    removable: bool
+    mountpoint: str       # "" when not mounted
+
+    @property
+    def title(self) -> str:
+        return self.label or self.model or os.path.basename(self.path)
+
+    @property
+    def size_text(self) -> str:
+        n = float(self.size)
+        for unit in ("B", "KB", "MB", "GB", "TB"):
+            if n < 1000 or unit == "TB":
+                return f"{n:.0f} {unit}" if unit in ("B", "KB", "MB") else f"{n:.1f} {unit}"
+            n /= 1000.0
+        return ""
 
 
 @dataclass
@@ -390,6 +415,63 @@ class Backend:
         return rc == 0, out.strip()
 
     # ------------------------------------------------------------ maintenance
+    # Filesystems a diagnostics bundle can be written to; everything else
+    # (swap, LUKS/BitLocker, squashfs, unknown) is never offered.
+    SAVE_FSTYPES = ("vfat", "exfat", "ntfs", "ext4", "ext3", "ext2", "btrfs", "xfs")
+
+    def log_targets(self) -> List[LogTarget]:
+        """Drives the user can save diagnostics to: partitions with a writable
+        filesystem, never the running system's root/boot, nor Ventoy's tiny
+        VTOYEFI partition. Removable (USB) drives first."""
+        rc, out = self._run(["lsblk", "-J", "-b", "-o",
+                             "NAME,PATH,LABEL,SIZE,FSTYPE,MOUNTPOINTS,RM,HOTPLUG,TRAN,TYPE,MODEL"],
+                            changes=False, timeout=10)
+        if rc != 0:
+            return []
+        try:
+            tree = json.loads(out)["blockdevices"]
+        except (ValueError, KeyError):
+            return []
+        targets = []
+
+        def walk(nodes, parent):
+            for n in nodes:
+                kids = n.get("children") or []
+                if n.get("type") == "part":
+                    mps = [m for m in (n.get("mountpoints") or []) if m]
+                    fs = (n.get("fstype") or "").lower()
+                    label = n.get("label") or ""
+                    system = any(m in ("/", "/boot", "/boot/efi", "[SWAP]") or m.startswith("/run/archiso")
+                                 for m in mps)
+                    if fs in self.SAVE_FSTYPES and not system and label != "VTOYEFI":
+                        removable = bool(parent.get("rm") or parent.get("hotplug") or
+                                         (parent.get("tran") or "") == "usb" or n.get("rm") or n.get("hotplug"))
+                        targets.append(LogTarget(
+                            path=n.get("path") or f"/dev/{n.get('name')}",
+                            label=label, model=(parent.get("model") or "").strip(),
+                            size=int(n.get("size") or 0), fstype=fs, removable=removable,
+                            mountpoint=mps[0] if mps else ""))
+                walk(kids, n if n.get("type") == "disk" else parent)
+        walk(tree, {})
+        return sorted(targets, key=lambda t: (not t.removable, t.path))
+
+    def save_logs_to(self, device: str) -> Tuple[bool, str]:
+        """Build a fresh diagnostics bundle and copy it onto `device` (one of
+        log_targets(); anything else is refused)."""
+        if device not in {t.path for t in self.log_targets()}:
+            return False, "that drive isn't available for saving"
+        if self.dry_run:
+            self.dry_log.append(f"macdiag && sudo save-logs-to.sh <bundle> {device}")
+            return True, "preview"
+        rc, out = self._run([os.path.join(self.bin, "macdiag"), "bundle"], timeout=120)
+        m = re.search(r"^Diagnostics bundle: (.+)$", out, re.M)
+        if not m:
+            return False, "couldn't collect the diagnostics"
+        rc, out = self._run(["sudo", "-n", os.path.join(self.lib, "save-logs-to.sh"),
+                             m.group(1).strip(), device], timeout=120)
+        lines = [l for l in out.strip().splitlines() if l]
+        return rc == 0, (lines[-1] if lines else "")
+
     def save_diagnostics(self) -> Tuple[bool, str]:
         if self.dry_run:
             self.dry_log.append(os.path.join(self.bin, "macdiag") + " usb")
@@ -449,10 +531,12 @@ def main(argv: List[str]) -> int:
         print(json.dumps(asdict(b.status()), indent=2))
     elif what == "wifi":
         print(json.dumps([asdict(n) for n in b.wifi_scan()], indent=2))
+    elif what == "drives":
+        print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives]", file=sys.stderr)
         return 2
     return 0
 

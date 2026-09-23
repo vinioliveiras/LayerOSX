@@ -2952,7 +2952,7 @@ theme by default (`LAYEROSX_PANEL_THEME=dark` for dark).
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
 | Mac | Running/stopped, "Show startup log" switch, **Restart Mac…** (the black-screen rescue) |
-| General | Restart / Shut Down the computer, Save diagnostics, Terminal, About (build mode, terminal policy, shortcuts) |
+| General | Restart / Shut Down the computer, **Save diagnostics…** (asks which drive), Terminal, About (build mode, terminal policy, shortcuts) |
 | Terminal | Open the maintenance terminal (password per `LAYEROSX_TERMINAL`), useful commands; hidden when the build has no terminal |
 
 A banner ("Restart the Mac to apply your changes" + Restart Mac) appears after
@@ -2991,3 +2991,36 @@ the future helper's shape).
   that opens every section and drives the widgets (graphics, sound, startup
   log, USB, Wi-Fi list, sidebar status). All green; screenshots were checked
   under Xvfb.
+
+### Save diagnostics… asks which drive
+
+General › Save diagnostics… lists the drives the logs can go to and saves a
+fresh bundle into a `LayerOSX-logs/` folder on the chosen one (then "you can
+unplug the drive").
+
+- **Which drives:** `Backend.log_targets()` reads `lsblk -J` and offers
+  partitions with a writable filesystem (vfat, exfat, ntfs, ext2/3/4, btrfs,
+  xfs), USB drives first, internal ones labelled as such. Never offered: the
+  running system's `/`, `/boot`, `/boot/efi`, swap, the live ISO's own mounts,
+  Ventoy's `VTOYEFI`, and anything encrypted/unknown (BitLocker, LUKS).
+  `layerosx_backend.py drives` prints the list as JSON.
+- **How:** `macdiag bundle` builds the bundle as the kiosk user; then
+  `kiosk/lib/save-logs-to.sh <bundle> <partition>` runs via sudo: it mounts
+  the partition if needed (and unmounts it afterwards), copies, syncs and
+  prints the final path. Because it runs as root it's narrow on purpose: the
+  bundle must be a `mac-vm-diag-*` folder in a home directory, the target a
+  partition block device, never the system's own root/boot; and the backend
+  only passes a device that is in `log_targets()`.
+- A Windows NTFS drive left hibernated by Fast Startup refuses to mount
+  read-write — the error says so.
+- Verified: 17 backend unit tests (targets exclude system/VTOYEFI/BitLocker,
+  USB first, sizes; save refuses unlisted devices; dry run), `save-logs-to.sh`
+  against a real loop-device partition (mount → copy → unmount; already
+  mounted → copy and leave mounted; refuses non-bundles, whole disks and
+  non-devices), and the UI smoke test opening the picker.
+
+Also fixed: the traffic-light dots turned grey after a click when a user GTK
+theme was installed (a macOS-look theme in `~/.config/gtk-4.0` overrides
+button styles at USER priority). The panel's CSS now loads above USER priority
+and pins every button state; the dots also no longer take keyboard focus.
+Checked by rendering with a deliberately hostile user theme.

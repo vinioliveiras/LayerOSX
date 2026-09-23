@@ -5,6 +5,9 @@
 # This is the thing to grab or share when a boot goes wrong.
 #   macdiag        write the bundle under the home dir and print where it is
 #   macdiag usb    also copy the whole bundle to a mounted USB stick
+#   macdiag bundle just build it and print "Diagnostics bundle: <path>" (used by
+#                  LayerOSX Settings > General > Save diagnostics…, which then
+#                  copies it to the drive the user picks via lib/save-logs-to.sh)
 set -uo pipefail
 HOMEDIR="${HOME:-/home/mac}"
 COLLECT="/opt/layerosx/kiosk/lib/collect-diag.sh"
@@ -28,10 +31,11 @@ case "${1:-}" in
             echo "No writable USB mount found. Plug one in and retry, or reboot -- the VM also auto-saves logs to any USB on every exit." >&2
         fi
         ;;
+    bundle) : ;;
     ""|show)
         echo "----- diag.txt (top) -----"
         sed -n '1,50p' "$DIAG" 2>/dev/null || true
         echo "----- (full file above; 'macdiag usb' copies the bundle to a USB) -----"
         ;;
-    *) echo "usage: macdiag [usb]" >&2; exit 2 ;;
+    *) echo "usage: macdiag [usb|bundle]" >&2; exit 2 ;;
 esac
