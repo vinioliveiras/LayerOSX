@@ -69,7 +69,7 @@ trap 'exec 3>&- 2>/dev/null || true
     2>/dev/null || true' ERR
 
 zenity --info --width=560 --title="LayerOSX — Install" \
-    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press F2 any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
+    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press Ctrl+Alt+T any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
     || exit 1
 
 gparted
@@ -98,7 +98,7 @@ zenity --question --width=480 --title="LayerOSX — Install" \
     --text="This will ERASE the content of $ROOT_PART and install LayerOSX there, using $ESP_PART as the EFI partition.\n\nThis cannot be undone. Continue?" \
     || exit 1
 
-# Maintenance password = the kiosk user's ("mac") password. It unlocks the F2
+# Maintenance password = the kiosk user's ("mac") password. It unlocks the Ctrl+Alt+T
 # maintenance terminal in builds that ship it password-protected (the release
 # default, see build.sh LAYEROSX_TERMINAL / lib/maint-terminal.sh). Asked here,
 # before the long copy, and applied after postinstall created the user. Skipping
@@ -107,7 +107,7 @@ zenity --question --width=480 --title="LayerOSX — Install" \
 MAINT_PW=""
 while true; do
     _p1=$(zenity --password --title="LayerOSX — Maintenance password" \
-        --text="Choose a maintenance password (unlocks the F2 terminal).\nCancel = keep the default password \"mac\"." 2>/dev/null) || { _p1=""; break; }
+        --text="Choose a maintenance password (unlocks the Ctrl+Alt+T terminal).\nCancel = keep the default password \"mac\"." 2>/dev/null) || { _p1=""; break; }
     [ -n "$_p1" ] || continue
     _p2=$(zenity --password --title="LayerOSX — Maintenance password" \
         --text="Type it again to confirm." 2>/dev/null) || { _p1=""; break; }

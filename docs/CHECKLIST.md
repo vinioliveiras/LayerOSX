@@ -1023,19 +1023,20 @@ allow-list and anything not coming from the guest.)
 - If attach fails with a permission error in `~/mac-vm.log`: the uaccess udev
   rule didn't apply (`getfacl /dev/bus/usb/BBB/DDD` should list user `mac`).
 
-### 5.4e. Maintenance terminal (F2) policy
+### 5.4e. Maintenance terminal (Ctrl+Alt+T) policy
 
 - Installer: after the "erase and install" confirmation it asks for a
   maintenance password (twice; mismatch → asked again; Cancel → default
   `mac`). The install log must say "Maintenance password set." and must NOT
   contain the password.
-- Release build (`password`): F2 with the VM fullscreen → password dialog on
+- Release build (`password`): Ctrl+Alt+T with the VM fullscreen → password dialog on
   top of the VM → wrong password = "Wrong password." (3 tries), right one →
   terminal; `gpu vmware` + `relaunch` work from it. `~/maint-auth.log` has the
   attempts. Ctrl+Alt+F2 still does nothing.
-- Debug build (`open`): F2 opens the terminal with no prompt.
+- Debug build (`open`): Ctrl+Alt+T opens the terminal with no prompt; F2
+  now reaches macOS (brightness-up / app F2).
 - `LAYEROSX_TERMINAL=off ./rebuild.sh release`: build log shows
-  "Maintenance terminal (F2): off"; F2 does nothing. `commands` prints the
+  "Maintenance terminal: off"; Ctrl+Alt+T does nothing. `commands` prints the
   current policy in its footer.
 
 ## 5.5. Branding (GRUB menu, boot message)

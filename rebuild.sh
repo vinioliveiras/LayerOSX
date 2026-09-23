@@ -4,7 +4,7 @@
 #     ./rebuild.sh release      # non-interactive
 #     ./rebuild.sh debug        # non-interactive
 #     LAYEROSX_MODE=debug ./rebuild.sh
-#     LAYEROSX_TERMINAL=off ./rebuild.sh release   # F2 terminal: password|open|off
+#     LAYEROSX_TERMINAL=off ./rebuild.sh release   # Ctrl+Alt+T terminal: password|open|off
 # It pulls the latest commits, installs any missing build tools
 # (setup-build-host.sh -- archiso, docker, mtools...) and rebuilds the ISO (build.sh handles the rest:
 # it only re-runs the ~30-60 min qemu Docker build when the binary/libs aren't

@@ -48,9 +48,9 @@ printf '\nApply a setting change with `relaunch` (no reboot) or a reboot.\n'
 TERMINAL="$(cat /etc/layerosx/terminal 2>/dev/null || true)"
 [ -n "$TERMINAL" ] || { [ "$MODE" = debug ] && TERMINAL=open || TERMINAL=password; }
 case "$TERMINAL" in
-    open)     printf 'Terminal: F2 (graphical)' ;;
-    password) printf 'Terminal: F2, after the maintenance password (the "mac" user'"'"'s)' ;;
+    open)     printf 'Terminal: Ctrl+Alt+T' ;;
+    password) printf 'Terminal: Ctrl+Alt+T, after the maintenance password (the "mac" user'"'"'s)' ;;
     off)      printf 'Terminal: none in this build (LAYEROSX_TERMINAL=off)' ;;
 esac
 if [ "$MODE" = debug ]; then printf '; Ctrl+Alt+F2 = tty2.\n'; else printf '; VT switching is off.\n'; fi
-printf 'Hotkeys (both build modes): Ctrl+Alt+W Wi-Fi picker, Ctrl+Alt+U USB picker.\n'
+printf 'Hotkeys (both build modes): Ctrl+Alt+T terminal, Ctrl+Alt+W Wi-Fi picker, Ctrl+Alt+U USB picker.\n'

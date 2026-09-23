@@ -29,10 +29,10 @@ Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 ## Kiosk commands (runtime cheat-sheet)
 
 Once LayerOSX is running the macOS VM, these commands are on `PATH` for the
-`mac` user. You reach a shell to run them with **F2** (a terminal inside the
-graphical session). **In a `debug` build** F2 opens it directly (and
+`mac` user. You reach a shell to run them with **Ctrl+Alt+T** (a terminal
+inside the graphical session). **In a `debug` build** it opens directly (and
 **Ctrl+Alt+F2**, tty2 autologin as `mac`, works too). **In a `release` build**
-F2 first asks for the **maintenance password** (the `mac` user's password,
+it first asks for the **maintenance password** (the `mac` user's password,
 chosen in the installer) — the kiosk stays locked for whoever is at the
 keyboard, but is never unmaintainable. VT switching stays off in release. The
 policy is a build parameter: `LAYEROSX_TERMINAL=password|open|off` (see
@@ -115,7 +115,7 @@ X-server options): **VT switching** (Ctrl+Alt+Fn) and **Ctrl+Alt+Backspace**
 All of this is **mode-aware**: a `release` build strips everything for a
 locked appliance, while a `debug` build keeps VT switching and
 Ctrl+Alt+Backspace so the developer still has an escape hatch. A few
-deliberate, fixed shortcuts are re-added in **both** modes: **F2** (maintenance
+deliberate, fixed shortcuts are re-added in **both** modes: **Ctrl+Alt+T** (maintenance
 terminal — password-protected in release by default, see "Maintenance
 terminal"; build parameter `LAYEROSX_TERMINAL`), **Ctrl+Alt+W** (Wi-Fi picker),
 **Ctrl+Alt+U** (USB picker) and the brightness keys.
@@ -293,7 +293,7 @@ third-party repos or AUR helpers needed. Two ways to get that shell:
 git clone https://github.com/vinioliveiras/LayerOSX.git
 cd LayerOSX
 ./rebuild.sh release        # or: ./rebuild.sh debug
-LAYEROSX_TERMINAL=off ./rebuild.sh release   # optional: F2 terminal password|open|off
+LAYEROSX_TERMINAL=off ./rebuild.sh release   # optional: Ctrl+Alt+T terminal password|open|off
 ```
 
 `rebuild.sh` runs `setup-build-host.sh` first, which installs everything the
@@ -2832,16 +2832,17 @@ attach (idempotent), refusal of keyboard/hub, bad IDs rejected, always/forget
 file handling, detach, `usb-list`, and QEMU starting with "always" devices
 that aren't plugged in. Real devices in macOS need the laptop -- CHECKLIST 5.4d.
 
-## Maintenance terminal: F2 with a password in release (`LAYEROSX_TERMINAL`)
+## Maintenance terminal: Ctrl+Alt+T, password-gated in release (`LAYEROSX_TERMINAL`)
 
 A fully locked release build had no terminal at all, which made the VM
 unmaintainable: no way to switch `gpu` (e.g. back from an alpha Reims that
 black-screens), read logs or run `macdiag` without flashing a debug ISO.
 
-- **F2 now exists in every build**, handled by `lib/maint-terminal.sh`.
+- **Ctrl+Alt+T opens it in every build** (it used to be F2 — see below),
+  handled by `lib/maint-terminal.sh`.
   Behaviour is a **build parameter**, independent of the build mode:
 
-  | `LAYEROSX_TERMINAL` | F2 does | default for |
+  | `LAYEROSX_TERMINAL` | Ctrl+Alt+T does | default for |
   |---|---|---|
   | `open` | opens the terminal directly | `debug` |
   | `password` | asks for the maintenance password, then opens it | `release` |
@@ -2859,9 +2860,17 @@ black-screens), read logs or run `macdiag` without flashing a debug ISO.
   later from the terminal with `passwd`.
 - **Verification** uses PAM's `unix_chkpwd` helper (a user may verify their
   own password without root; it refuses a tty, so it's fed through a pipe).
-  3 tries per F2 press with a growing delay; attempts are logged (timestamp
+  3 tries per press with a growing delay; attempts are logged (timestamp
   only) to `~/maint-auth.log`. One dialog/terminal at a time (flock).
 - Once unlocked the terminal is a normal shell as `mac`, which has
   passwordless sudo — i.e. full host access, which is what maintenance needs.
   VT switching (Ctrl+Alt+F2 → autologin tty2) stays **off** in release, since
   that would bypass the password.
+- **Why Ctrl+Alt+T and not F2:** openbox grabs a bound key before the VM
+  window sees it, so F2 was lost to macOS (where it's brightness-up, and F2 in
+  apps like Excel). Ctrl+Alt+T is the usual Linux "open terminal" chord,
+  Control+Option+T isn't a macOS system shortcut (only VoiceOver, off by
+  default, uses Control+Option as its prefix), and it matches Ctrl+Alt+W
+  (Wi-Fi) / Ctrl+Alt+U (USB). The live ISO installer session (root) opens the
+  terminal without a prompt. Older README sections that say "F2" describe the
+  same terminal under its old key.

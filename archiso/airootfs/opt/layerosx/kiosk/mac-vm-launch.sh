@@ -77,7 +77,7 @@ exec > >(while IFS= read -r _l || [ -n "$_l" ]; do printf '%(%H:%M:%S)T %s\n' -1
 # that systemd's own restart-rate-limit on the getty unit can trip and
 # leave tty1 dead. A long sleep before exiting fixes both: paces the
 # restart to something sane, and gives a wide window to switch to tty2
-# (Ctrl+Alt+F2) or pull up the F2 live-log terminal and actually read
+# (Ctrl+Alt+F2) or pull up the Ctrl+Alt+T live-log terminal and actually read
 # the message before it's gone.
 fatal() {
     echo "FATAL: $1" >&2
@@ -459,7 +459,7 @@ configure_toggles() {
     fi
 
     echo "Launch profile: cpu=$CPU_MODEL ($CPU_VENDOR host) smp=$VM_CORES gfx=$GFX macos=${MACOS_SHORTNAME:-unknown} recovery=${RECOVERY_DISK:-none}"
-    echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the F2 terminal)."
+    echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the Ctrl+Alt+T terminal)."
 }
 
 RETRIES=0
@@ -587,9 +587,9 @@ while true; do
     # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an
     # exclusive keyboard grab. Without this, the moment you click into the VM
     # (e.g. to pick macOS in the OpenCore menu) SDL grabs the keyboard and the
-    # openbox F2 log-terminal keybind stops firing -- you're stuck using the raw
+    # openbox log-terminal keybind (Ctrl+Alt+T, formerly F2) stops firing -- you're stuck using the raw
     # Ctrl+Alt+F2 VT (which is low-refresh and ghosts on some monitors). With
-    # the grab off, F2 keeps opening the in-X log terminal while the VM is
+    # the grab off, Ctrl+Alt+T keeps opening the in-X log terminal while the VM is
     # focused, and macOS still receives every other key through normal focus.
     SDL_GRAB_KEYBOARD=0 LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
@@ -641,7 +641,7 @@ while true; do
                 fatal "QEMU exited $RETRIES times in a row." \
                     "That's a boot that fails the same way every time, not a transient glitch -- rebooting the physical" \
                     "machine (what this used to do here) would just loop it faster. Read $LOG and $SERIAL_LOG" \
-                    "(F2 terminal: 'logs' / 'serial'). The display defaults to plain VMware SVGA;" \
+                    "(Ctrl+Alt+T terminal: 'logs' / 'serial'). The display defaults to plain VMware SVGA;" \
                     "if you'd switched it to Reims, echo vmware > $GFX_FILE (or rm it) + relaunch to go back."
             fi
             sleep 3

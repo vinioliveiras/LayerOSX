@@ -5,7 +5,7 @@
 # the kiosk really shows the VM and nothing else, with no accidental way onto
 # an empty desktop, another window, or a menu.
 #
-# $1 = the log file F2's terminal should tail.
+# $1 = the log file the Ctrl+Alt+T terminal should tail.
 #
 # What it does to a COPY of openbox's own stock rc.xml (so all the normal
 # window management GParted/zenity/the QEMU window rely on is kept):
@@ -19,9 +19,9 @@
 #   * Pins the QEMU/SDL window focused + above everything on the one desktop.
 #
 # Build mode (/etc/layerosx/mode, baked by build.sh):
-#   debug   -> F2 opens the live terminal directly; VT switching is left
+#   debug   -> Ctrl+Alt+T opens the live terminal directly; VT switching is left
 #              working too (that's an X-server option handled in build.sh).
-#   release -> F2 asks for the kiosk user's password before opening the
+#   release -> Ctrl+Alt+T asks for the kiosk user's password before opening the
 #              terminal (lib/maint-terminal.sh); VT switching stays off. Kept
 #              in BOTH modes: Ctrl+Alt+W
 #              (Wi-Fi picker dialog), Ctrl+Alt+U (USB passthrough picker) and
@@ -57,7 +57,7 @@ content = re.sub(r"<number>\d+</number>", "<number>1</number>", content, count=1
 # 2) Remove EVERY keyboard shortcut. openbox's <keyboard> can hold just
 #    <chainQuitKey> and no <keybind> children, which is exactly what a kiosk
 #    wants: Ctrl+Alt+arrows (GoToDesktop), Alt+Tab, Alt+F4, W-e, the
-#    Reconfigure/Restart binds -- all gone. (F2 is re-added below, see step 6.)
+#    Reconfigure/Restart binds -- all gone. (the terminal chord is re-added below, see step 6.)
 content = re.sub(r"[ \t]*<keybind\b.*?</keybind>\s*", "", content, flags=re.DOTALL)
 
 # 3) Remove the desktop-switching mousebinds (scroll / Alt-scroll / Ctrl-Alt-
@@ -95,13 +95,16 @@ if "layerosx-qemu-focus" not in content and "</applications>" in content:
     )
     content = content.replace("</applications>", app_rule + "</applications>", 1)
 
-# 6) Both modes: F2 -> maintenance terminal (lib/maint-terminal.sh). In a
+# 6) Both modes: Ctrl+Alt+T -> maintenance terminal (lib/maint-terminal.sh).
+#    Not F2 (what this used to be): a key openbox grabs never reaches macOS,
+#    and F2 is brightness-up / an app key there; Ctrl+Alt+T is the usual Linux
+#    "open terminal" chord and Control+Option+T isn't a macOS shortcut. In a
 #    debug build it opens straight away; in a release build it asks for the
 #    kiosk user's password first, so the appliance stays locked but is never
 #    unmaintainable (no other way to reach gpu/verbose/relaunch/logs there).
 if "layerosx-f2-peek" not in content and "</keyboard>" in content:
     keybind = (
-        '  <keybind key="F2"> <!-- layerosx-f2-peek -->\n'
+        '  <keybind key="C-A-t"> <!-- layerosx-f2-peek -->\n'
         '    <action name="Execute">\n'
         f"      <command>/opt/layerosx/kiosk/lib/maint-terminal.sh {log_target}</command>\n"
         "    </action>\n"

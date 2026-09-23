@@ -41,7 +41,7 @@ source "$LIB_DIR/wifi-setup.sh"
 # (the parent process) redirects its own output there before running
 # this script as a regular subprocess, and a plain subprocess
 # inherits its parent's already-redirected file descriptors. So
-# there's no separate log file to manage here: F2 (see
+# there's no separate log file to manage here: Ctrl+Alt+T (see
 # lib/install-f2-keybind.sh, wired up from .xinitrc) already tails
 # that exact file, and it already has everything.
 #
@@ -53,7 +53,7 @@ source "$LIB_DIR/wifi-setup.sh"
 # Real percentage isn't available for every command here
 # (fetch-macOS-v2.py's download and dmg2img's extraction don't print
 # anything reliably parseable), so this pulsates rather than guessing
-# -- still far better than a black screen, and F2 opens a terminal
+# -- still far better than a black screen, and Ctrl+Alt+T opens a terminal
 # tailing the exact same output live for anyone who wants to see it.
 run_with_progress() {
     local title="$1" text="$2"
@@ -130,7 +130,7 @@ run_convert_with_progress() {
 # pulsating guess. The download maps to 0-95% of the bar; the verify + dmg2img
 # + qemu-img phases that follow emit no parseable %, so the label switches and
 # the bar holds at 95 until the whole command returns (closed at 100). Every
-# line is still echoed, so F2's live log tail stays complete.
+# line is still echoed, so the Ctrl+Alt+T live log tail stays complete.
 run_download_with_progress() {
     local title="$1" text="$2"
     shift 2
@@ -148,7 +148,7 @@ run_download_with_progress() {
     rm -f "$fifo"
 
     "$@" 2>&1 | stdbuf -oL tr '\r' '\n' | while IFS= read -r line; do
-        printf '%s\n' "$line"                 # keep the raw log intact (F2)
+        printf '%s\n' "$line"                 # keep the raw log intact (Ctrl+Alt+T terminal)
         case "$line" in
             *"% downloaded"*)
                 # ".../ 650.0 MB |== | 42.3% downloaded" -> "42"
@@ -262,10 +262,10 @@ case "$CHOICE" in
         qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
         copy_ovmf_vars
         [ -n "$MACOS_SHORTNAME" ] && printf '%s\n' "$MACOS_SHORTNAME" > "$MACOS_VERSION_FILE"
-        if ! run_download_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press F2 for details)" \
+        if ! run_download_with_progress "LayerOSX — first run" "Downloading macOS $MACOS_VERSION… (press Ctrl+Alt+T for details)" \
             bash "$LIB_DIR/fetch-recovery.sh" "$VM_DISK" "$MACOS_SHORTNAME"; then
             zenity --error --width=520 --title="LayerOSX — first run" \
-                --text="Couldn't download the macOS recovery image. Press F2 to see the details, check your internet connection, and try again."
+                --text="Couldn't download the macOS recovery image. Press Ctrl+Alt+T to see the details, check your internet connection, and try again."
             exit 1
         fi
 
@@ -329,9 +329,9 @@ case "$CHOICE" in
                 # format=qcow2, so a raw image has to be converted, not
                 # copied (it used to be copied -- QEMU then refused it as
                 # "not in qcow2 format").
-                if ! run_convert_with_progress "LayerOSX — first run" "Converting VM disk to qcow2… (press F2 for details)" \
+                if ! run_convert_with_progress "LayerOSX — first run" "Converting VM disk to qcow2… (press Ctrl+Alt+T for details)" \
                     "$SRC" "$VM_DISK" raw; then
-                    zenity --error --text="Couldn't convert this raw disk image into a qcow2 VM disk. Press F2 to see the details."
+                    zenity --error --text="Couldn't convert this raw disk image into a qcow2 VM disk. Press Ctrl+Alt+T to see the details."
                     exit 1
                 fi
                 ;;
@@ -350,9 +350,9 @@ case "$CHOICE" in
                     *.vhd)  _srcfmt=vpc ;;
                     *.vhdx) _srcfmt=vhdx ;;
                 esac
-                if ! run_convert_with_progress "LayerOSX — first run" "Converting ${SRC##*.} disk to qcow2… (press F2 for details)" \
+                if ! run_convert_with_progress "LayerOSX — first run" "Converting ${SRC##*.} disk to qcow2… (press Ctrl+Alt+T for details)" \
                     "$SRC" "$VM_DISK" "$_srcfmt"; then
-                    zenity --error --text="Couldn't convert this ${SRC##*.} disk into a qcow2 VM disk. Press F2 to see the details. If it's a split VMware disk, make sure every part (the -s001.vmdk, -s002.vmdk… files) is in the same folder as the descriptor .vmdk you picked."
+                    zenity --error --text="Couldn't convert this ${SRC##*.} disk into a qcow2 VM disk. Press Ctrl+Alt+T to see the details. If it's a split VMware disk, make sure every part (the -s001.vmdk, -s002.vmdk… files) is in the same folder as the descriptor .vmdk you picked."
                     exit 1
                 fi
                 ;;
@@ -364,17 +364,17 @@ case "$CHOICE" in
                 # container, hence -f raw on the way in.
                 qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
                 INSTALLER_DISK="${VM_DISK%.qcow2}-installer.qcow2"
-                if ! run_convert_with_progress "LayerOSX — first run" "Preparing installer from .iso… (press F2 for details)" \
+                if ! run_convert_with_progress "LayerOSX — first run" "Preparing installer from .iso… (press Ctrl+Alt+T for details)" \
                     "$SRC" "$INSTALLER_DISK" raw; then
-                    zenity --error --text="Couldn't convert this .iso into a VM disk. Press F2 to see the details, or try the 'download directly from Apple' option instead."
+                    zenity --error --text="Couldn't convert this .iso into a VM disk. Press Ctrl+Alt+T to see the details, or try the 'download directly from Apple' option instead."
                     exit 1
                 fi
                 ;;
             *.dmg|*.DMG|*.app|*.APP)
                 qemu-img create -f qcow2 "$VM_DISK" "${VM_SIZE_GB}G"
-                if ! run_with_progress "LayerOSX — first run" "Preparing installer from .dmg… (press F2 for details)" \
+                if ! run_with_progress "LayerOSX — first run" "Preparing installer from .dmg… (press Ctrl+Alt+T for details)" \
                     bash "$LIB_DIR/extract-dmg-installer.sh" "$SRC" "$VM_DISK"; then
-                    zenity --error --text="Couldn't prepare an installer from this .dmg (this is the most experimental part of the project — see docs/CHECKLIST.md). Press F2 to see the details, or try the 'download directly from Apple' option instead."
+                    zenity --error --text="Couldn't prepare an installer from this .dmg (this is the most experimental part of the project — see docs/CHECKLIST.md). Press Ctrl+Alt+T to see the details, or try the 'download directly from Apple' option instead."
                     exit 1
                 fi
                 ;;

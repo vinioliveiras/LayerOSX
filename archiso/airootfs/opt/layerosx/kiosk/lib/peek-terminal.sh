@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# What F2 opens: a REAL terminal, not just a read-only log tail --
+# What Ctrl+Alt+T opens (lib/maint-terminal.sh): a REAL terminal, not just a read-only log tail --
 # shows the last bit of whatever's happening right now, then drops
 # into an interactive shell so commands can actually be run (ps,
 # lsblk, journalctl, cat a status file, whatever's needed) while the
