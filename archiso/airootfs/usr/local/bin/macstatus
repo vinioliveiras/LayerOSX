@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Show the macOS VM's current settings and disk state at a glance.
 S=/var/lib/layerosx
-gfx=$(cat "$S/gfx" 2>/dev/null || echo vmware); verb=$(cat "$S/verbose" 2>/dev/null || echo on); aud=$(cat "$S/audio" 2>/dev/null || echo off)
+source /opt/layerosx/kiosk/lib/settings.sh; gfx=$(effective_setting gfx); verb=$(effective_setting verbose); aud=$(effective_setting audio)
 cpu=$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)
 echo "===== macOS VM status ====="
 echo "  host CPU : $cpu"

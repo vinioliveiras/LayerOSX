@@ -24,11 +24,12 @@
 set -uo pipefail
 AUDIO_FILE="/var/lib/layerosx/audio"
 
+# shellcheck source=/dev/null
+source /opt/layerosx/kiosk/lib/settings.sh
 current() {
-    local v; v="$(cat "$AUDIO_FILE" 2>/dev/null || echo off)"
-    case "$v" in
-        on|1|yes|true|ON|On) echo "on (usb-audio attached, if this build supports it)" ;;
-        *) echo "off (no audio device -- the default)" ;;
+    case "$(effective_setting audio)" in
+        on) echo "on (usb-audio attached, if this build supports it) [$(setting_origin audio)]" ;;
+        *)  echo "off (no audio device) [$(setting_origin audio)]" ;;
     esac
 }
 

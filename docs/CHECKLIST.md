@@ -1039,6 +1039,21 @@ allow-list and anything not coming from the guest.)
   "Maintenance terminal: off"; Ctrl+Alt+T does nothing. `commands` prints the
   current policy in its footer.
 
+### 5.4f. Kiosk menu (Ctrl+Alt+W)
+
+- Ctrl+Alt+W over the fullscreen VM opens the menu ON TOP; the status line
+  shows the right Wi-Fi SSID, battery %, graphics (Reims on a fresh release
+  install), boot log, audio, "Mac: running".
+- Wi-Fi… shows "Connected to: <SSID>" and marks that row "connected";
+  picking it again just says "Already connected".
+- Graphics… → VMware → "Restart the Mac now?" → Yes → the VM comes back on
+  VMware (the black-screen rescue). Back to Reims the same way.
+- Restart the Mac → VM relaunches. Restart computer / Shut down computer →
+  the machine reboots / powers off without the VM relaunching in between.
+- Save diagnostics with a USB stick plugged in → "Diagnostics saved".
+- `gpu` / `verbose` / `audio` / `macstatus` on a fresh release install report
+  reims / off / on "[release build default]".
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

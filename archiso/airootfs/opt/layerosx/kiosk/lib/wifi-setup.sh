@@ -82,17 +82,32 @@ _wifi_connect() {
     return 0
 }
 
+# SSID of the Wi-Fi network the host is on right now (empty if none).
+_wifi_current() {
+    nmcli -t -f ACTIVE,SSID device wifi 2>/dev/null | awk -F: '$1=="yes"{print $2; exit}'
+}
+
 _wifi_pick_and_connect() {
     _wifi_radio_on
 
     local -A sec_of=()
-    local rows=() ssid signal sec bars secured
+    local rows=() ssid signal sec bars secured current header
+    current="$(_wifi_current)"
+    if [ -n "$current" ]; then
+        header="Connected to: $current"
+        has_internet || header="$header  (no internet access)"
+    elif nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^ethernet:connected'; then
+        header="Not on Wi-Fi (using a wired connection)"
+    else
+        header="Not connected"
+    fi
 
     while IFS="$(printf '\t')" read -r ssid signal sec; do
         [ -n "$ssid" ] || continue
         sec_of["$ssid"]="$sec"
         bars="$(_wifi_bars "$signal")"
         if [ -n "$sec" ] && [ "$sec" != "--" ]; then secured="secured"; else secured="open"; fi
+        [ "$ssid" = "$current" ] && secured="$secured — connected"
         rows+=(FALSE "$ssid" "$bars" "$secured")
     done < <(_wifi_scan)
 
@@ -102,7 +117,7 @@ _wifi_pick_and_connect() {
     local choice
     choice=$(zenity --list --radiolist --width=560 --height=460 \
         --title="LayerOSX — Wi-Fi" \
-        --text="Pick a network" \
+        --text="$header\n\nPick a network" \
         --column="" --column="Network" --column="Signal" --column="" \
         "${rows[@]}" 2>/dev/null)
 
@@ -129,6 +144,11 @@ _wifi_pick_and_connect() {
     esac
 
     ssid="$choice"
+    if [ "$ssid" = "$current" ] && has_internet; then
+        zenity --info --width=360 --timeout=4 --title="LayerOSX — Wi-Fi" \
+            --text="Already connected to \"$ssid\"." 2>/dev/null || true
+        return 0
+    fi
     sec="${sec_of[$ssid]:-}"
     local pass=""
     if [ -n "$sec" ] && [ "$sec" != "--" ]; then

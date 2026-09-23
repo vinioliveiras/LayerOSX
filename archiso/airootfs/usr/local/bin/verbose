@@ -17,11 +17,12 @@
 set -uo pipefail
 VERBOSE_FILE="/var/lib/layerosx/verbose"
 
+# shellcheck source=/dev/null
+source /opt/layerosx/kiosk/lib/settings.sh
 current() {
-    local v; v="$(cat "$VERBOSE_FILE" 2>/dev/null || echo on)"
-    case "$v" in
-        off|0|no|false|OFF|Off) echo "off (clean Apple-logo boot, no logs)" ;;
-        *) echo "on (XNU -v + OpenCore logs shown -- the default)" ;;
+    case "$(effective_setting verbose)" in
+        off) echo "off (clean Apple-logo boot, no logs) [$(setting_origin verbose)]" ;;
+        *)   echo "on (XNU -v + OpenCore logs shown) [$(setting_origin verbose)]" ;;
     esac
 }
 

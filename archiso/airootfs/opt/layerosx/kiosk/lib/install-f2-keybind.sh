@@ -24,7 +24,7 @@
 #   release -> Ctrl+Alt+T asks for the kiosk user's password before opening the
 #              terminal (lib/maint-terminal.sh); VT switching stays off. Kept
 #              in BOTH modes: Ctrl+Alt+W
-#              (Wi-Fi picker dialog), Ctrl+Alt+U (USB passthrough picker) and
+#              (kiosk menu), Ctrl+Alt+U (USB passthrough picker) and
 #              the brightness keys (brightnessctl).
 #
 # Safe to call every boot: each edit is independently idempotent.
@@ -112,14 +112,16 @@ if "layerosx-f2-peek" not in content and "</keyboard>" in content:
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
 
-# 7) Both modes: Ctrl+Alt+W opens the Wi-Fi picker. This is the ONLY way to
-#    change networks in a locked release build (no terminal there). It runs a
-#    fixed zenity dialog, not a shell, so it doesn't reopen an escape hatch.
+# 7) Both modes: Ctrl+Alt+W opens the kiosk menu (lib/kiosk-menu.sh): status,
+#    Wi-Fi, USB, graphics/boot-log/audio, restart the Mac or the computer,
+#    diagnostics, maintenance terminal. It runs fixed zenity dialogs, not a
+#    shell (the terminal entry still goes through maint-terminal.sh's policy),
+#    so it doesn't reopen an escape hatch in a locked release build.
 if "layerosx-wifi" not in content and "</keyboard>" in content:
     keybind = (
         '  <keybind key="C-A-w"> <!-- layerosx-wifi -->\n'
         '    <action name="Execute">\n'
-        "      <command>/opt/layerosx/kiosk/lib/wifi-setup.sh --pick</command>\n"
+        "      <command>/opt/layerosx/kiosk/lib/kiosk-menu.sh</command>\n"
         "    </action>\n"
         "  </keybind>\n"
     )

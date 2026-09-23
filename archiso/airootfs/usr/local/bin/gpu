@@ -13,12 +13,13 @@
 set -uo pipefail
 GFX_FILE="/var/lib/layerosx/gfx"
 
+# shellcheck source=/dev/null
+source /opt/layerosx/kiosk/lib/settings.sh
 current() {
-    local v; v="$(cat "$GFX_FILE" 2>/dev/null || true)"
-    case "$v" in
-        reims|reims-vgpu-pci) echo "reims (hardware-accelerated, alpha)" ;;
-        std|std-vga|vga) echo "std (stock VGA, OVMF linear framebuffer)" ;;
-        *) echo "vmware (reliable, unaccelerated -- the default)" ;;
+    case "$(effective_setting gfx)" in
+        reims) echo "reims (hardware-accelerated, alpha) [$(setting_origin gfx)]" ;;
+        std)   echo "std (stock VGA, OVMF linear framebuffer) [$(setting_origin gfx)]" ;;
+        *)     echo "vmware (reliable, unaccelerated) [$(setting_origin gfx)]" ;;
     esac
 }
 

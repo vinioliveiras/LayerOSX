@@ -5,12 +5,12 @@
 # "Ethernet" link and simply rides the new uplink (no relaunch needed).
 #
 #   wifi            current connection + internet check (same as `wifi status`)
-#   wifi pick       open the Wi-Fi picker (zenity list + password box; falls
+#   wifi pick       open the Wi-Fi picker (also: Ctrl+Alt+W menu > Wi-Fi) (zenity list + password box; falls
 #                   back to nmtui when there's no graphical session, e.g. tty2)
 #   wifi list       scan and print nearby networks (text)
 #
-# Hotkey: Ctrl+Alt+W opens the same picker from anywhere, in both build
-# modes -- it's the only way to switch networks in a locked release build.
+# Ctrl+Alt+W opens the kiosk menu, whose Wi-Fi entry is this same picker (both
+# build modes) -- the way to switch networks in a locked release build.
 set -uo pipefail
 LIB=/opt/layerosx/kiosk/lib/wifi-setup.sh
 
@@ -31,7 +31,7 @@ status() {
     else
         echo "Internet: NOT reachable"
     fi
-    echo "Change network: wifi pick   (or Ctrl+Alt+W)"
+    echo "Change network: wifi pick   (or Ctrl+Alt+W > Wi-Fi)"
 }
 
 case "${1:-status}" in

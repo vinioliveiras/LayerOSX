@@ -16,7 +16,7 @@ CMDS=(
 "macstatus|Diagnostics|current gpu/verbose/audio + VM disk summary|One-glance summary of the current display/verbose/audio settings and whether the VM disk / recovery exist. Usage: macstatus."
 "maclog|Diagnostics|view the guest serial log (has subcommands)|Views the guest boot/serial log. No arg = curated view (where it stopped + errors + OpenCore image). Subs: tail oc patch err launch qemu all usb. Usage: maclog [sub]."
 "macdiag|Diagnostics|full shareable diagnostics bundle (host+guest+logs)|Collects host CPU/KVM/memory + QEMU version/cmdline + OpenCore image + macOS version + all logs into ONE folder. 'macdiag usb' copies it to a USB (also auto-saved to USB on every VM exit). Usage: macdiag [usb]."
-"wifi|Network|host Wi-Fi: status / pick a network / list (hotkey Ctrl+Alt+W)|The Mac only sees a wired NAT link, so networks are chosen on the host. wifi = current connection + internet check; wifi pick = the Wi-Fi picker (nmtui without a graphical session); wifi list = nearby networks. Ctrl+Alt+W opens the picker from anywhere, also in a locked release build. No relaunch needed. Usage: wifi [status|pick|list]."
+"wifi|Network|host Wi-Fi: status / pick a network / list (also in the Ctrl+Alt+W menu)|The Mac only sees a wired NAT link, so networks are chosen on the host. wifi = current connection + internet check; wifi pick = the Wi-Fi picker (nmtui without a graphical session); wifi list = nearby networks. The Ctrl+Alt+W menu has a Wi-Fi entry, also in a locked release build. No relaunch needed. Usage: wifi [status|pick|list]."
 "usb|Devices|give a host USB device to the Mac / take it back (hotkey Ctrl+Alt+U)|USB passthrough. usb = list devices and where each is (Linux/Mac); usb pick = picker; usb attach|detach VVVV:PPPP = now; usb always|forget VVVV:PPPP = give it to the Mac on every launch and re-plug (or stop). Keyboards/mice/hubs are never passed; storage must be unmounted on the host first. Usage: usb [list|pick|attach|detach|always|forget] [VVVV:PPPP]."
 "erasevm|Lifecycle|delete the VM so the first-run wizard runs again|Deletes the VM disk + recovery/installer image + UEFI NVRAM, so the next boot reopens the first-run wizard (reinstall, or pick a different macOS version). Refuses while QEMU runs unless -y. Usage: erasevm [-y]."
 )
@@ -53,4 +53,4 @@ case "$TERMINAL" in
     off)      printf 'Terminal: none in this build (LAYEROSX_TERMINAL=off)' ;;
 esac
 if [ "$MODE" = debug ]; then printf '; Ctrl+Alt+F2 = tty2.\n'; else printf '; VT switching is off.\n'; fi
-printf 'Hotkeys (both build modes): Ctrl+Alt+T terminal, Ctrl+Alt+W Wi-Fi picker, Ctrl+Alt+U USB picker.\n'
+printf 'Hotkeys (both build modes): Ctrl+Alt+W menu (Wi-Fi, USB, graphics, restart...), Ctrl+Alt+T terminal, Ctrl+Alt+U USB.\n'

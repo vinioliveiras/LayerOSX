@@ -23,6 +23,7 @@ QMP_SOCK="/tmp/macvm-qmp.sock"
 QMP_CTL_SOCK="/tmp/macvm-ctl.sock"                 # 2nd QMP monitor: lib/qmp-cmd.py (sleep hook, battery-watch)
 BATTERY_POWEROFF_FLAG="/tmp/layerosx-battery-poweroff"  # set by lib/battery-watch.sh
 USB_PASSTHROUGH_FILE="$STATE_DIR/usb-passthrough"     # "vvvv:pppp name" lines, lib/usb-passthrough.sh
+HOST_ACTION_FILE="/tmp/layerosx-host-action"          # "reboot"|"poweroff", set by lib/kiosk-menu.sh
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 OPENCORE_DIR="/opt/layerosx/opencore"
@@ -471,6 +472,15 @@ while true; do
         echo "Battery critical -- powering off the physical machine."
         sudo systemctl poweroff
         exit 0
+    fi
+    # Restart / Shut Down chosen from the kiosk menu (Ctrl+Alt+W): the menu
+    # stopped QEMU cleanly (QMP quit, disks flushed) and left the action here.
+    if [ -s "$HOST_ACTION_FILE" ]; then
+        _act="$(cat "$HOST_ACTION_FILE")"; rm -f "$HOST_ACTION_FILE"
+        case "$_act" in
+            reboot)   echo "Kiosk menu: restarting the physical machine."; sudo systemctl reboot;   exit 0 ;;
+            poweroff) echo "Kiosk menu: shutting down the physical machine."; sudo systemctl poweroff; exit 0 ;;
+        esac
     fi
     configure_toggles
 

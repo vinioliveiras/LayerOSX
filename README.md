@@ -54,6 +54,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `macdiag [usb]` | Collect a FULL diagnostics bundle into one folder — host CPU/flags/KVM/memory, QEMU version + the exact launch cmdline + which OpenCore image booted, the selected vs downloaded macOS version, the toggles, and the serial + QEMU logs (summary + raw copies). `macdiag usb` copies it to a USB stick. The same bundle is also saved to any USB automatically on every VM exit. |
 | `wifi [status\|pick\|list]` | **Host** Wi-Fi (the Mac only sees a wired NAT link, so networks are picked on the Linux side). No arg = current network + internet check; `pick` = the Wi-Fi picker (zenity list + password; `nmtui` when there's no graphical session); `list` = nearby networks. **Hotkey: Ctrl+Alt+W** opens the picker from anywhere — in **both** build modes, so it also works in a locked release kiosk. No relaunch needed: macOS keeps its Ethernet link and rides the new uplink. |
 | `usb [list\|pick\|attach\|detach\|always\|forget] [VVVV:PPPP]` | **USB passthrough**: give a host USB device (pendrive, phone, webcam…) to the Mac or take it back. No arg = every device and where it is (Linux / Mac / always→Mac). `always` gives it to the Mac on every launch and re-plug. **Hotkey: Ctrl+Alt+U** opens a picker (both build modes). Keyboards/mice/touchpads and hubs are never passed (input already reaches the Mac); storage must be unmounted on the host first. |
+| **Ctrl+Alt+W** (menu) | The **kiosk menu**, both build modes, no password: status line (Wi-Fi, battery, graphics, boot log, audio, Mac running), **Wi-Fi…**, **USB devices…**, **Graphics…** (Reims / VMware / std), boot log and audio switches, **Restart the Mac** (relaunch the VM — the rescue for a stuck/black screen), **Restart / Shut down computer** (QEMU stopped cleanly first), **Save diagnostics to USB**, **Maintenance terminal…** (same policy as Ctrl+Alt+T). Everything asks before restarting anything. |
 | `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
@@ -117,8 +118,8 @@ locked appliance, while a `debug` build keeps VT switching and
 Ctrl+Alt+Backspace so the developer still has an escape hatch. A few
 deliberate, fixed shortcuts are re-added in **both** modes: **Ctrl+Alt+T** (maintenance
 terminal — password-protected in release by default, see "Maintenance
-terminal"; build parameter `LAYEROSX_TERMINAL`), **Ctrl+Alt+W** (Wi-Fi picker),
-**Ctrl+Alt+U** (USB picker) and the brightness keys.
+terminal"; build parameter `LAYEROSX_TERMINAL`), **Ctrl+Alt+W** (kiosk menu: Wi-Fi, USB,
+graphics, restart, ...), **Ctrl+Alt+U** (USB picker) and the brightness keys.
 `SDL_GRAB_KEYBOARD=0` (so F2 keeps reaching openbox instead of the guest) is why
 these shortcuts reach the host at all — hence the need to disable them here.
 
@@ -130,7 +131,8 @@ None of these block a working boot; they make it nicer.
 - **Auto-switch to Reims after install** — provision the guest on VMware SVGA
   (reliable), then flip to the accelerated Reims vGPU automatically once macOS
   is actually installed, instead of the manual `gpu reims`.
-- **Pre-boot settings menu** — a short countdown screen (~10s) before the VM
+- **Pre-boot settings menu** — (partly done: the Ctrl+Alt+W kiosk menu now
+  switches gpu / boot log / audio and restarts the VM at any time) — a short countdown screen (~10s) before the VM
   launches, with a "continue to system" button and toggles for gpu / verbose /
   audio (writing the same `/var/lib/layerosx/*` state files the commands use).
 - **Easy dependency updates** — an `update-deps.sh` (or a documented process)
@@ -2874,3 +2876,40 @@ black-screens), read logs or run `macdiag` without flashing a debug ISO.
   (Wi-Fi) / Ctrl+Alt+U (USB). The live ISO installer session (root) opens the
   terminal without a prompt. Older README sections that say "F2" describe the
   same terminal under its old key.
+
+## Kiosk menu (Ctrl+Alt+W) + consistent "current setting"
+
+Ctrl+Alt+W used to open only the Wi-Fi picker. It now opens a **kiosk menu**
+(`lib/kiosk-menu.sh`, both build modes, no password) so a locked release build
+can be operated without a terminal:
+
+- **Status line**: Wi-Fi network (or wired / not connected), battery % and
+  state, graphics, boot log, audio, and whether the Mac is running.
+- **Wi-Fi…** (the picker, which now also shows "Connected to: <SSID>" and marks
+  that network — it used to give no hint of the current connection),
+  **USB devices…**, **Graphics…** (Reims / VMware / std, current one
+  pre-selected), **Boot log** and **Audio** switches — each then offers to
+  restart the Mac to apply, or applies on the next start.
+- **Restart the Mac** — relaunches only the VM (a hard stop for macOS). The
+  rescue for a stuck or black screen; when macOS works, Apple menu > Restart is
+  the clean way (and restarts the computer too).
+- **Restart / Shut down computer** — QMP `quit` stops QEMU with its disk
+  images flushed, and `/tmp/layerosx-host-action` tells `mac-vm-launch.sh` to
+  reboot/power off instead of relaunching (15 s fallback if the launcher isn't
+  there).
+- **Save diagnostics to a USB drive** (`macdiag usb`) and **Maintenance
+  terminal…** (hidden when `LAYEROSX_TERMINAL=off`; same password policy as
+  Ctrl+Alt+T).
+- Everything that restarts something asks first; one menu at a time (flock).
+
+Also fixed while wiring the menu: `gpu`, `verbose`, `audio` and `macstatus`
+showed hard-coded fallbacks (vmware / on / off) when no choice was saved, but a
+release build actually launches with **reims / off / on**. They now share
+`lib/settings.sh` (`effective_setting`, `setting_origin`), which applies the
+same per-mode defaults as `mac-vm-launch.sh` and says whether a value is
+"saved" or the "build default".
+
+Verified off-hardware with stubbed zenity/nmcli/sudo: menu status text,
+Graphics → vmware (file written, restart offered), Boot log toggle, Restart
+the Mac (relaunch), Restart computer (host-action file written), and the
+effective-setting defaults for a release build.
