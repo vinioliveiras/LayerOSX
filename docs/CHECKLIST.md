@@ -970,6 +970,20 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   (`alsa-lib`, `alsa-utils`, `sof-firmware`) are already on the ISO. See
   README.md's "Audio: an opt-in usb-audio toggle" for the full picture.
 
+### 5.4b. Wi-Fi while the VM runs (`wifi`, Ctrl+Alt+W)
+
+- With the VM fullscreen, press **Ctrl+Alt+W**: the Wi-Fi picker must open
+  ON TOP of the VM (not hidden behind it) in both release and debug builds.
+  If it opens behind, the openbox `layerosx-dialogs-above` rules need a
+  different match (check the dialog's class with `xprop WM_CLASS`).
+- Pick another network → "Connected to …" → inside macOS, Safari keeps
+  working with no relaunch (the NAT link survives the host uplink change).
+- Debug build terminal: `wifi` shows SSID + signal + "Internet: OK";
+  `wifi list` shows networks; `wifi pick` opens the picker; on tty2 (no X)
+  `wifi pick` falls back to `nmtui connect`.
+- Release build: confirm Ctrl+Alt+W is the ONLY shortcut that does anything
+  (F2 / Ctrl+Alt+Fn still do nothing).
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

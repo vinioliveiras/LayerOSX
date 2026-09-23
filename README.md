@@ -49,6 +49,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `maclog [sub]` | View the guest boot/serial log (`~/mac-vm-serial.log`). No arg = curated view (where it stopped + errors + which OpenCore image booted). Subs: `tail`, `oc`, `patch`, `err`, `launch` (launcher log: OpenCore image + profile + exact cmdline), `qemu` (QEMU `-d guest_errors`, debug builds), `all`, `usb`. For a full shareable bundle of *all* logs + host/config, use `macdiag`. |
 | `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
 | `macdiag [usb]` | Collect a FULL diagnostics bundle into one folder — host CPU/flags/KVM/memory, QEMU version + the exact launch cmdline + which OpenCore image booted, the selected vs downloaded macOS version, the toggles, and the serial + QEMU logs (summary + raw copies). `macdiag usb` copies it to a USB stick. The same bundle is also saved to any USB automatically on every VM exit. |
+| `wifi [status\|pick\|list]` | **Host** Wi-Fi (the Mac only sees a wired NAT link, so networks are picked on the Linux side). No arg = current network + internet check; `pick` = the Wi-Fi picker (zenity list + password; `nmtui` when there's no graphical session); `list` = nearby networks. **Hotkey: Ctrl+Alt+W** opens the picker from anywhere — in **both** build modes, so it also works in a locked release kiosk. No relaunch needed: macOS keeps its Ethernet link and rides the new uplink. |
 | `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
@@ -2672,3 +2673,33 @@ recovery and the verbose AMD OpenCore image:
 
 Stock QEMU reproducing the same `no linesize` also clears the custom
 qemu-macos/Reims fork of that bug.
+
+## Wi-Fi while the VM is running: `wifi` command + Ctrl+Alt+W
+
+The macOS guest never sees Wi-Fi: it gets a wired `vmxnet3` NIC NATed through
+the host, so macOS shows "Ethernet — connected" and its Wi-Fi menu stays empty
+(passing the physical Wi-Fi chip through wouldn't help either — macOS has no
+driver for it). Networks are therefore chosen on the **host**. Until now the
+only place to do that was the first-run wizard's Wi-Fi picker
+(`lib/wifi-setup.sh`), so moving the laptop to another network meant no way to
+switch in a locked release build.
+
+- New kiosk command **`wifi`**: `wifi` / `wifi status` (current SSID, signal,
+  internet check), `wifi pick` (the same zenity picker as first run, or `nmtui
+  connect` without a graphical session), `wifi list` (scan, text).
+- **Ctrl+Alt+W** opens the picker from anywhere, in **both** build modes.
+  `install-f2-keybind.sh` adds it after stripping every other keybind; it runs
+  a fixed dialog (not a shell), so the release kiosk stays locked.
+- openbox rules keep the picker's zenity dialogs and its "Advanced (nmtui)"
+  xterm (title `LayerOSX*`) focused and in the `above` layer, so they open on
+  top of the pinned fullscreen QEMU window instead of hidden behind it.
+- `wifi-setup.sh --pick` is the new standalone entry point; running it with no
+  argument keeps the first-run behaviour (`ensure_internet`).
+- No relaunch needed after switching: the guest's NAT link survives the host
+  changing its uplink.
+
+Future idea (not implemented): a small macOS menu-bar app inside the guest
+talking to a host-side helper (reachable from the guest at the QEMU user-net
+gateway, `10.0.2.2`) could list and join the host's networks from inside
+macOS, with a Wi-Fi-style menu. A *native* macOS Wi-Fi menu would need a
+paravirtual 802.11 driver (IO80211Family), which is far beyond scope.

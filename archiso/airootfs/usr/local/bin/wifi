@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Host Wi-Fi for the kiosk. The macOS VM never sees Wi-Fi itself: it gets a
+# wired vmxnet3 NIC NATed through whatever network the Linux host is on, so
+# changing networks means changing the HOST's Wi-Fi -- macOS keeps its
+# "Ethernet" link and simply rides the new uplink (no relaunch needed).
+#
+#   wifi            current connection + internet check (same as `wifi status`)
+#   wifi pick       open the Wi-Fi picker (zenity list + password box; falls
+#                   back to nmtui when there's no graphical session, e.g. tty2)
+#   wifi list       scan and print nearby networks (text)
+#
+# Hotkey: Ctrl+Alt+W opens the same picker from anywhere, in both build
+# modes -- it's the only way to switch networks in a locked release build.
+set -uo pipefail
+LIB=/opt/layerosx/kiosk/lib/wifi-setup.sh
+
+status() {
+    local ssid sig
+    IFS=: read -r ssid sig < <(nmcli -t -f ACTIVE,SSID,SIGNAL device wifi 2>/dev/null \
+        | awk -F: '$1=="yes"{print $2":"$3; exit}')
+    if [ -n "${ssid:-}" ]; then
+        echo "Wi-Fi: connected to \"$ssid\" (signal ${sig}%)"
+    else
+        local wired
+        wired="$(nmcli -t -f TYPE,STATE device 2>/dev/null | awk -F: '$1=="ethernet" && $2=="connected"{print "yes"; exit}')"
+        if [ -n "$wired" ]; then echo "Wi-Fi: not connected (host is on a wired connection)"
+        else echo "Wi-Fi: not connected"; fi
+    fi
+    if curl -fsS --max-time 5 -o /dev/null https://www.apple.com 2>/dev/null; then
+        echo "Internet: OK"
+    else
+        echo "Internet: NOT reachable"
+    fi
+    echo "Change network: wifi pick   (or Ctrl+Alt+W)"
+}
+
+case "${1:-status}" in
+    status) status ;;
+    pick)
+        if [ -n "${DISPLAY:-}" ]; then
+            exec "$LIB" --pick
+        else
+            exec nmtui connect
+        fi
+        ;;
+    list)
+        nmcli device wifi rescan 2>/dev/null || true
+        sleep 2
+        nmcli -f IN-USE,SSID,SIGNAL,SECURITY device wifi list
+        ;;
+    -h|--help|help)
+        sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
+        ;;
+    *)
+        echo "usage: wifi [status|pick|list]" >&2
+        exit 2
+        ;;
+esac

@@ -22,7 +22,8 @@
 #   debug   -> re-add the F2 peek-terminal keybind (the developer's escape
 #              hatch to the live log). VT switching is left working too (that's
 #              an X-server option handled in build.sh, not here).
-#   release -> no F2, no keyboard shortcuts at all: a fully locked appliance.
+#   release -> no F2: a fully locked appliance. The only shortcut kept (both
+#              modes) is Ctrl+Alt+W, which opens the Wi-Fi picker dialog.
 #
 # Safe to call every boot: each edit is independently idempotent.
 set -uo pipefail
@@ -103,6 +104,35 @@ if mode == "debug" and "layerosx-f2-peek" not in content and "</keyboard>" in co
         "  </keybind>\n"
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
+# 7) Both modes: Ctrl+Alt+W opens the Wi-Fi picker. This is the ONLY way to
+#    change networks in a locked release build (no terminal there). It runs a
+#    fixed zenity dialog, not a shell, so it doesn't reopen an escape hatch.
+if "layerosx-wifi" not in content and "</keyboard>" in content:
+    keybind = (
+        '  <keybind key="C-A-w"> <!-- layerosx-wifi -->\n'
+        '    <action name="Execute">\n'
+        "      <command>/opt/layerosx/kiosk/lib/wifi-setup.sh --pick</command>\n"
+        "    </action>\n"
+        "  </keybind>\n"
+    )
+    content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
+# 8) Keep the picker's dialogs (zenity) and its "Advanced (nmtui)" xterm on
+#    top of the pinned, always-above QEMU window, or they'd open hidden behind
+#    the fullscreen VM.
+if "layerosx-dialogs-above" not in content and "</applications>" in content:
+    rules = (
+        '  <application class="Zenity"> <!-- layerosx-dialogs-above -->\n'
+        "    <focus>yes</focus>\n"
+        "    <layer>above</layer>\n"
+        "  </application>\n"
+        '  <application title="LayerOSX*"> <!-- layerosx-dialogs-above -->\n'
+        "    <focus>yes</focus>\n"
+        "    <layer>above</layer>\n"
+        "  </application>\n"
+    )
+    content = content.replace("</applications>", rules + "</applications>", 1)
 
 if content != original:
     path.write_text(content, encoding="utf-8")

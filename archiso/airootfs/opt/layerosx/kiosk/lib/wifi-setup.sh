@@ -153,7 +153,28 @@ ensure_internet() {
     has_internet
 }
 
+# Standalone picker for use AFTER first run: the `wifi pick` kiosk command
+# and the Ctrl+Alt+W hotkey (install-f2-keybind.sh) call this to change
+# networks while the VM is running (e.g. the laptop moved). The VM itself only
+# sees a wired NAT NIC, so switching the host's Wi-Fi is all it takes --
+# macOS keeps its "Ethernet" link and just gets the new uplink.
+wifi_pick_standalone() {
+    local now
+    if _wifi_pick_and_connect; then
+        now="$(nmcli -t -f ACTIVE,SSID device wifi 2>/dev/null | awk -F: '$1=="yes"{print $2; exit}')"
+        zenity --info --width=380 --timeout=4 --title="LayerOSX — Wi-Fi" \
+            --text="Connected${now:+ to \"$now\"}. The Mac picks up the new connection by itself." 2>/dev/null || true
+        return 0
+    fi
+    return 1
+}
+
 # Allow running this file directly too (not just sourcing it).
+#   wifi-setup.sh          first-run flow (ensure_internet)
+#   wifi-setup.sh --pick   just the picker (wifi command / Ctrl+Alt+W)
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
-    ensure_internet
+    case "${1:-}" in
+        --pick) wifi_pick_standalone ;;
+        *)      ensure_internet ;;
+    esac
 fi

@@ -16,6 +16,7 @@ CMDS=(
 "macstatus|Diagnostics|current gpu/verbose/audio + VM disk summary|One-glance summary of the current display/verbose/audio settings and whether the VM disk / recovery exist. Usage: macstatus."
 "maclog|Diagnostics|view the guest serial log (has subcommands)|Views the guest boot/serial log. No arg = curated view (where it stopped + errors + OpenCore image). Subs: tail oc patch err launch qemu all usb. Usage: maclog [sub]."
 "macdiag|Diagnostics|full shareable diagnostics bundle (host+guest+logs)|Collects host CPU/KVM/memory + QEMU version/cmdline + OpenCore image + macOS version + all logs into ONE folder. 'macdiag usb' copies it to a USB (also auto-saved to USB on every VM exit). Usage: macdiag [usb]."
+"wifi|Network|host Wi-Fi: status / pick a network / list (hotkey Ctrl+Alt+W)|The Mac only sees a wired NAT link, so networks are chosen on the host. wifi = current connection + internet check; wifi pick = the Wi-Fi picker (nmtui without a graphical session); wifi list = nearby networks. Ctrl+Alt+W opens the picker from anywhere, also in a locked release build. No relaunch needed. Usage: wifi [status|pick|list]."
 "erasevm|Lifecycle|delete the VM so the first-run wizard runs again|Deletes the VM disk + recovery/installer image + UEFI NVRAM, so the next boot reopens the first-run wizard (reinstall, or pick a different macOS version). Refuses while QEMU runs unless -y. Usage: erasevm [-y]."
 )
 
@@ -48,3 +49,4 @@ if [ "$MODE" = debug ]; then
 else
     printf 'Note: locked release build — host shortcuts (F2, VT switch) are off.\n'
 fi
+printf 'Wi-Fi: Ctrl+Alt+W opens the network picker (both build modes).\n'

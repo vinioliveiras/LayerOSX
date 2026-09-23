@@ -71,4 +71,5 @@ file_permissions=(
   ["/usr/local/bin/macstatus"]="0:0:755"
   ["/usr/local/bin/commands"]="0:0:755"
   ["/usr/local/bin/macdiag"]="0:0:755"
+  ["/usr/local/bin/wifi"]="0:0:755"
 )
