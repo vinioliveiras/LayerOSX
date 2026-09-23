@@ -4,6 +4,7 @@
 #     ./rebuild.sh release      # non-interactive
 #     ./rebuild.sh debug        # non-interactive
 #     LAYEROSX_MODE=debug ./rebuild.sh
+#     LAYEROSX_TERMINAL=off ./rebuild.sh release   # F2 terminal: password|open|off
 # It pulls the latest commits, installs any missing build tools
 # (setup-build-host.sh -- archiso, docker, mtools...) and rebuilds the ISO (build.sh handles the rest:
 # it only re-runs the ~30-60 min qemu Docker build when the binary/libs aren't
@@ -31,9 +32,11 @@ echo "==> building ISO (archiso/build.sh)"
 cd archiso
 # sudo resets the environment, so pass the mode explicitly (sudo accepts
 # VAR=value before the command). Empty MODE => build.sh prompts interactively.
+# LAYEROSX_TERMINAL (password|open|off) is passed through the same way; empty
+# = build.sh picks the mode's default (debug=open, release=password).
 if [ -n "$MODE" ]; then
-    sudo LAYEROSX_MODE="$MODE" ./build.sh
+    sudo LAYEROSX_MODE="$MODE" LAYEROSX_TERMINAL="${LAYEROSX_TERMINAL:-}" ./build.sh
 else
-    sudo ./build.sh
+    sudo LAYEROSX_TERMINAL="${LAYEROSX_TERMINAL:-}" ./build.sh
 fi
 echo "==> done. ISO is in archiso/out/ -- drag it onto your Ventoy drive."

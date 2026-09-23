@@ -59,6 +59,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/wifi-setup.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/install-f2-keybind.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/peek-terminal.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/maint-terminal.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/collect-diag.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/pick-source-file.py"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/qmp-cmd.py"]="0:0:755"

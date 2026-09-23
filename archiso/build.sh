@@ -48,6 +48,24 @@ echo "==================================================================="
 mkdir -p airootfs/etc/layerosx
 printf '%s\n' "$MODE" > airootfs/etc/layerosx/mode
 
+# Maintenance terminal (F2) policy, independent of the mode so any build can
+# ship with or without it -- just set LAYEROSX_TERMINAL:
+#   password -> F2 asks for the kiosk user's password, then opens the terminal
+#   open     -> F2 opens the terminal directly (no password)
+#   off      -> no terminal at all (fully locked appliance)
+# Default follows the mode: debug=open, release=password. Baked like the mode
+# (airootfs/etc/layerosx/terminal, gitignored), read by lib/maint-terminal.sh.
+TERMINAL="${LAYEROSX_TERMINAL:-}"
+if [ -z "$TERMINAL" ]; then
+    [ "$MODE" = debug ] && TERMINAL=open || TERMINAL=password
+fi
+case "$TERMINAL" in
+    password|open|off) : ;;
+    *) echo "build.sh: unknown LAYEROSX_TERMINAL='$TERMINAL' -- using password." >&2; TERMINAL=password ;;
+esac
+printf '%s\n' "$TERMINAL" > airootfs/etc/layerosx/terminal
+echo "  Maintenance terminal (F2): $TERMINAL"
+
 # Kiosk VT-switch lock (release only). Ctrl+Alt+F1..F6 (switch to a text
 # console) and Ctrl+Alt+Backspace (zap X) are the last host shortcuts openbox
 # can't disable -- they're X-server options. A release build is a locked

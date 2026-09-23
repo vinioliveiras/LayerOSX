@@ -29,11 +29,14 @@ Reims-vGPU accelerated-video flag in `kiosk/mac-vm-launch.sh`. See
 ## Kiosk commands (runtime cheat-sheet)
 
 Once LayerOSX is running the macOS VM, these commands are on `PATH` for the
-`mac` user. **In a `debug` build** you reach a shell to run them via **F2**
-(a terminal inside the graphical session) or **Ctrl+Alt+F2** (tty2, autologin
-as `mac`). **A `release` build is a locked kiosk** — F2, VT switching and every
-other host shortcut are disabled (see "Build modes" and "Kiosk lockdown"), so
-these commands are a debug-build tool. Each one changes how the *next* launch
+`mac` user. You reach a shell to run them with **F2** (a terminal inside the
+graphical session). **In a `debug` build** F2 opens it directly (and
+**Ctrl+Alt+F2**, tty2 autologin as `mac`, works too). **In a `release` build**
+F2 first asks for the **maintenance password** (the `mac` user's password,
+chosen in the installer) — the kiosk stays locked for whoever is at the
+keyboard, but is never unmaintainable. VT switching stays off in release. The
+policy is a build parameter: `LAYEROSX_TERMINAL=password|open|off` (see
+"Maintenance terminal"). Each one changes how the *next* launch
 behaves; apply a change with
 **`relaunch`** (no reboot) or a full reboot. This is the fastest way to A/B a
 problem without rebuilding the ISO — settings are plain-text files under
@@ -109,9 +112,13 @@ deliberate) way out to the Linux host underneath. `lib/install-f2-keybind.sh`
 X-server options): **VT switching** (Ctrl+Alt+Fn) and **Ctrl+Alt+Backspace**
 (zap X), via `/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf`.
 
-All of this is **mode-aware**: a `release` build strips everything for a fully
-locked appliance, while a `debug` build keeps the **F2** log terminal, VT
-switching and Ctrl+Alt+Backspace so the developer still has an escape hatch.
+All of this is **mode-aware**: a `release` build strips everything for a
+locked appliance, while a `debug` build keeps VT switching and
+Ctrl+Alt+Backspace so the developer still has an escape hatch. A few
+deliberate, fixed shortcuts are re-added in **both** modes: **F2** (maintenance
+terminal — password-protected in release by default, see "Maintenance
+terminal"; build parameter `LAYEROSX_TERMINAL`), **Ctrl+Alt+W** (Wi-Fi picker),
+**Ctrl+Alt+U** (USB picker) and the brightness keys.
 `SDL_GRAB_KEYBOARD=0` (so F2 keeps reaching openbox instead of the guest) is why
 these shortcuts reach the host at all — hence the need to disable them here.
 
@@ -286,6 +293,7 @@ third-party repos or AUR helpers needed. Two ways to get that shell:
 git clone https://github.com/vinioliveiras/LayerOSX.git
 cd LayerOSX
 ./rebuild.sh release        # or: ./rebuild.sh debug
+LAYEROSX_TERMINAL=off ./rebuild.sh release   # optional: F2 terminal password|open|off
 ```
 
 `rebuild.sh` runs `setup-build-host.sh` first, which installs everything the
@@ -2823,3 +2831,37 @@ Verified off-hardware against a real QEMU + a fake sysfs tree: listing,
 attach (idempotent), refusal of keyboard/hub, bad IDs rejected, always/forget
 file handling, detach, `usb-list`, and QEMU starting with "always" devices
 that aren't plugged in. Real devices in macOS need the laptop -- CHECKLIST 5.4d.
+
+## Maintenance terminal: F2 with a password in release (`LAYEROSX_TERMINAL`)
+
+A fully locked release build had no terminal at all, which made the VM
+unmaintainable: no way to switch `gpu` (e.g. back from an alpha Reims that
+black-screens), read logs or run `macdiag` without flashing a debug ISO.
+
+- **F2 now exists in every build**, handled by `lib/maint-terminal.sh`.
+  Behaviour is a **build parameter**, independent of the build mode:
+
+  | `LAYEROSX_TERMINAL` | F2 does | default for |
+  |---|---|---|
+  | `open` | opens the terminal directly | `debug` |
+  | `password` | asks for the maintenance password, then opens it | `release` |
+  | `off` | nothing (fully locked appliance) | — |
+
+  Set it when building: `LAYEROSX_TERMINAL=off ./rebuild.sh release` (or
+  `LAYEROSX_TERMINAL=... ./build.sh`). `build.sh` bakes it into
+  `/etc/layerosx/terminal` (gitignored, like `/etc/layerosx/mode`); an unknown
+  value falls back to `password` (fail closed).
+- **The maintenance password is the kiosk user's (`mac`) password.** The
+  installer now asks for it (twice) right after the "erase and install"
+  confirmation and applies it with `chpasswd` after postinstall (never on a
+  command line or in the log). Cancel keeps postinstall's default `mac` —
+  fine for testing, not for a machine other people can reach. Change it
+  later from the terminal with `passwd`.
+- **Verification** uses PAM's `unix_chkpwd` helper (a user may verify their
+  own password without root; it refuses a tty, so it's fed through a pipe).
+  3 tries per F2 press with a growing delay; attempts are logged (timestamp
+  only) to `~/maint-auth.log`. One dialog/terminal at a time (flock).
+- Once unlocked the terminal is a normal shell as `mac`, which has
+  passwordless sudo — i.e. full host access, which is what maintenance needs.
+  VT switching (Ctrl+Alt+F2 → autologin tty2) stays **off** in release, since
+  that would bypass the password.

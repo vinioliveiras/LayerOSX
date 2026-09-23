@@ -98,6 +98,24 @@ zenity --question --width=480 --title="LayerOSX — Install" \
     --text="This will ERASE the content of $ROOT_PART and install LayerOSX there, using $ESP_PART as the EFI partition.\n\nThis cannot be undone. Continue?" \
     || exit 1
 
+# Maintenance password = the kiosk user's ("mac") password. It unlocks the F2
+# maintenance terminal in builds that ship it password-protected (the release
+# default, see build.sh LAYEROSX_TERMINAL / lib/maint-terminal.sh). Asked here,
+# before the long copy, and applied after postinstall created the user. Skipping
+# keeps postinstall's default ("mac") -- fine for testing, not for a machine
+# other people can reach.
+MAINT_PW=""
+while true; do
+    _p1=$(zenity --password --title="LayerOSX — Maintenance password" \
+        --text="Choose a maintenance password (unlocks the F2 terminal).\nCancel = keep the default password \"mac\"." 2>/dev/null) || { _p1=""; break; }
+    [ -n "$_p1" ] || continue
+    _p2=$(zenity --password --title="LayerOSX — Maintenance password" \
+        --text="Type it again to confirm." 2>/dev/null) || { _p1=""; break; }
+    if [ "$_p1" = "$_p2" ]; then MAINT_PW="$_p1"; break; fi
+    zenity --error --width=320 --title="LayerOSX — Maintenance password" --text="The passwords don't match." 2>/dev/null
+done
+unset _p1 _p2
+
 echo "Mounting $ROOT_PART at /mnt, $ESP_PART at /mnt/boot..."
 mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
@@ -296,6 +314,17 @@ kill "$TAIL_PID" 2>/dev/null || true
 # shellcheck disable=SC2046
 kill $(cat "/proc/$TAIL_PID/task/$TAIL_PID/children" 2>/dev/null) 2>/dev/null || true
 wait "$TAIL_PID" 2>/dev/null || true
+
+if [ -n "$MAINT_PW" ]; then
+    # chpasswd reads "user:password" on stdin -- never on the command line, so
+    # it doesn't show up in ps or the install log.
+    printf 'mac:%s\n' "$MAINT_PW" | arch-chroot /mnt chpasswd \
+        && echo "Maintenance password set." \
+        || echo "WARNING: couldn't set the maintenance password -- the default 'mac' is still in place." >&2
+else
+    echo "No maintenance password chosen -- the kiosk user keeps the default password 'mac'."
+fi
+unset MAINT_PW
 
 progress 98 "Cleaning up…"
 # While /mnt is still mounted (so the postinstall log on the target

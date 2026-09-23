@@ -18,11 +18,12 @@
 #   * Strips the right-click root menu (a plain way out to Log Out / settings).
 #   * Pins the QEMU/SDL window focused + above everything on the one desktop.
 #
-# Build mode (/etc/layerosx/mode, baked by build.sh) decides ONE thing here:
-#   debug   -> re-add the F2 peek-terminal keybind (the developer's escape
-#              hatch to the live log). VT switching is left working too (that's
-#              an X-server option handled in build.sh, not here).
-#   release -> no F2: a fully locked appliance. Kept in BOTH modes: Ctrl+Alt+W
+# Build mode (/etc/layerosx/mode, baked by build.sh):
+#   debug   -> F2 opens the live terminal directly; VT switching is left
+#              working too (that's an X-server option handled in build.sh).
+#   release -> F2 asks for the kiosk user's password before opening the
+#              terminal (lib/maint-terminal.sh); VT switching stays off. Kept
+#              in BOTH modes: Ctrl+Alt+W
 #              (Wi-Fi picker dialog), Ctrl+Alt+U (USB passthrough picker) and
 #              the brightness keys (brightnessctl).
 #
@@ -56,7 +57,7 @@ content = re.sub(r"<number>\d+</number>", "<number>1</number>", content, count=1
 # 2) Remove EVERY keyboard shortcut. openbox's <keyboard> can hold just
 #    <chainQuitKey> and no <keybind> children, which is exactly what a kiosk
 #    wants: Ctrl+Alt+arrows (GoToDesktop), Alt+Tab, Alt+F4, W-e, the
-#    Reconfigure/Restart binds -- all gone. (Re-add only F2 below, debug only.)
+#    Reconfigure/Restart binds -- all gone. (F2 is re-added below, see step 6.)
 content = re.sub(r"[ \t]*<keybind\b.*?</keybind>\s*", "", content, flags=re.DOTALL)
 
 # 3) Remove the desktop-switching mousebinds (scroll / Alt-scroll / Ctrl-Alt-
@@ -94,13 +95,15 @@ if "layerosx-qemu-focus" not in content and "</applications>" in content:
     )
     content = content.replace("</applications>", app_rule + "</applications>", 1)
 
-# 6) debug only: re-add the F2 keybind (the live-log peek terminal) into the
-#    now-empty <keyboard>. release stays fully locked (no keybinds at all).
-if mode == "debug" and "layerosx-f2-peek" not in content and "</keyboard>" in content:
+# 6) Both modes: F2 -> maintenance terminal (lib/maint-terminal.sh). In a
+#    debug build it opens straight away; in a release build it asks for the
+#    kiosk user's password first, so the appliance stays locked but is never
+#    unmaintainable (no other way to reach gpu/verbose/relaunch/logs there).
+if "layerosx-f2-peek" not in content and "</keyboard>" in content:
     keybind = (
         '  <keybind key="F2"> <!-- layerosx-f2-peek -->\n'
         '    <action name="Execute">\n'
-        f"      <command>/opt/layerosx/kiosk/lib/peek-terminal.sh {log_target}</command>\n"
+        f"      <command>/opt/layerosx/kiosk/lib/maint-terminal.sh {log_target}</command>\n"
         "    </action>\n"
         "  </keybind>\n"
     )

@@ -45,9 +45,12 @@ for row in "${CMDS[@]}"; do
     printf '  %-11s %s\n' "$name" "$short"
 done
 printf '\nApply a setting change with `relaunch` (no reboot) or a reboot.\n'
-if [ "$MODE" = debug ]; then
-    printf 'Terminal: F2 (graphical) or Ctrl+Alt+F2 (tty2).\n'
-else
-    printf 'Note: locked release build — host shortcuts (F2, VT switch) are off.\n'
-fi
+TERMINAL="$(cat /etc/layerosx/terminal 2>/dev/null || true)"
+[ -n "$TERMINAL" ] || { [ "$MODE" = debug ] && TERMINAL=open || TERMINAL=password; }
+case "$TERMINAL" in
+    open)     printf 'Terminal: F2 (graphical)' ;;
+    password) printf 'Terminal: F2, after the maintenance password (the "mac" user'"'"'s)' ;;
+    off)      printf 'Terminal: none in this build (LAYEROSX_TERMINAL=off)' ;;
+esac
+if [ "$MODE" = debug ]; then printf '; Ctrl+Alt+F2 = tty2.\n'; else printf '; VT switching is off.\n'; fi
 printf 'Hotkeys (both build modes): Ctrl+Alt+W Wi-Fi picker, Ctrl+Alt+U USB picker.\n'
