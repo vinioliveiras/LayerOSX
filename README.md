@@ -134,6 +134,22 @@ None of these block a working boot; they make it nicer.
 - [x] **Kiosk menu as a native single-window app** — done: LayerOSX Settings
   (GTK4/libadwaita, `opt/layerosx/panel/`). Next: a Bluetooth section, a
   "Displays > Resolution" option, and the in-macOS app mirroring it.
+- **Installer and first-run wizard in the LayerOSX Settings UI** — the
+  install flow (`install-wizard.sh`: GParted, pick root/EFI partitions,
+  maintenance password, progress) and the first-run wizard
+  (`macos-source-wizard.sh`: Wi-Fi, pick a macOS version or a file, download
+  progress) are still chains of zenity dialogs. Rebuild them as one
+  GTK4/libadwaita window in the same System-Settings style: a step sidebar
+  (Welcome › Disk › Password › Install › Wi-Fi › macOS › Done) with Back/Next,
+  a guided disk page (list disks/partitions with sizes and what's on them,
+  "use free space" / "use this partition", clear warnings before erasing;
+  GParted kept as an "Advanced…" escape hatch), the maintenance password with
+  confirmation and strength hint, real progress bars (copy, postinstall,
+  macOS download/convert) and a log view (the Ctrl+Alt+T terminal still
+  available). Same split as the panel: the steps' logic goes into a backend
+  module (reusing `layerosx_backend.Backend` for Wi-Fi, drives, etc.) with its
+  own tests, and the window is only a front-end. Keep the zenity scripts as a
+  fallback when GTK can't start, like `panel.sh` does.
 - **Pre-boot settings menu** — (partly done: the Ctrl+Alt+W kiosk menu now
   switches gpu / boot log / audio and restarts the VM at any time) — a short countdown screen (~10s) before the VM
   launches, with a "continue to system" button and toggles for gpu / verbose /
