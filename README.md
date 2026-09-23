@@ -131,6 +131,11 @@ None of these block a working boot; they make it nicer.
 - **Auto-switch to Reims after install** — provision the guest on VMware SVGA
   (reliable), then flip to the accelerated Reims vGPU automatically once macOS
   is actually installed, instead of the manual `gpu reims`.
+- **Kiosk menu as a native single-window app** — the Ctrl+Alt+W menu is
+  zenity dialogs (one window per screen, the menu re-opens after each action).
+  A small GTK app (python-gobject) could keep one window with pages, live
+  status and a real Back button; the future in-macOS menu-bar app would mirror
+  it.
 - **Pre-boot settings menu** — (partly done: the Ctrl+Alt+W kiosk menu now
   switches gpu / boot log / audio and restarts the VM at any time) — a short countdown screen (~10s) before the VM
   launches, with a "continue to system" button and toggles for gpu / verbose /
@@ -2906,6 +2911,13 @@ can be operated without a terminal:
   terminal…** (hidden when `LAYEROSX_TERMINAL=off`; same password policy as
   Ctrl+Alt+T).
 - Everything that restarts something asks first; one menu at a time (flock).
+- **Navigation:** the menu comes back after every action (Close exits it);
+  sub-screens (Wi-Fi, USB, Graphics, confirmations) have a **Back** button;
+  every list uses the same size, so moving between screens doesn't jump.
+  Only restarting the Mac/computer or opening the terminal leaves the menu.
+  (zenity opens one window per screen and can't keep a single window — a
+  native single-window GTK menu is the natural next step, and the same UI the
+  future in-macOS app would mirror.)
 
 Also fixed while wiring the menu: `gpu`, `verbose`, `audio` and `macstatus`
 showed hard-coded fallbacks (vmware / on / off) when no choice was saved, but a

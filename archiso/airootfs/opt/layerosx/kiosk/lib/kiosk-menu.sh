@@ -38,14 +38,15 @@ act() {
     "$@"
 }
 
-ask() { zenity --question --width=440 --title="$T" --text="$1" 2>/dev/null; }
+ask() { zenity --question --width=440 --title="$T" --ok-label="${2:-Yes}" --cancel-label="Back" --text="$1" 2>/dev/null; }
 note() { zenity --info --width=400 --timeout=5 --title="$T" --text="$1" 2>/dev/null; }
 
 vm_running() { [ -S "$CTL_SOCK" ]; }
 relaunch_vm() { act "$BIN/relaunch"; }
 
 apply_and_offer_restart() {  # $1 = what changed (for the message)
-    if vm_running && ask "$1\n\nRestart the Mac now to apply it?\n(macOS is stopped abruptly — save your work first.)"; then
+    if vm_running && zenity --question --width=440 --title="$T" --ok-label="Restart now" --cancel-label="Later" \
+            --text="$1\n\nRestart the Mac now to apply it?\n(macOS is stopped abruptly — save your work first.)" 2>/dev/null; then
         relaunch_vm
     else
         note "$1\nIt applies the next time the Mac starts."
@@ -78,7 +79,8 @@ status_text() {
 menu_graphics() {
     local cur choice
     cur="$(effective_setting gfx)"
-    choice=$(zenity --list --radiolist --width=560 --height=300 --title="$T — Graphics" \
+    choice=$(zenity --list --radiolist --width=$W --height=$H --title="$T — Graphics" \
+        --ok-label="Apply" --cancel-label="Back" \
         --text="Graphics adapter for the Mac (current: $cur)" \
         --column="" --column="id" --column="Adapter" --hide-column=2 --print-column=2 \
         "$([ "$cur" = reims ] && echo TRUE || echo FALSE)"  reims  "Reims — hardware-accelerated (alpha)" \
@@ -98,6 +100,10 @@ toggle() {  # $1 = verbose|audio, $2 = label
     apply_and_offer_restart "$2 turned $new."
 }
 
+# Every dialog shares one size so going menu -> sub-screen -> menu doesn't jump
+# around (zenity opens one window per dialog; it can't keep a single window).
+W=620; H=480
+
 main() {
     local items=() choice terminal_policy
     terminal_policy="$(cat /etc/layerosx/terminal 2>/dev/null || true)"
@@ -112,29 +118,40 @@ main() {
     items+=(diag     "Save diagnostics to a USB drive")
     [ "$terminal_policy" = off ] || items+=(terminal "Maintenance terminal…")
 
-    choice=$(zenity --list --width=560 --height=470 --title="$T — Menu" \
-        --text="$(status_text)" \
+    # Returns 1 when the user closes the menu, 0 to show it again.
+    choice=$(zenity --list --width=$W --height=$H --title="$T — Menu" \
+        --text="$(status_text)" --ok-label="Open" --cancel-label="Close" \
         --column="id" --column="" --hide-column=1 --print-column=1 --hide-header \
-        "${items[@]}" 2>/dev/null) || exit 0
+        "${items[@]}" 2>/dev/null) || return 1
     choice="${choice%%|*}"
 
+    # Sub-screens return here ("Back" = their cancel button), so the menu
+    # comes straight back after every action. Only actions that end the
+    # session (restarts, opening the terminal) leave the menu.
     case "$choice" in
-        wifi)     exec "$LIB/wifi-setup.sh" --pick ;;
-        usb)      exec "$LIB/usb-passthrough.sh" --pick ;;
+        wifi)     "$LIB/wifi-setup.sh" --pick ;;
+        usb)      "$LIB/usb-passthrough.sh" --pick ;;
         gfx)      menu_graphics ;;
         verbose)  toggle verbose "Boot log" ;;
         audio)    toggle audio "Audio" ;;
         macrestart)
             ask "Restart the Mac?\n\nmacOS is stopped abruptly and starts again (unsaved work is lost). Use this when it's stuck; otherwise use Apple menu > Restart." \
-                && relaunch_vm ;;
-        reboot)   ask "Restart the computer?\n\nSave your work in macOS first — it will be stopped." && host_action reboot ;;
-        poweroff) ask "Shut down the computer?\n\nSave your work in macOS first — it will be stopped." && host_action poweroff ;;
+                && { relaunch_vm; [ "$DRY_RUN" = 1 ] || return 1; } ;;
+        reboot)   ask "Restart the computer?\n\nSave your work in macOS first — it will be stopped." && { host_action reboot; [ "$DRY_RUN" = 1 ] || return 1; } ;;
+        poweroff) ask "Shut down the computer?\n\nSave your work in macOS first — it will be stopped." && { host_action poweroff; [ "$DRY_RUN" = 1 ] || return 1; } ;;
         diag)
             if [ "$DRY_RUN" = 1 ]; then act "$BIN/macdiag" usb
             elif "$BIN/macdiag" usb 2>&1 | grep -q '^Copied'; then note "Diagnostics saved to the USB drive."
             else zenity --warning --width=380 --title="$T" --text="Couldn't save — plug in a writable USB drive and try again." 2>/dev/null; fi ;;
-        terminal) act "$LIB/maint-terminal.sh" "$HOME/mac-vm.log" ;;
+        terminal)
+            if [ "$DRY_RUN" = 1 ]; then act "$LIB/maint-terminal.sh" "$HOME/mac-vm.log"
+            else "$LIB/maint-terminal.sh" "$HOME/mac-vm.log" & return 1; fi ;;
     esac
+    return 0
 }
 
-main
+# Sub-screens (Wi-Fi / USB pickers) label their cancel button "Back" and use
+# the menu's size when opened from here.
+export LAYEROSX_BACK_LABEL="Back" LAYEROSX_DIALOG_W=$W LAYEROSX_DIALOG_H=$H
+
+while main; do :; done

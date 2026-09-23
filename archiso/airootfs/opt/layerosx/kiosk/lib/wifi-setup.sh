@@ -115,7 +115,8 @@ _wifi_pick_and_connect() {
     rows+=(FALSE "Advanced (nmtui)…" "" "")
 
     local choice
-    choice=$(zenity --list --radiolist --width=560 --height=460 \
+    choice=$(zenity --list --radiolist --width="${LAYEROSX_DIALOG_W:-560}" --height="${LAYEROSX_DIALOG_H:-460}" \
+        --ok-label="Connect" --cancel-label="${LAYEROSX_BACK_LABEL:-Cancel}" \
         --title="LayerOSX — Wi-Fi" \
         --text="$header\n\nPick a network" \
         --column="" --column="Network" --column="Signal" --column="" \

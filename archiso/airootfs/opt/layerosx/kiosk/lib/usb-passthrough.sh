@@ -93,7 +93,8 @@ usb_pick() {
     done < <(usb_devices)
     [ "${#rows[@]}" -gt 0 ] || { zenity --info --width=360 --title="$T" --text="No USB devices found." 2>/dev/null; return 0; }
 
-    choice=$(zenity --list --radiolist --width=720 --height=420 --title="$T" \
+    choice=$(zenity --list --radiolist --width="${LAYEROSX_DIALOG_W:-720}" --height="${LAYEROSX_DIALOG_H:-420}" --title="$T" \
+        --ok-label="Select" --cancel-label="${LAYEROSX_BACK_LABEL:-Cancel}" \
         --text="Pick a device to give to the Mac (or to take back)" \
         --column="" --column="ID" --column="Device" --column="Where" "${rows[@]}" 2>/dev/null) || return 1
     [ -n "$choice" ] || return 1

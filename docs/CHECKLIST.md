@@ -1053,6 +1053,8 @@ allow-list and anything not coming from the guest.)
   VMware (the black-screen rescue). Back to Reims the same way.
 - Restart the Mac → VM relaunches. Restart computer / Shut down computer →
   the machine reboots / powers off without the VM relaunching in between.
+- Navigation: after Graphics/Boot log/Audio/Wi-Fi/USB the menu comes back by
+  itself; Back on any sub-screen returns to the menu; Close exits.
 - Save diagnostics with a USB stick plugged in → "Diagnostics saved".
 - `gpu` / `verbose` / `audio` / `macstatus` on a fresh release install report
   reims / off / on "[release build default]".
