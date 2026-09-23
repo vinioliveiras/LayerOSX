@@ -240,12 +240,18 @@ third-party repos or AUR helpers needed. Two ways to get that shell:
 ### Option A — native Arch/CachyOS
 
 ```sh
-sudo pacman -S archiso docker docker-buildx git
-sudo systemctl enable --now docker
 git clone https://github.com/vinioliveiras/LayerOSX.git
-cd LayerOSX/archiso
-./build.sh
+cd LayerOSX
+./rebuild.sh release        # or: ./rebuild.sh debug
 ```
+
+`rebuild.sh` runs `setup-build-host.sh` first, which installs everything the
+build needs (`archiso docker docker-buildx qemu-img mtools git python curl`,
+with `--needed`, so it's a no-op once installed), enables/starts the Docker
+daemon and warns if there's under ~30 GB free. You can also run
+`./setup-build-host.sh` on its own. (Manual equivalent:
+`sudo pacman -S archiso docker docker-buildx qemu-img mtools git python curl`
++ `sudo systemctl enable --now docker`.)
 
 ### Option B — Windows, via WSL2 (no dual-boot / native Linux needed)
 

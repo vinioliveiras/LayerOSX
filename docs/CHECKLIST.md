@@ -6,6 +6,11 @@ to need adjustment.
 
 ## 1. Prepare the build machine
 
+- On an Arch-based host, `./setup-build-host.sh` (run automatically by
+  `./rebuild.sh`) installs archiso, docker, docker-buildx, qemu-img, mtools,
+  git, python, curl and starts Docker. Confirm it ends with
+  `setup-build-host: ready.` and that `docker info` works.
+
 - Build-host tools for the OpenCore image patching (verbose boot AND the
   AMD_Vanilla-patched image — see README.md): `qemu-img` and `mtools`.
   `build.sh` now auto-installs them via pacman if missing, so normally nothing

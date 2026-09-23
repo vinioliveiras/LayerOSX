@@ -4,7 +4,8 @@
 #     ./rebuild.sh release      # non-interactive
 #     ./rebuild.sh debug        # non-interactive
 #     LAYEROSX_MODE=debug ./rebuild.sh
-# It pulls the latest commits and rebuilds the ISO (build.sh handles the rest:
+# It pulls the latest commits, installs any missing build tools
+# (setup-build-host.sh -- archiso, docker, mtools...) and rebuilds the ISO (build.sh handles the rest:
 # it only re-runs the ~30-60 min qemu Docker build when the binary/libs aren't
 # already staged, otherwise just re-derives the OpenCore images + mkarchiso).
 #
@@ -24,6 +25,8 @@ esac
 
 echo "==> git pull"
 git pull --ff-only
+echo "==> build-host dependencies (setup-build-host.sh)"
+./setup-build-host.sh
 echo "==> building ISO (archiso/build.sh)"
 cd archiso
 # sudo resets the environment, so pass the mode explicitly (sudo accepts
