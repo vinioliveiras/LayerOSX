@@ -171,7 +171,12 @@ None of these block a working boot; they make it nicer.
   - **Host status/updates**: LayerOSX version, host update check.
   Security: bind the helper to the NAT gateway only, expose a fixed allow-list
   of actions (no arbitrary commands), authenticate the app with a per-install
-  token. The in-guest app must be installed into macOS (first-run step or a
+  token. **Reuse the Ctrl+Alt+W kiosk menu as the source of truth**: its
+  status line and actions (`lib/kiosk-menu.sh`, `lib/settings.sh`,
+  `lib/qmp-cmd.py`, `wifi-setup.sh`, `usb-passthrough.sh`) are exactly the
+  helper's allow-list, so the in-macOS app becomes a second front-end for the
+  same host actions rather than a parallel implementation. New host features
+  should land in the kiosk menu first. The in-guest app must be installed into macOS (first-run step or a
   shared folder).
 - **Host integration without the app (interim)** — the host-side baseline so
   each item works before/without the menu-bar app:
