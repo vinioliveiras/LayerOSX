@@ -63,6 +63,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/pick-source-file.py"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/qmp-cmd.py"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/battery-watch.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/usb-passthrough.sh"]="0:0:755"
   ["/usr/lib/systemd/system-sleep/layerosx-vm"]="0:0:755"
   ["/usr/local/bin/layerosx-cleanup.sh"]="0:0:755"
   ["/usr/local/bin/erasevm"]="0:0:755"
@@ -75,4 +76,5 @@ file_permissions=(
   ["/usr/local/bin/commands"]="0:0:755"
   ["/usr/local/bin/macdiag"]="0:0:755"
   ["/usr/local/bin/wifi"]="0:0:755"
+  ["/usr/local/bin/usb"]="0:0:755"
 )

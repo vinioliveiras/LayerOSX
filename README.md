@@ -50,6 +50,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
 | `macdiag [usb]` | Collect a FULL diagnostics bundle into one folder — host CPU/flags/KVM/memory, QEMU version + the exact launch cmdline + which OpenCore image booted, the selected vs downloaded macOS version, the toggles, and the serial + QEMU logs (summary + raw copies). `macdiag usb` copies it to a USB stick. The same bundle is also saved to any USB automatically on every VM exit. |
 | `wifi [status\|pick\|list]` | **Host** Wi-Fi (the Mac only sees a wired NAT link, so networks are picked on the Linux side). No arg = current network + internet check; `pick` = the Wi-Fi picker (zenity list + password; `nmtui` when there's no graphical session); `list` = nearby networks. **Hotkey: Ctrl+Alt+W** opens the picker from anywhere — in **both** build modes, so it also works in a locked release kiosk. No relaunch needed: macOS keeps its Ethernet link and rides the new uplink. |
+| `usb [list\|pick\|attach\|detach\|always\|forget] [VVVV:PPPP]` | **USB passthrough**: give a host USB device (pendrive, phone, webcam…) to the Mac or take it back. No arg = every device and where it is (Linux / Mac / always→Mac). `always` gives it to the Mac on every launch and re-plug. **Hotkey: Ctrl+Alt+U** opens a picker (both build modes). Keyboards/mice/touchpads and hubs are never passed (input already reaches the Mac); storage must be unmounted on the host first. |
 | `erasevm` | Delete the VM disk + recovery/installer image + UEFI NVRAM so the first-run wizard runs from scratch again (reinstall, or pick a different macOS version). Refuses while QEMU is running unless `-y`. |
 
 `layerosx-cleanup.sh` also exists but runs on a systemd timer for housekeeping —
@@ -174,8 +175,11 @@ None of these block a working boot; they make it nicer.
         SMCBatteryManager research, or via the menu-bar app).
   - [ ] macOS "Sleep" wired to host suspend (needs S3 re-enabled in the guest
         + QMP SUSPEND/WAKEUP handling), like Restart/Shut Down already are.
-  - [ ] Automatic USB passthrough of hot-plugged devices (never the keyboard,
-        touchpad or the LayerOSX boot USB), plus a picker to choose devices.
+  - [x] USB passthrough: `usb` command + Ctrl+Alt+U picker, per-device
+        "always" list re-attached on every launch/re-plug (never keyboards,
+        mice, hubs or host-mounted storage).
+  - [ ] USB: optional auto-offer when a new device is plugged in (udev ->
+        "Give it to the Mac?" prompt), instead of opening the picker by hand.
   - [ ] Bluetooth picker like the Wi-Fi one (pair mice/keyboards/headphones on
         the host).
   - [ ] Controlled host update path (kernel + NVIDIA driver must move together
@@ -2785,3 +2789,37 @@ no VM → exit 1), and `battery-watch.sh` against a fake sysfs battery
 (19% → warning, 8% → warning, charging → re-armed, 5% → system_powerdown,
 3% → quit + flag + poweroff). Brightness keys, the power-button behaviour in
 macOS and suspend/resume need the real laptop — see CHECKLIST 5.4c.
+
+## USB passthrough: `usb` command + Ctrl+Alt+U
+
+Anything plugged into the laptop is claimed by the Linux host; the Mac only
+sees the VM's virtual xHCI controller. Passthrough hands a physical device
+over to macOS (pendrives, phones, webcams, MIDI/audio interfaces, ...).
+
+- **How:** QEMU `usb-host` on the VM's `xhci.0` bus, matched by
+  **vendor:product** (qdev id `usb-VVVV-PPPP`), hot-added/removed through the
+  control QMP socket (`lib/qmp-cmd.py usb-attach|usb-detach|usb-list`, strict
+  hex validation). Matching by vendor:product instead of bus/address means QEMU
+  re-attaches the device to the guest by itself when it's re-plugged. The
+  custom QEMU build already links libusb and ships `usb-host` (checked in the
+  built binary), so no rebuild was needed.
+- **UI:** `usb` (list + where each device is), `usb pick` / **Ctrl+Alt+U**
+  (zenity picker, both build modes), `usb attach|detach|always|forget
+  VVVV:PPPP`. "Always" devices are kept in `/var/lib/layerosx/usb-passthrough`
+  and added at every launch by `mac-vm-launch.sh` (absent ones are simply
+  waited for). Giving a device back also removes it from "always".
+- **Never passed:** hubs, anything with a HID keyboard/mouse interface (the
+  laptop's own N-KEY keyboard is USB -- passing it would lock the host out, and
+  input already reaches the Mac), and storage with a partition mounted on the
+  host. Built-in devices (sysfs `removable=fixed`: webcam, Bluetooth,
+  fingerprint) are allowed but labelled "(built-in)".
+- **Permissions:** QEMU runs as the kiosk user, so
+  `/etc/udev/rules.d/70-layerosx-usb-passthrough.rules` tags USB devices
+  `uaccess` (an ACL for the active local session only).
+- **Ports:** `qemu-xhci` now has `p2=8,p3=8` (default 4+4) so passthrough
+  devices fit next to the keyboard, tablet and optional usb-audio.
+
+Verified off-hardware against a real QEMU + a fake sysfs tree: listing,
+attach (idempotent), refusal of keyboard/hub, bad IDs rejected, always/forget
+file handling, detach, `usb-list`, and QEMU starting with "always" devices
+that aren't plugged in. Real devices in macOS need the laptop -- CHECKLIST 5.4d.

@@ -1010,6 +1010,19 @@ allow-list and anything not coming from the guest.)
   `~/mac-vm.log`. Repeat with `gpu reims` (NVIDIA VRAM preserve). With an
   external monitor connected, closing the lid must NOT suspend.
 
+### 5.4d. USB passthrough (`usb`, Ctrl+Alt+U)
+
+- `usb` lists devices; the laptop keyboard (ASUS N-KEY) must show
+  "keyboard/mouse" and be refused, hubs refused.
+- Plug a pendrive → Ctrl+Alt+U → pick it → it appears in macOS Finder. Pick it
+  again → "Give back to Linux?" → it disappears from macOS.
+- "Always": unplug and re-plug → it goes straight to macOS; `relaunch` → still
+  attached at launch. `usb forget` stops that.
+- A pendrive mounted on the host must be refused ("mounted on the host").
+- Built-in webcam (`(built-in)`): pass it and check Photo Booth / FaceTime.
+- If attach fails with a permission error in `~/mac-vm.log`: the uaccess udev
+  rule didn't apply (`getfacl /dev/bus/usb/BBB/DDD` should list user `mac`).
+
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"

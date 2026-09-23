@@ -1,0 +1,5 @@
+# LayerOSX: let the logged-in (kiosk) user open USB devices, so QEMU -- which
+# runs as that user -- can pass them through to the macOS VM (usb-host /
+# lib/usb-passthrough.sh). uaccess = an ACL for the active local session only,
+# not world access. Must sort before 73-seat-late.rules, which applies it.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TAG+="uaccess"

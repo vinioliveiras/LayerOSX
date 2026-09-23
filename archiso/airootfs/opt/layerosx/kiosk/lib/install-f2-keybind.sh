@@ -23,7 +23,8 @@
 #              hatch to the live log). VT switching is left working too (that's
 #              an X-server option handled in build.sh, not here).
 #   release -> no F2: a fully locked appliance. Kept in BOTH modes: Ctrl+Alt+W
-#              (Wi-Fi picker dialog) and the brightness keys (brightnessctl).
+#              (Wi-Fi picker dialog), Ctrl+Alt+U (USB passthrough picker) and
+#              the brightness keys (brightnessctl).
 #
 # Safe to call every boot: each edit is independently idempotent.
 set -uo pipefail
@@ -113,6 +114,18 @@ if "layerosx-wifi" not in content and "</keyboard>" in content:
         '  <keybind key="C-A-w"> <!-- layerosx-wifi -->\n'
         '    <action name="Execute">\n'
         "      <command>/opt/layerosx/kiosk/lib/wifi-setup.sh --pick</command>\n"
+        "    </action>\n"
+        "  </keybind>\n"
+    )
+    content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
+# 7a) Both modes: Ctrl+Alt+U opens the USB passthrough picker (give a host USB
+#     device to the Mac / take it back). A fixed dialog, not a shell.
+if "layerosx-usb" not in content and "</keyboard>" in content:
+    keybind = (
+        '  <keybind key="C-A-u"> <!-- layerosx-usb -->\n'
+        '    <action name="Execute">\n'
+        "      <command>/opt/layerosx/kiosk/lib/usb-passthrough.sh --pick</command>\n"
         "    </action>\n"
         "  </keybind>\n"
     )

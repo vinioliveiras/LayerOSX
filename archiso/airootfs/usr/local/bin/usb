@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Give host USB devices to the macOS VM (and take them back).
+#
+#   usb                    list USB devices and where each one is (Linux / Mac)
+#   usb pick               open the picker (same as Ctrl+Alt+U)
+#   usb attach VVVV:PPPP   give that device to the Mac now
+#   usb detach VVVV:PPPP   give it back to Linux (and stop auto-giving it)
+#   usb always VVVV:PPPP   give it to the Mac on every launch / re-plug
+#   usb forget VVVV:PPPP   stop auto-giving it (leaves it where it is now)
+#
+# Keyboards/mice/touchpads and hubs are never passed (input already reaches the
+# Mac through the host); storage must be unmounted on the host first.
+# Remembered devices: /var/lib/layerosx/usb-passthrough.
+set -uo pipefail
+# shellcheck source=/dev/null
+source /opt/layerosx/kiosk/lib/usb-passthrough.sh
+
+split() {
+    case "${1:-}" in
+        [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])
+            VID="$(echo "${1%%:*}" | tr A-F a-f)"; PID="$(echo "${1##*:}" | tr A-F a-f)" ;;
+        *) echo "expected VVVV:PPPP (see 'usb' for the IDs)" >&2; exit 2 ;;
+    esac
+}
+name_of() { usb_devices | awk -F'\t' -v v="$VID" -v p="$PID" '$1==v && $2==p {print $3; exit}'; }
+
+case "${1:-list}" in
+    list)
+        att="$(usb_attached)"
+        printf '%-10s %-44s %s\n' "ID" "DEVICE" "WHERE"
+        usb_devices | while IFS="$(printf '\t')" read -r vid pid name rem why; do
+            if printf '%s\n' "$att" | grep -qi "^$vid $pid$"; then w="Mac"
+            elif [ -n "$why" ]; then w="Linux ($why)"
+            else w="Linux"; fi
+            usb_is_remembered "$vid" "$pid" && w="$w, always->Mac"
+            [ "$rem" = "fixed" ] && name="$name (built-in)"
+            printf '%-10s %-44.44s %s\n' "$vid:$pid" "$name" "$w"
+        done
+        [ -S "$CTL_SOCK" ] || echo "(the Mac isn't running -- attach/detach need it)"
+        ;;
+    pick)
+        if [ -n "${DISPLAY:-}" ]; then usb_pick; else echo "no graphical session -- use: usb attach VVVV:PPPP" >&2; exit 1; fi
+        ;;
+    attach)
+        split "${2:-}"
+        why="$(usb_devices | awk -F'\t' -v v="$VID" -v p="$PID" '$1==v && $2==p {print $5; exit}')"
+        [ -z "$why" ] || { echo "can't pass $VID:$PID: $why" >&2; exit 1; }
+        usb_attach "$VID" "$PID" && echo "$VID:$PID ($(name_of)) is now on the Mac."
+        ;;
+    detach)
+        split "${2:-}"; usb_forget "$VID" "$PID"
+        usb_detach "$VID" "$PID" && echo "$VID:$PID given back to Linux."
+        ;;
+    always)
+        split "${2:-}"; usb_remember "$VID" "$PID" "$(name_of)"
+        echo "$VID:$PID will be given to the Mac on every launch / re-plug."
+        [ -S "$CTL_SOCK" ] && usb_attach "$VID" "$PID" 2>/dev/null || true
+        ;;
+    forget)
+        split "${2:-}"; usb_forget "$VID" "$PID"; echo "$VID:$PID forgotten."
+        ;;
+    -h|--help|help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *) echo "usage: usb [list|pick|attach|detach|always|forget] [VVVV:PPPP]" >&2; exit 2 ;;
+esac

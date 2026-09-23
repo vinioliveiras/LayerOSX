@@ -22,6 +22,7 @@ OVMF_VARS="$STATE_DIR/OVMF_VARS.fd"
 QMP_SOCK="/tmp/macvm-qmp.sock"
 QMP_CTL_SOCK="/tmp/macvm-ctl.sock"                 # 2nd QMP monitor: lib/qmp-cmd.py (sleep hook, battery-watch)
 BATTERY_POWEROFF_FLAG="/tmp/layerosx-battery-poweroff"  # set by lib/battery-watch.sh
+USB_PASSTHROUGH_FILE="$STATE_DIR/usb-passthrough"     # "vvvv:pppp name" lines, lib/usb-passthrough.sh
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 OPENCORE_DIR="/opt/layerosx/opencore"
@@ -508,7 +509,9 @@ while true; do
         -global ICH9-LPC.acpi-pci-hotplug-with-bridge-support=off
         # USB: xHCI, as both references do. macOS handles the q35 default ICH9
         # EHCI/UHCI pair (what `-usb` used to give us) far less reliably.
-        -device qemu-xhci,id=xhci
+        # p2/p3=8: room for hot-plugged USB passthrough (lib/usb-passthrough.sh)
+        # next to the keyboard, tablet and optional usb-audio (default is 4+4).
+        -device qemu-xhci,id=xhci,p2=8,p3=8
         -device usb-kbd,bus=xhci.0
         -device usb-tablet,bus=xhci.0
         -device usb-ehci,id=ehci
@@ -544,6 +547,19 @@ while true; do
     )
     QEMU_ARGS+=("${GFX_ARGS[@]}")
     if [ "${#AUDIO_ARGS[@]}" -gt 0 ]; then QEMU_ARGS+=("${AUDIO_ARGS[@]}"); fi
+    # USB devices the user chose to "always" give to the Mac (usb always /
+    # the picker's "Always"). Matched by vendor:product, so QEMU attaches each
+    # one whenever it's plugged in -- absent devices are simply waited for.
+    if [ -s "$USB_PASSTHROUGH_FILE" ]; then
+        while read -r _vp _rest; do
+            case "$_vp" in
+                [0-9a-f][0-9a-f][0-9a-f][0-9a-f]:[0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+                *) continue ;;
+            esac
+            QEMU_ARGS+=(-device "usb-host,bus=xhci.0,vendorid=0x${_vp%%:*},productid=0x${_vp##*:},id=usb-${_vp%%:*}-${_vp##*:}")
+            echo "USB passthrough (always): $_vp $_rest"
+        done < "$USB_PASSTHROUGH_FILE"
+    fi
     if [ -n "$RECOVERY_DISK" ]; then
         echo "Attaching recovery/installer disk: $RECOVERY_DISK"
         QEMU_ARGS+=(
