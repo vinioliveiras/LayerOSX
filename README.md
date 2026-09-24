@@ -3196,7 +3196,7 @@ disk, whatever the laptop had.
 - Verified: disk growth with real qcow2 images (grows 5 → 19 GB with 30 GB
   free, no change on a second run, never grows past free space − margin,
   `qemu-img check` clean); RAM formula for the 64 GB host; backend tests incl.
-  the About disk fields (25 total).
+  the About disk fields (24 total).
 
 GParted keeps openbox's frame (it's a GTK3 app with server-side decorations,
 so the libadwaita traffic lights can't be put in it); it gets the rounded
