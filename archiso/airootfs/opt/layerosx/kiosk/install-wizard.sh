@@ -69,7 +69,7 @@ trap 'exec 3>&- 2>/dev/null || true
     2>/dev/null || true' ERR
 
 zenity --info --width=560 --title="LayerOSX — Install" \
-    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself. When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press Ctrl+Alt+T any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
+    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself -- EXCEPT when reinstalling over LayerOSX and you want to keep your Mac: then leave that partition as it is (the installer will offer to keep it). When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press Ctrl+Alt+T any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
     || exit 1
 
 gparted
@@ -106,13 +106,13 @@ zenity --question --width=480 --title="LayerOSX — Install" \
 # other people can reach.
 MAINT_PW=""
 while true; do
-    _p1=$(zenity --password --title="LayerOSX — Maintenance password" \
-        --text="Choose a maintenance password (unlocks the Ctrl+Alt+T terminal).\nCancel = keep the default password \"mac\"." 2>/dev/null) || { _p1=""; break; }
+    _p1=$(zenity --password --title="LayerOSX — Password for the \"mac\" user" \
+        --text="Choose a password for the Linux user \"mac\" (text-console login and sudo).\nThe optional Maintenance password is set later in Settings > Maintenance.\nCancel = keep the default password \"mac\"." 2>/dev/null) || { _p1=""; break; }
     [ -n "$_p1" ] || continue
-    _p2=$(zenity --password --title="LayerOSX — Maintenance password" \
+    _p2=$(zenity --password --title="LayerOSX — Password for the \"mac\" user" \
         --text="Type it again to confirm." 2>/dev/null) || { _p1=""; break; }
     if [ "$_p1" = "$_p2" ]; then MAINT_PW="$_p1"; break; fi
-    zenity --error --width=320 --title="LayerOSX — Maintenance password" --text="The passwords don't match." 2>/dev/null
+    zenity --error --width=320 --title="LayerOSX — Password for the \"mac\" user" --text="The passwords don't match." 2>/dev/null
 done
 unset _p1 _p2
 
@@ -120,6 +120,28 @@ echo "Mounting $ROOT_PART at /mnt, $ESP_PART at /mnt/boot..."
 mount "$ROOT_PART" /mnt
 mkdir -p /mnt/boot
 mount "$ESP_PART" /mnt/boot
+
+# Reinstalling over an existing LayerOSX? Its Mac lives in /var/lib/layerosx
+# (macos.qcow2 = the macOS disk, OVMF_VARS.fd = its NVRAM, the recovery image
+# and the Settings choices). Offer to keep it: it's moved aside on the same
+# filesystem (a rename -- instant, no space needed), everything else on the
+# partition is removed, the new system is copied, and the Mac is put back.
+KEEP_MAC=0
+if [ -e /mnt/var/lib/layerosx/macos.qcow2 ]; then
+    if zenity --question --width=520 --title="LayerOSX — Install" \
+        --ok-label="Keep my Mac" --cancel-label="Erase it" \
+        --text="$ROOT_PART already has a LayerOSX Mac (macOS, your files in it, and its settings).\n\nKeep my Mac: LayerOSX is reinstalled around it; macOS, your files and settings stay.\nErase it: start from scratch (macOS will be installed again)." 2>/dev/null; then
+        KEEP_MAC=1
+        echo "Keeping the existing Mac: moving /var/lib/layerosx aside..."
+        rm -rf /mnt/.layerosx-keep
+        mv /mnt/var/lib/layerosx /mnt/.layerosx-keep
+    fi
+fi
+# The partition may not have been formatted in GParted (reinstall): clear it
+# so no file of the old system is left behind -- but never the kept Mac, the
+# mounted ESP or ext4's lost+found.
+if [ "$KEEP_MAC" = 1 ]; then echo "Clearing $ROOT_PART (keeping the Mac)..."; else echo "Clearing $ROOT_PART..."; fi
+find /mnt -mindepth 1 -maxdepth 1 ! -name boot ! -name .layerosx-keep ! -name lost+found -exec rm -rf {} +
 
 # From here on there is real work to wait through with nothing to
 # look at otherwise (a bare black openbox desktop, no feedback at
@@ -190,6 +212,12 @@ rsync -aHAX --info=progress2 --no-inc-recursive \
 # install, user setup, everything) never actually runs, even though
 # the script appeared to "finish" (this masked a real install failure
 # until set -e/the ERR trap above was added).
+if [ "$KEEP_MAC" = 1 ]; then
+    echo "Putting the kept Mac back in /var/lib/layerosx..."
+    mkdir -p /mnt/var/lib
+    rm -rf /mnt/var/lib/layerosx
+    mv /mnt/.layerosx-keep /mnt/var/lib/layerosx
+fi
 echo "Recreating dev/proc/sys/run/tmp/mnt/media mount points (rsync skips these on purpose)..."
 mkdir -p /mnt/dev /mnt/proc /mnt/sys /mnt/run /mnt/tmp /mnt/mnt /mnt/media
 chmod 1777 /mnt/tmp
@@ -314,6 +342,13 @@ kill "$TAIL_PID" 2>/dev/null || true
 # shellcheck disable=SC2046
 kill $(cat "/proc/$TAIL_PID/task/$TAIL_PID/children" 2>/dev/null) 2>/dev/null || true
 wait "$TAIL_PID" 2>/dev/null || true
+
+if [ "$KEEP_MAC" = 1 ]; then
+    # The new "mac" user may not have the old one's uid: hand the Mac to it.
+    arch-chroot /mnt chown -R mac:mac /var/lib/layerosx \
+        && echo "Kept Mac handed to the new 'mac' user." \
+        || echo "WARNING: couldn't chown /var/lib/layerosx to mac." >&2
+fi
 
 if [ -n "$MAINT_PW" ]; then
     # chpasswd reads "user:password" on stdin -- never on the command line, so

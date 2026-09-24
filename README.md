@@ -3670,3 +3670,28 @@ Also from the same session on hardware:
   killed), the Mac model (black as iMac19,1 too), the recovery disk (OpenCore
   picks Macintosh HD).
 
+## Reinstalling LayerOSX without losing the Mac
+
+The installer never formatted the root partition itself (GParted does, if
+you tell it to) and copied the system with `rsync` without `--delete`, so a
+reinstall onto an unformatted partition kept `/var/lib/layerosx` only by
+accident, mixed with the old system's files. Now it's a real option:
+
+- After mounting the chosen root partition, if it already holds
+  `var/lib/layerosx/macos.qcow2`, the installer asks **Keep my Mac / Erase
+  it**. Keep moves `/var/lib/layerosx` (macOS disk, NVRAM, recovery image,
+  Settings choices) to `/.layerosx-keep` — a rename on the same filesystem,
+  instant, no extra space — and puts it back after the copy; after
+  postinstall it's `chown -R mac:mac` (the new user may have another uid).
+- Either way the partition is then cleared (everything except the kept Mac,
+  the mounted ESP and `lost+found`), so no old system files survive a
+  reinstall onto an unformatted partition.
+- The GParted hint says not to format the LayerOSX partition when you want
+  to keep the Mac.
+- The installer's password prompt is now "Password for the \"mac\" user"
+  (text-console login, sudo): the Maintenance password is a separate,
+  optional one set in Settings › Maintenance.
+- Verified: bash syntax; the keep → clear → restore sequence on a fake
+  partition tree (Mac kept, old files gone, ESP untouched). Not yet run by
+  the real installer.
+

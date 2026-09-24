@@ -1176,6 +1176,15 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.4w. Reinstall keeping the Mac
+
+- Boot the new ISO, in GParted do NOT format the LayerOSX partition (the ESP
+  can stay too), pick the same partitions.
+- The installer asks "Keep my Mac / Erase it" → Keep my Mac.
+- After the install: no first-run macOS wizard; the Mac boots the same
+  macOS with your files; `ls -l /var/lib/layerosx` is owned by mac.
+- Erase it → the macOS source wizard runs as on a fresh install.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"
