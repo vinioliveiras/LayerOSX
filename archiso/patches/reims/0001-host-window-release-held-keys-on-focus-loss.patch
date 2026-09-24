@@ -1,0 +1,49 @@
+diff --git a/crates/reims-vgpu/src/host_window/present.rs b/crates/reims-vgpu/src/host_window/present.rs
+index 560c775..37dd6bb 100644
+--- a/crates/reims-vgpu/src/host_window/present.rs
++++ b/crates/reims-vgpu/src/host_window/present.rs
+@@ -946,6 +946,7 @@ impl ApplicationHandler<FramePublished> for App {
+                 if let PhysicalKey::Code(code) = event.physical_key {
+                     if let Some(evdev) = input_map::keycode_to_evdev(code) {
+                         let down = event.state == ElementState::Pressed;
++                        held_keys_track(evdev, down);
+                         (self.on_input)(HostAction::input_key(evdev, down));
+                     }
+                 }
+@@ -970,6 +971,16 @@ impl ApplicationHandler<FramePublished> for App {
+                 self.loop_census.draws += 1;
+                 self.draw();
+             }
++            WindowEvent::Focused(false) => {
++                // LayerOSX: keys still held when the window loses focus
++                // (Alt+Tab, a panel opening on top) would never see their
++                // key-up -- the release goes to the other window -- and stay
++                // pressed in the guest, turning every later key into a
++                // shortcut. Release them all on focus loss.
++                for evdev in held_keys_drain() {
++                    (self.on_input)(HostAction::input_key(evdev, false));
++                }
++            }
+             _ => {}
+         }
+     }
+@@ -1958,3 +1969,19 @@ mod tests {
+         assert_eq!(guest_resize_settled(None, (1920, 1080)), None);
+     }
+ }
++
++/// LayerOSX: evdev codes currently pressed in the host window, so a focus loss
++/// can release them in the guest (see `WindowEvent::Focused(false)`).
++static HELD_KEYS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
++
++fn held_keys_track(evdev: u32, down: bool) {
++    let mut held = HELD_KEYS.lock().unwrap_or_else(|p| p.into_inner());
++    held.retain(|&k| k != evdev);
++    if down {
++        held.push(evdev);
++    }
++}
++
++fn held_keys_drain() -> Vec<u32> {
++    std::mem::take(&mut *HELD_KEYS.lock().unwrap_or_else(|p| p.into_inner()))
++}

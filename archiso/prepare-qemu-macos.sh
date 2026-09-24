@@ -195,6 +195,41 @@ path.write_text(text)
 print("==> patched Dockerfile: installs libsdl2-2.0-0 + libsdl2-image-2.0-0 in the verify stage")
 PYEOF_SDL_VERIFY
 
+# LayerOSX-specific: our own patches on the Reims source (archiso/patches/reims/
+# *.patch, `git diff` format against the pinned REIMS_REF). They're copied into
+# the Docker build context and applied right after Reims is checked out and its
+# commit verified; `git apply` fails the build if one no longer fits.
+#   0001: the host window releases keys still held when it loses focus (Alt+Tab
+#         left Alt/Ctrl pressed in macOS -- every key became a shortcut).
+mkdir -p "$WORK/qemu-macos/layerosx-reims-patches"
+cp patches/reims/*.patch "$WORK/qemu-macos/layerosx-reims-patches/" 2>/dev/null || true
+python3 - "$WORK/qemu-macos/Dockerfile" <<'PYEOF_REIMSPATCH'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); text = path.read_text()
+run = "RUN <<EOF_SOURCE\n"
+check = (
+    '  if [ "$actual" != "${REIMS_REF}" ]; then\n'
+    '    echo "FAIL: Reims resolved to $actual instead of ${REIMS_REF}."\n'
+    '    exit 1\n'
+    '  fi\n'
+)
+apply = (
+    "\n  # LayerOSX patches (archiso/patches/reims, via prepare-qemu-macos.sh)\n"
+    "  for p in /layerosx-reims-patches/*.patch; do\n"
+    '    [ -e "$p" ] || continue\n'
+    '    echo "LayerOSX: applying $p to Reims"\n'
+    '    git -C reims apply "$p"\n'
+    "  done\n"
+)
+if text.count(run) != 1 or text.count(check) != 1:
+    print("FAIL: EOF_SOURCE / REIMS_REF check anchors not found -- upstream Dockerfile changed how it fetches Reims.", file=sys.stderr)
+    sys.exit(1)
+text = text.replace(run, "COPY layerosx-reims-patches /layerosx-reims-patches\n" + run, 1)
+text = text.replace(check, check + apply, 1)
+path.write_text(text)
+print("==> patched Dockerfile: LayerOSX patches applied to Reims (archiso/patches/reims)")
+PYEOF_REIMSPATCH
+
 # LayerOSX-specific: keep Reims' host window. Upstream strips the reims-vgpu
 # `host-window` Cargo feature ("qemux uses QEMU's own display path (VNC/noVNC),
 # so Reims' optional host-owned winit/X11/Wayland window is unnecessary"), but

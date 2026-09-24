@@ -1127,6 +1127,15 @@ allow-list and anything not coming from the guest.)
 - On the build machine: `tools/run-mac-here.sh --gpu amd` boots like
   `--gpu nvidia`.
 
+### 5.4s. Reims: no stuck keys after Alt+Tab / focus changes
+
+- `./prepare-qemu-macos.sh` prints "LayerOSX: applying ... 0001-host-window-
+  release-held-keys-on-focus-loss.patch to Reims".
+- `tools/run-mac-here.sh --gpu nvidia`: type in macOS, Alt+Tab away and back,
+  type again — letters come out (no shortcuts firing).
+- In LayerOSX: open the panel (Ctrl+Alt+W) over the Mac and close it — typing
+  in macOS still works.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

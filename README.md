@@ -3537,3 +3537,22 @@ bundled) does it fall back to the whole bundle. Used by `mac-vm-launch.sh`
 Also from those runs: `run-mac-here.sh`'s QMP watcher now waits for the
 socket instead of failing when QEMU hasn't opened it yet.
 
+## Reims: stuck modifier keys after Alt+Tab (our first Reims patch)
+
+Seen on the build machine: Alt+Tab away from the Reims window and back, and
+macOS behaved as if Ctrl/Alt were still held — keys acted as shortcuts
+instead of typing. Reims' host window forwards every key down/up to the guest
+but does nothing on focus loss, so the key-up of the modifier used for
+Alt+Tab went to the other window and never reached macOS.
+
+- `archiso/patches/reims/0001-host-window-release-held-keys-on-focus-loss.patch`:
+  the window tracks the keys it has sent as pressed and, on
+  `WindowEvent::Focused(false)`, sends a key-up for each. Built and checked
+  against the pinned Reims (`2844274`, `cargo build -p reims-vgpu
+  --features backend-vulkan,host-window`, no warnings).
+- `prepare-qemu-macos.sh` copies `archiso/patches/reims/*.patch` into the
+  Docker build context and applies them with `git apply` right after Reims
+  is checked out and its commit verified (the build fails if one stops
+  applying). Further Reims fixes go in the same folder.
+- Needs a QEMU rebuild (`cd archiso && ./prepare-qemu-macos.sh`).
+
