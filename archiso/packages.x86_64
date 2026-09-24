@@ -145,3 +145,9 @@ librsvg
 xdotool
 picom
 vte4
+# Reims host window (winit dlopens these at runtime)
+libx11
+libxcursor
+libxrandr
+libxi
+libxkbcommon-x11

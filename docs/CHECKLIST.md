@@ -1062,6 +1062,19 @@ allow-list and anything not coming from the guest.)
   latency); `echo off > /var/lib/layerosx/compositor` + reboot still turns
   it all off.
 
+### 5.4n. Reims host window is built in
+
+- `./prepare-qemu-macos.sh` prints `Reims built WITH its host window
+  (host-window Cargo feature kept)`; the Docker build finishes.
+- `grep -caF winit-0. /opt/layerosx/bin/qemu-system-x86_64` on the installed
+  system is > 0.
+- `gpu reims` + boot: the #1c1c1c first screen, then OpenCore, then macOS,
+  all in the "Reims vGPU" window (`xdotool search --name 'Reims vGPU'` finds
+  it); `~/mac-vm-qemu.log` has no "host window unavailable".
+- With an old QEMU binary (no winit): `~/mac-vm.log` says "built WITHOUT
+  Reims' host window ... using the QEMU/SDL display" and OpenCore is shown
+  (not a black screen).
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

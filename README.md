@@ -3341,3 +3341,41 @@ never animated.
   with the helper at opacity 0) the open animation doesn't start. Needs
   picom ≥ 12 (Arch ships 12.x).
 
+## Reims black screen: the QEMU build had no host window
+
+Symptom on hardware (Reims selected): black screen from power-on — no
+OpenCore — while `~/mac-vm-serial.log` showed macOS fully booted
+(bluetoothd, AppleKeyStore), `xdotool search --name 'Reims vGPU'` found no
+window, and `~/mac-vm-qemu.log` said:
+
+    reims-vgpu-pci: host window unavailable (rc=2); using QEMU display
+
+Cause: upstream qemu-macos builds Reims **without** its `host-window` Cargo
+feature (its Dockerfile rewrites `--features backend-vulkan,host-window` to
+`--features backend-vulkan`, because qemux shows the VM over VNC). So
+`REIMS_VGPU_WINDOW=1` returns `REIMS_VGPU_QEMU_ERR_STATE` (2), Reims falls back
+to QEMU's display — and the launcher runs QEMU with `-display none`, so the
+Mac had no screen at all. (The earlier build showed OpenCore because it still
+used the SDL display.)
+
+Fix:
+
+- `prepare-qemu-macos.sh` neutralises that one upstream step (its replacement
+  string becomes the original line, so upstream's anchor checks still pass
+  and the build fails loudly if the step changes). Reims is built with the
+  host window again. winit loads X11/Wayland with `dlopen`, so the build
+  needs no extra headers; the runtime libraries (`libx11 libxcursor
+  libxrandr libxi libxkbcommon-x11`) are listed in `packages.x86_64`.
+  `LAYEROSX_REIMS_HOST_WINDOW=0` keeps upstream's window-less build.
+- `mac-vm-launch.sh` checks the QEMU binary first (winit leaves its crate
+  path, `winit-0.`, in the binary) and, if the host window isn't built in,
+  uses the SDL display instead of `-display none` and says so in the log —
+  so an old QEMU binary shows OpenCore again instead of nothing.
+- Verified: the Dockerfile patch against the current upstream Dockerfile
+  (anchor found once); the reims-vgpu staticlib at the pinned commit
+  (`2844274`) builds with `backend-vulkan,host-window` on a plain Ubuntu
+  24.04 + Rust 1.95 in ~6 min, and `winit-0.30` is in the library. The full
+  QEMU build and the window on hardware are still to be confirmed.
+- Needs a QEMU rebuild: `cd archiso && ./prepare-qemu-macos.sh`, then
+  `./rebuild.sh`.
+

@@ -195,6 +195,35 @@ path.write_text(text)
 print("==> patched Dockerfile: installs libsdl2-2.0-0 + libsdl2-image-2.0-0 in the verify stage")
 PYEOF_SDL_VERIFY
 
+# LayerOSX-specific: keep Reims' host window. Upstream strips the reims-vgpu
+# `host-window` Cargo feature ("qemux uses QEMU's own display path (VNC/noVNC),
+# so Reims' optional host-owned winit/X11/Wayland window is unnecessary"), but
+# LayerOSX shows the Mac on the local screen through exactly that window
+# (REIMS_VGPU_WINDOW=1 + -display none in mac-vm-launch.sh, upstream Reims'
+# own vm/boot-x86.sh default). Without the feature Reims logs "host window
+# unavailable (rc=2); using QEMU display" and, with -display none, the Mac runs
+# with no screen at all -- confirmed on hardware. So neutralise that one step:
+# its replacement string becomes the original line (sed then changes nothing),
+# keeping upstream's anchor checks intact. The enqueue_present feature guard
+# upstream adds right after is correct either way. winit loads X11/Wayland
+# with dlopen at runtime (libX11, libXcursor, libXrandr, libXi,
+# libxkbcommon-x11 -- listed in packages.x86_64), so the build needs no extra
+# system headers and the ldd/verify stage is unaffected.
+# LAYEROSX_REIMS_HOST_WINDOW=0 keeps upstream's window-less build.
+if [ "${LAYEROSX_REIMS_HOST_WINDOW:-1}" != 0 ]; then
+python3 - "$WORK/qemu-macos/Dockerfile" <<'PYEOF_HOSTWIN'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); text = path.read_text()
+old = """  new="reims_vgpu_cargo_features = '--no-default-features --features backend-vulkan'"\n"""
+new = """  new="$old"   # LayerOSX: keep the host-window feature (see prepare-qemu-macos.sh)\n"""
+if text.count(old) != 1:
+    print("FAIL: upstream Dockerfile no longer strips Reims' host-window feature the way prepare-qemu-macos.sh expects -- check the EOF_SOURCE step.", file=sys.stderr)
+    sys.exit(1)
+path.write_text(text.replace(old, new, 1))
+print("==> patched Dockerfile: Reims built WITH its host window (host-window Cargo feature kept)")
+PYEOF_HOSTWIN
+fi
+
 # LayerOSX-specific: the colour of the very first screen. Reims' EFI GOP option
 # ROM (crates/reims-vgpu-efi, built into reims-vgpu-gop.rom by the same
 # Dockerfile) fills the whole framebuffer with a solid colour the moment the VM

@@ -480,10 +480,29 @@ configure_toggles() {
     # REIMS_VGPU_FULLSCREEN=1 makes that window borderless/fullscreen. The old
     # SDL path stays one file away for A/B: echo off > $STATE_DIR/reims-window.
     # vmware/std keep QEMU's SDL fullscreen window.
+    #
+    # The host window only exists when the reims-vgpu staticlib was built with
+    # its `host-window` Cargo feature. Upstream qemu-macos strips it (qemux shows
+    # the VM over VNC); prepare-qemu-macos.sh now puts it back. A binary built
+    # without it answers REIMS_VGPU_WINDOW=1 with "host window unavailable
+    # (rc=2); using QEMU display" -- and with `-display none` that is a VM that
+    # runs with NO screen at all (seen on hardware: macOS booted, black screen,
+    # no "Reims vGPU" window). So check the binary first (winit, the window
+    # library, leaves its crate path in the binary's panic locations) and fall
+    # back to the SDL path when the feature isn't there.
     DISPLAY_ARGS=(-display sdl,full-screen=on)
     REIMS_ENV=()
     if [ "$GFX" = "reims-vgpu-pci" ]; then
-        case "$(cat "$STATE_DIR/reims-window" 2>/dev/null || echo on)" in
+        if [ -z "${REIMS_HOST_WINDOW_BUILT:-}" ]; then
+            if grep -qaF 'winit-0.' "$QEMU_BIN" 2>/dev/null; then REIMS_HOST_WINDOW_BUILT=yes; else REIMS_HOST_WINDOW_BUILT=no; fi
+        fi
+        _rw="$(cat "$STATE_DIR/reims-window" 2>/dev/null || echo on)"
+        if [ "$REIMS_HOST_WINDOW_BUILT" = no ] && [ "$_rw" != off ]; then
+            echo "Reims: this QEMU was built WITHOUT Reims' host window (no winit in $QEMU_BIN) -- using the QEMU/SDL display instead. Rebuild it with ./prepare-qemu-macos.sh for the host window."
+            _rw=off-auto
+        fi
+        case "$_rw" in
+            off-auto) : ;;
             off|0|no|false) echo "Reims: host window OFF (legacy QEMU/SDL scanout path, for A/B)." ;;
             *)
                 DISPLAY_ARGS=(-display none)
