@@ -332,6 +332,7 @@ git clone https://github.com/vinioliveiras/LayerOSX.git
 cd LayerOSX
 ./rebuild.sh release        # or: ./rebuild.sh debug
 LAYEROSX_TERMINAL=off ./rebuild.sh release   # optional: Ctrl+Alt+T terminal password|open|off
+LAYEROSX_BOOT_COLOR=000000 ./rebuild.sh release  # optional: first-screen colour (default 1c1c1c)
 ```
 
 `rebuild.sh` runs `setup-build-host.sh` first, which installs everything the
@@ -3240,4 +3241,31 @@ Restart Mac (the launcher re-reads them before every launch, in
   backend tests for the rule, overrides, the reserve switch, dual core and the
   AMD image check (29 total); UI checked under Xvfb (choices, saving, back to
   Automatic).
+
+## Boot colour: the first screen is #1c1c1c, not Reims' slate blue
+
+With the Reims adapter, the screen right after the VM powers on (before
+OpenCore draws anything) was a dark slate blue. That colour isn't QEMU's: it
+comes from Reims' EFI GOP option ROM (`reims-vgpu-gop.rom`, built from
+`crates/reims-vgpu-efi`), which fills the framebuffer with `SLATE_BGRA`
+(`#182840`) — upstream keeps it non-black on purpose so their QMP tests can
+prove the framebuffer is live.
+
+`prepare-qemu-macos.sh` now patches that constant in the Dockerfile's build
+step, just before the ROM is built, to `LAYEROSX_BOOT_COLOR` (`RRGGBB`,
+default `1c1c1c`, a near-black grey — the install wizard's panel tone, so the
+hand-off to the black OpenCore/Apple screen barely shows). Alpha stays `0xff`,
+so the value is never zero and upstream's "non-black" unit test still holds
+even for `000000`. The patch fails the build loudly if the upstream line
+changes. VMware / standard VGA don't use this ROM (their first screen is
+OVMF's black).
+
+- Applying it needs a new QEMU build: `build.sh` only runs
+  `prepare-qemu-macos.sh` when the binary is missing, so run
+  `cd archiso && ./prepare-qemu-macos.sh` (or with
+  `LAYEROSX_BOOT_COLOR=...`) before `rebuild.sh`. The ROM lands in
+  `airootfs/usr/share/qemu/reims-vgpu-gop.rom`.
+- Verified: the Dockerfile patch against the current upstream qemu-macos
+  Dockerfile, and the injected `sed` against `paint.rs` at the pinned Reims
+  commit (`2844274`) — the constant becomes `[0x1c, 0x1c, 0x1c, 0xff]`.
 

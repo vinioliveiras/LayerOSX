@@ -195,6 +195,48 @@ path.write_text(text)
 print("==> patched Dockerfile: installs libsdl2-2.0-0 + libsdl2-image-2.0-0 in the verify stage")
 PYEOF_SDL_VERIFY
 
+# LayerOSX-specific: the colour of the very first screen. Reims' EFI GOP option
+# ROM (crates/reims-vgpu-efi, built into reims-vgpu-gop.rom by the same
+# Dockerfile) fills the whole framebuffer with a solid colour the moment the VM
+# powers on, before OpenCore paints anything. Upstream uses a dark slate blue
+# (#182840, SLATE_BGRA in src/paint.rs) -- deliberately non-black so their QMP
+# tests can prove the framebuffer is live. LayerOSX paints its own colour
+# instead: LAYEROSX_BOOT_COLOR=RRGGBB (default 1C1C1C, a near-black grey --
+# the same tone as the install wizard's panels, so the switch to OpenCore's /
+# Apple's black boot screen barely shows). Alpha stays 0xff, so the value is never zero
+# and upstream's own "non-black" unit test still holds even for 000000.
+# Only visible with the Reims adapter (VMware / standard VGA don't use this ROM).
+BOOT_COLOR="${LAYEROSX_BOOT_COLOR:-1C1C1C}"
+BOOT_COLOR="${BOOT_COLOR#\#}"
+if ! [[ "$BOOT_COLOR" =~ ^[0-9A-Fa-f]{6}$ ]]; then
+    echo "prepare-qemu-macos.sh: LAYEROSX_BOOT_COLOR='$BOOT_COLOR' is not RRGGBB -- using 1C1C1C." >&2
+    BOOT_COLOR=1C1C1C
+fi
+python3 - "$WORK/qemu-macos/Dockerfile" "$BOOT_COLOR" <<'PYEOF_BOOTCOLOR'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1]); rgb = sys.argv[2].lower()
+r, g, b = rgb[0:2], rgb[2:4], rgb[4:6]
+text = path.read_text()
+anchor = "  /src/reims/crates/reims-vgpu-efi/scripts/reims-vgpu-efi-rom/reims-vgpu-efi-rom.sh\n"
+if anchor not in text:
+    print("FAIL: reims-vgpu-efi-rom.sh anchor not found -- upstream Dockerfile may have changed how it builds the GOP ROM.", file=sys.stderr)
+    sys.exit(1)
+paint = "/src/reims/crates/reims-vgpu-efi/src/paint.rs"
+old = "u32::from_le_bytes([0x40, 0x28, 0x18, 0xff])"
+new = "u32::from_le_bytes([0x%s, 0x%s, 0x%s, 0xff])" % (b, g, r)   # BGRA byte order
+patch = (
+    "  # LayerOSX: boot colour #%s instead of Reims' slate blue\n"
+    "  grep -qF '%s' %s || { echo 'FAIL: SLATE_BGRA anchor not found in reims-vgpu-efi paint.rs'; exit 1; }\n"
+    "  sed -i 's/%s/%s/' %s\n"
+    "  grep -qF '%s' %s\n"
+) % (rgb, old, paint,
+     old.replace("[", r"\[").replace("]", r"\]"), new, paint,
+     new, paint)
+text = text.replace(anchor, patch + anchor, 1)
+path.write_text(text)
+print("==> patched Dockerfile: Reims GOP boot colour #%s (was #182840)" % rgb)
+PYEOF_BOOTCOLOR
+
 echo "==> building (target: artifact) — this compiles real QEMU from source, expect 30-60+ minutes"
 "$ENGINE" build --target artifact -t layerosx/qemu-macos:local "$WORK/qemu-macos"
 

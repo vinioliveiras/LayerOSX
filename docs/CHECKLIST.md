@@ -1022,6 +1022,16 @@ allow-list and anything not coming from the guest.)
 - Bad values in the state files (`echo 3 > /var/lib/layerosx/cpu-cores`) are
   ignored by the launcher (Automatic is used).
 
+### 5.4k. Boot colour (Reims GOP ROM)
+
+- `./prepare-qemu-macos.sh` prints `==> patched Dockerfile: Reims GOP boot
+  colour #1c1c1c (was #182840)`, and the Docker build log shows no
+  `FAIL: SLATE_BGRA anchor not found`.
+- With `gpu reims`, the first screen after the VM powers on is dark grey
+  (#1c1c1c) instead of slate blue, then OpenCore / the Apple logo as before.
+- `LAYEROSX_BOOT_COLOR=000000 ./prepare-qemu-macos.sh` gives a black first
+  screen; an invalid value (`LAYEROSX_BOOT_COLOR=zzz`) warns and uses 1c1c1c.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"
