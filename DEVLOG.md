@@ -4004,3 +4004,46 @@ zenity list stays as the fallback (no GTK4, root on the live ISO, the zenity
 kiosk menu) with bar glyphs `▂▄▆█` instead of parentheses. `panel.sh`'s
 "already open?" check now tests the lock without holding it.
 
+## Big downloads stalled the Mac: disk cache and network NAT moved off the main loop
+
+With the sound fixed, an App Store download made everything stutter again.
+Two host-side costs scale with a download, and both sat on QEMU's main loop
+or in the host's memory:
+
+- **Disk:** the Mac's qcow2 was opened with QEMU's default cache (writeback
+  through the host page cache). Gigabytes of downloads became host dirty
+  pages to write back — on a host whose RAM is mostly given to the Mac —
+  i.e. reclaim and writeback stalls. Now `cache=none` (O_DIRECT, checked
+  with a `dd oflag=direct` probe, else writeback) with `aio=io_uring` when
+  the kernel allows it and QEMU links liburing (it does), `l2-cache-size=32M`
+  (the 1 MB default maps only 8 GB of a qcow2 with 64 KB clusters, so random
+  I/O across a big Mac disk kept re-reading metadata), and
+  `discard=unmap,detect-zeroes=unmap` so APFS TRIM shrinks the image. The
+  disk stays on SATA/AHCI (the recovery environment has no virtio-blk
+  driver), which can't take an iothread.
+- **Network:** `-netdev user` is slirp, a TCP/IP stack running inside QEMU's
+  main loop. `-netdev passt` (QEMU 10.1+, our build has it) runs the same
+  unprivileged NAT in a separate `passt` process; QEMU only forwards frames.
+  `passt` added to the ISO; slirp stays as the fallback.
+- The launcher logs "I/O: disk …; network …" each start; `macdiag` has a
+  DISK / NETWORK I/O section. Not measured yet.
+
+## Crash guard
+
+Photomator (a RAW file) made the Mac crash and restart. Whether that was
+QEMU dying inside Reims or a macOS panic, the launcher already started the
+Mac again — silently. Now it recognises both (QEMU killed by
+SEGV/ABRT/BUS/ILL/FPE; a guest reset with `panic(cpu` in the serial log),
+logs `CRASH: …`, saves a full diagnostics bundle into `~/crash-reports`
+(newest 5 kept) and, once the Mac is back, shows a notice saying what
+happened and that switching Graphics to VMware avoids the Reims path for an
+app that keeps doing it. `macdiag` got a CRASHES section (plus the panic
+text), and the Reims section now also counts `import_exceeds_heap`,
+`*_declined` and `fail_event` lines — it printed "(no refusals)" while the
+RAM-too-big problem was in the log. There is no way to keep an app's unsaved
+work across such a crash from the host side.
+
+3D browser games (WebGL) and Photomator's broken rendering are Metal
+features Reims doesn't translate yet; they need a failure log taken right
+after reproducing (TODO).
+

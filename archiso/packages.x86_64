@@ -75,6 +75,9 @@ xf86-video-fbdev
 # KVM / QEMU / VM firmware
 qemu-base
 qemu-img
+# The Mac's network NAT in its own process instead of QEMU's main loop
+# (mac-vm-launch.sh pick_io: -netdev passt).
+passt
 edk2-ovmf
 swtpm
 python

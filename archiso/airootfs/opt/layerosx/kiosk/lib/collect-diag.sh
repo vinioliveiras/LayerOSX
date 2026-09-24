@@ -104,11 +104,19 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
 
     _sec "REIMS — /tmp/reims-vgpu-fail.log (always-on failure log): translation refusals"
     if [ -r /tmp/reims-vgpu-fail.log ]; then
-        grep -aE 'refused_by=|_translate |cannot_run|device_lost|engine present' /tmp/reims-vgpu-fail.log \
-            | cut -c1-300 | head -20 || echo '(no refusals)'
+        grep -aE 'refused_by=|_translate |cannot_run|device_lost|engine present|import_exceeds_heap|_declined|fail_event' /tmp/reims-vgpu-fail.log \
+            | cut -c1-300 | sort | uniq -c | sort -rn | head -25 || echo '(no refusals)'
     else
         echo '(no Reims failure log -- Reims not used this boot)'
     fi
+
+    _sec "CRASHES (~/crash-reports: the Mac went down and was restarted)"
+    grep -a 'CRASH:' "$LAUNCHLOG" 2>/dev/null | tail -10 || true
+    ls -1dt "$HOME"/crash-reports/mac-vm-diag-* 2>/dev/null | head -5 || echo '(none)'
+    grep -a -m1 -A12 'panic(cpu' "$SERIAL_LOG" 2>/dev/null | head -14
+
+    _sec "DISK / NETWORK I/O"
+    grep -a 'I/O: \|Disk: \|Network: ' "$LAUNCHLOG" 2>/dev/null | tail -3
 
     _sec "QEMU -d guest_errors/unimp (debug builds)"
     [ -r "$QEMU_D_LOG" ] && tail -40 "$QEMU_D_LOG" || echo '(none — release build, or no guest errors)'

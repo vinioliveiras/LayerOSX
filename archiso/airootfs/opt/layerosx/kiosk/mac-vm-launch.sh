@@ -333,6 +333,50 @@ learn_reims_budget() {
     echo "Reims couldn't map the Mac's RAM into the GPU ($line) -- next start keeps the Mac under $(( (b - 1024) / 1024 * 1024 )) MB."
 }
 
+# --- Disk and network I/O -------------------------------------------------------
+# A big App Store download made the whole Mac (sound, screen) stall. Two
+# host-side costs grew with it, both on QEMU's main loop:
+#  * the Mac's disk went through the host page cache (cache=writeback): GBs of
+#    downloads became host dirty pages to write back, on a host whose RAM is
+#    mostly the Mac's -> reclaim and writeback stalls. cache=none (O_DIRECT)
+#    writes straight to the disk; aio=io_uring submits without blocking the
+#    loop; a 32 MB qcow2 L2 cache maps 256 GB (the 1 MB default only 8 GB, so
+#    big-disk random I/O kept re-reading qcow2 metadata); discard/detect-zeroes
+#    give freed space back (APFS TRIM) so the image stops only growing.
+#  * the network was QEMU's built-in user-mode NAT (slirp), whose whole TCP/IP
+#    stack runs inside QEMU's main loop. passt does the same unprivileged NAT
+#    in its own process; QEMU just forwards frames. Falls back to slirp when
+#    passt isn't installed.
+# Overrides: $STATE_DIR/disk-cache (none|writeback), $STATE_DIR/net (passt|user).
+pick_io() {
+    local cache aio net
+    cache="$(cat "$STATE_DIR/disk-cache" 2>/dev/null)"
+    case "$cache" in writeback) ;; *) cache=none ;; esac
+    # O_DIRECT must work on the filesystem holding the disk, or QEMU won't open it.
+    if [ "$cache" = none ] && ! dd if=/dev/zero of="$STATE_DIR/.odirect-test" bs=4096 count=1 oflag=direct status=none 2>/dev/null; then
+        echo "Disk: O_DIRECT not supported where $VM_DISK lives -- using the host page cache."
+        cache=writeback
+    fi
+    rm -f "$STATE_DIR/.odirect-test"
+    aio=threads
+    if [ "$(cat /proc/sys/kernel/io_uring_disabled 2>/dev/null || echo 0)" = 0 ] && grep -qa 'LIBURING_' "$QEMU_BIN" 2>/dev/null; then
+        aio=io_uring
+    fi
+    MAC_DISK_OPTS="cache=$cache,aio=$aio,discard=unmap,detect-zeroes=unmap,l2-cache-size=32M"
+    net="$(cat "$STATE_DIR/net" 2>/dev/null)"
+    case "$net" in user) ;; *) net=passt ;; esac
+    if [ "$net" = passt ] && ! command -v passt >/dev/null 2>&1; then
+        echo "Network: passt not installed -- using QEMU's built-in NAT."
+        net=user
+    fi
+    if [ "$net" = passt ]; then
+        NET_ARGS=(-netdev passt,id=net0)
+    else
+        NET_ARGS=(-netdev user,id=net0)
+    fi
+    echo "I/O: disk $MAC_DISK_OPTS; network $net."
+}
+
 pick_resources() {
     # --- RAM: give the Mac nearly all of it ---------------------------------------
     # Everything except a reserve for Linux + QEMU + Reims' host-side Vulkan buffers:
@@ -742,6 +786,7 @@ RETRIES=0
 while true; do
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
+    pick_io          # disk cache/aio and the network backend (MAC_DISK_OPTS, NET_ARGS)
     # Which physical screen shows the Mac (Settings > Displays > Screens): put it
     # at 0,0 as primary and turn off / mirror the others before QEMU opens its
     # window there. No-op when nothing is chosen ("Automatic") or the layout
@@ -817,7 +862,7 @@ while true; do
         -device ich9-ahci,id=sata
         -drive id=OpenCoreBoot,if=none,format=qcow2,snapshot=on,file="$OPENCORE_IMG"
         -device ide-hd,bus=sata.2,drive=OpenCoreBoot,bootindex=0
-        -drive id=MacHDD,if=none,format=qcow2,file="$VM_DISK"
+        -drive "id=MacHDD,if=none,format=qcow2,file=$VM_DISK,$MAC_DISK_OPTS"
         -device ide-hd,bus=sata.4,drive=MacHDD
         # vmxnet3, NOT virtio-net: macOS ships no virtio-net driver, so a
         # virtio NIC shows up as a dead card with no network at all. macOS DOES
@@ -827,7 +872,7 @@ while true; do
         # future macOS ever drops vmxnet3.)
         # romfile= (empty) drops the NIC's PXE option ROM: no "UEFI Misc
         # Device" network-boot entry for OVMF to wander into.
-        -netdev user,id=net0
+        "${NET_ARGS[@]}"
         -device vmxnet3,netdev=net0,id=net0,romfile=
         # OSX-KVM's OpenCore config (ours) patches XNU to send its early boot
         # prints and its panic string to the serial port. Until now nothing
@@ -937,6 +982,33 @@ while true; do
     # this matters most right after a crash/black-screen exit, which
     # is exactly when there's no other easy way to see what happened.
     bash "$KIOSK_DIR/lib/save-logs-to-usb.sh" 2>/dev/null || true
+
+    # Crash guard: the Mac can go down hard -- QEMU itself dying (Reims
+    # hitting something it can't handle: SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE)
+    # or macOS panicking (the panic string reaches the serial log; with
+    # -no-reboot it then shows up as an ordinary guest reset). Either way the
+    # loop below brings the Mac back; here we keep the evidence (a full
+    # diagnostics bundle under ~/crash-reports, newest 5 kept) and tell the
+    # user what happened instead of a silent restart.
+    CRASH_KIND=""
+    case "$QEMU_RC" in
+        132|133|134|135|136|139) CRASH_KIND="QEMU crashed (signal $((QEMU_RC - 128)))" ;;
+    esac
+    if [ -z "$CRASH_KIND" ] && [ "$ACTION" = host-reboot ] && grep -aq 'panic(cpu' "$SERIAL_LOG" 2>/dev/null; then
+        CRASH_KIND="macOS kernel panic"
+    fi
+    if [ -n "$CRASH_KIND" ]; then
+        echo "CRASH: $CRASH_KIND after ${RAN_FOR}s -- saving a diagnostics bundle to ~/crash-reports."
+        (
+            mkdir -p "$HOME/crash-reports"
+            b="$(/usr/local/bin/macdiag bundle 2>/dev/null | sed -n 's/^Diagnostics bundle: //p')"
+            [ -n "$b" ] && mv "$b" "$HOME/crash-reports/" 2>/dev/null
+            ls -1dt "$HOME"/crash-reports/mac-vm-diag-* 2>/dev/null | tail -n +6 | xargs -r rm -rf
+            sleep 20   # let the Mac's window come back first; the notice goes above it
+            zenity --info --width=460 --timeout=30 --title="LayerOSX — The Mac restarted" \
+                --text="The Mac stopped unexpectedly ($CRASH_KIND) and was started again.\n\nA report was saved (Settings › Maintenance › Save diagnostics copies it to a drive). If it keeps happening with one app, switching Displays › Graphics to VMware avoids the Reims graphics path." 2>/dev/null
+        ) >/dev/null 2>&1 &
+    fi
 
     # A guest "reboot" seconds after launch is not someone clicking Restart
     # in the Apple menu -- it's XNU panicking and auto-restarting (or OVMF

@@ -1176,6 +1176,19 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5h. Disk / network I/O, crash guard
+
+- `mac-vm.log`: "I/O: disk cache=none,aio=io_uring,…; network passt."
+  `pgrep -a passt` shows the passt process while the Mac runs; macOS has
+  internet (Safari, App Store).
+- Start a big App Store download: sound and the screen stay smooth(er)
+  than before. `echo writeback > /var/lib/layerosx/disk-cache; relaunch`
+  and `echo user > /var/lib/layerosx/net; relaunch` to compare each change.
+- Crash guard: `pkill -SEGV -f qemu-system-x86_64` → the Mac comes back,
+  `mac-vm.log` has "CRASH: QEMU crashed (signal 11)", `~/crash-reports/`
+  has a bundle, a "The Mac restarted" notice appears above the Mac.
+- WebGL game / Photomator: reproduce, then `macdiag usb` right away.
+
 ### 5.5g. Installer look, Wi-Fi picker
 
 - Live ISO: the installer dialogs and GParted have rounded corners and the

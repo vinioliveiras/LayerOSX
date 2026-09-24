@@ -181,6 +181,14 @@ Installed system: tty1 autologin → startx → .xinitrc
   RAM is capped: the budget Reims reported for this GPU choice
   (`reims-import-budget`, learned after a run that didn't fit) minus 1 GB,
   else 70% of the host. A fixed RAM above it gets a warning in Settings.
+- **Disk and network:** the Mac's disk runs with `cache=none,aio=io_uring`
+  (no host page cache — big downloads used to fill it and stall the host),
+  a 32 MB qcow2 L2 cache and TRIM (`discard=unmap`); the network NAT is
+  `passt` in its own process instead of QEMU's built-in slirp. Overrides:
+  `disk-cache` (none|writeback), `net` (passt|user) state files.
+- **Crash guard:** when QEMU crashes (Reims) or macOS panics, the Mac is
+  started again, a diagnostics bundle goes to `~/crash-reports` (newest 5)
+  and a notice says what happened.
 - **Guest RAM pages:** Reims needs the RAM in a shared memfd, which is
   shmem — 4 KB pages unless shmem transparent huge pages are allowed.
   `etc/tmpfiles.d/layerosx-hugepages.conf` sets `shmem_enabled=advise`, so
@@ -270,6 +278,12 @@ devices.
   macOS drives it natively. The laptop's built-in mic (on the host's audio
   chip) needs an emulated input device: `intel-hda` + `hda-duplex` with a
   macOS HDA driver (VoodooHDA/AppleALC) in OpenCore — to evaluate.
+
+- **3D in the browser (WebGL games like venge.io / krunker.io) and
+  Photomator RAW editing** — broken drawing, one crash. Metal work Reims
+  can't translate yet (compute / Core Image paths). Needs a Reims failure
+  log taken right after reproducing; likely to report upstream (Reims is
+  alpha).
 
 **Next**
 
