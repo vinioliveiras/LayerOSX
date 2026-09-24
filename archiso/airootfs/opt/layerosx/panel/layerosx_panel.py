@@ -43,7 +43,7 @@ SECTIONS = [
     ("usb", "USB Devices", "media-removable-symbolic", "orange"),
     ("mac", "Mac", "computer-symbolic", "graphite"),
     ("general", "General", "emblem-system-symbolic", "gray"),
-    ("terminal", "Terminal", "utilities-terminal-symbolic", "black"),
+    ("maintenance", "Maintenance", "applications-engineering-symbolic", "gray"),
     ("about", "About", "help-about-symbolic", "gray"),
 ]
 
@@ -120,6 +120,7 @@ class Settings(Adw.ApplicationWindow):
         super().__init__(application=app, title="LayerOSX Settings")
         self.b = backend
         self.status = None
+        self._maint_unlocked = False   # Settings > Maintenance, once the password is typed
         self._updating = False
         self._bright_src = None
         # Fixed size, like macOS System Settings (which can't be zoomed): the
@@ -148,6 +149,7 @@ class Settings(Adw.ApplicationWindow):
         self.add_controller(key)
 
         start = os.environ.get("LAYEROSX_PANEL_PAGE", "wifi")
+        start = {"terminal": "maintenance"}.get(start, start)   # the old Terminal section
         self.select(start if start in dict((s[0], s) for s in SECTIONS) else "wifi")
         self.refresh()
         GLib.timeout_add_seconds(REFRESH_SECONDS, lambda: self.refresh() or True)
@@ -234,8 +236,6 @@ class Settings(Adw.ApplicationWindow):
         self.listbox = Gtk.ListBox(css_classes=["navigation-sidebar"], vexpand=True)
         self.rows = {}
         for i, (sid, title, icon, color) in enumerate(SECTIONS):
-            if sid == "terminal" and self.b.terminal_policy == "off":
-                continue  # this build ships without a maintenance terminal
             if sid in ("mac",):  # visual gap before the Mac/General block, like System Settings
                 sep = Gtk.ListBoxRow(selectable=False, activatable=False)
                 sep.set_child(Gtk.Box(margin_top=2))
@@ -769,20 +769,6 @@ class Settings(Adw.ApplicationWindow):
         self.mac_row.add_suffix(self.mac_dot)
         g.add(self.mac_row)
         page.add(g)
-        s = Adw.PreferencesGroup(title="Startup and logs", description="Applies when the Mac restarts.")
-        self.verbose_row = Adw.SwitchRow(title="Show startup log",
-                                         subtitle="Text log instead of the logo while macOS starts — useful when something goes wrong")
-        self.verbose_row.connect("notify::active", self._on_switch, "verbose", "Startup log")
-        s.add(self.verbose_row)
-        self.diag_row = Adw.SwitchRow(
-            title="Detailed logs",
-            subtitle="For troubleshooting: macOS's kernel log (~/mac-vm-serial.log), OpenCore's log and "
-                     "QEMU diagnostics (~/mac-vm-qemu.log). Also shows the startup log. Save them with "
-                     "General › Save diagnostics.")
-        self.diag_row.set_active(self.b.diag_logs())
-        self.diag_row.connect("notify::active", self._on_diag_logs)
-        s.add(self.diag_row)
-        page.add(s)
         page.add(self._model_group())
         page.add(self._resources_group())
         r = Adw.PreferencesGroup(title="Restart")
@@ -961,34 +947,11 @@ class Settings(Adw.ApplicationWindow):
             r.add_suffix(b)
             p.add(r)
         page.add(p)
-        m = Adw.PreferencesGroup(title="Maintenance")
-        d = Adw.ActionRow(title="Save diagnostics", subtitle="Copies the logs to a drive you choose, for troubleshooting")
-        d.add_prefix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
-        db = Gtk.Button(label="Save…", valign=Gtk.Align.CENTER)
-        db.connect("clicked", lambda *_: self.on_diag())
-        d.add_suffix(db)
-        m.add(d)
-        if self.b.terminal_policy != "off":
-            t = Adw.ActionRow(title="Terminal",
-                              subtitle="Asks for the maintenance password" if self.b.terminal_policy == "password"
-                              else "For advanced maintenance")
-            t.add_prefix(Gtk.Image.new_from_icon_name("utilities-terminal-symbolic"))
-            tb = Gtk.Button(label="Open…", valign=Gtk.Align.CENTER)
-            tb.connect("clicked", lambda *_: self.on_terminal())
-            t.add_suffix(tb)
-            m.add(t)
-        self.vt_row = Adw.SwitchRow(title="Text consoles")
-        self.vt_row.add_prefix(Gtk.Image.new_from_icon_name("input-keyboard-symbolic"))
-        self.vt_row.set_active(self.b.text_consoles())
-        self._vt_subtitle()
-        self.vt_row.connect("notify::active", self._on_text_consoles)
-        m.add(self.vt_row)
-        page.add(m)
         return self._pane("General", page)
 
     def _vt_subtitle(self):
-        base = ("Ctrl+Alt+F1–F6 switch to Linux text consoles (Ctrl+Alt+F2 follows the terminal's "
-                "password). Off keeps the computer locked to the Mac.")
+        base = ("Ctrl+Alt+F1–F6 switch to Linux text consoles (Ctrl+Alt+F2 asks for the Maintenance "
+                "password, if one is set). Off keeps the computer locked to the Mac.")
         pending = self.b.text_consoles() != self.b.text_consoles_now()
         self.vt_row.set_subtitle(base + (" Takes effect after restarting the computer." if pending else ""))
 
@@ -1012,36 +975,156 @@ class Settings(Adw.ApplicationWindow):
             self._pending_restart()
 
     # ------------------------------------------------------------- Terminal
-    def _page_terminal(self):
+    def _page_maintenance(self):
+        """Everything for troubleshooting in one place: logs, diagnostics,
+        terminal, text consoles -- and the optional password that guards it
+        (plus Ctrl+Alt+T and tty2). Locked until unlocked when one is set."""
+        if self.b.maint_password_set() and not self._maint_unlocked:
+            return self._pane("Maintenance", self._maint_lock_view())
         page = Adw.PreferencesPage()
-        g = Adw.PreferencesGroup()
-        pw = self.b.terminal_policy == "password"
-        r = Adw.ActionRow(title="Terminal",
-                          subtitle="A command line on this computer (the Linux underneath the Mac), for "
-                                   "maintenance and troubleshooting.")
-        r.add_prefix(badge("utilities-terminal-symbolic", "black", big=True))
-        g.add(r)
-        o = Adw.ActionRow(title="Open Terminal",
-                          subtitle="Asks for the maintenance password" if pw else "Opens right away")
-        b = Gtk.Button(label="Open…", valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
-        b.connect("clicked", lambda *_: self.on_terminal())
-        o.add_suffix(b)
-        g.add(o)
-        page.add(g)
-        h = Adw.PreferencesGroup(title="Useful commands",
-                                 description="Type `commands` in the terminal for the full list.")
-        for cmd, what in (("gpu vmware", "Switch to the reliable display (then: relaunch)"),
-                          ("relaunch", "Restart the Mac to apply a change"),
-                          ("maclog", "Show the Mac's startup log"),
-                          ("macdiag usb", "Save a diagnostics bundle to a USB drive"),
-                          ("passwd", "Change the maintenance password")):
-            row = Adw.ActionRow(title=cmd, subtitle=what, title_selectable=True)
-            h.add(row)
-        page.add(h)
-        k = Adw.PreferencesGroup()
-        k.add(Adw.ActionRow(title="Shortcut", subtitle="Ctrl+Alt+T opens it from anywhere"))
-        page.add(k)
-        return self._pane("Terminal", page)
+        lg = Adw.PreferencesGroup(title="Logs", description="Log switches apply when the Mac restarts.")
+        self.verbose_row = Adw.SwitchRow(title="Show startup log",
+                                         subtitle="Text log instead of the logo while macOS starts — useful when something goes wrong")
+        self.verbose_row.connect("notify::active", self._on_switch, "verbose", "Startup log")
+        lg.add(self.verbose_row)
+        self.diag_row = Adw.SwitchRow(
+            title="Detailed logs",
+            subtitle="For troubleshooting: macOS's kernel log (~/mac-vm-serial.log), OpenCore's log and "
+                     "QEMU diagnostics (~/mac-vm-qemu.log). Also shows the startup log.")
+        self.diag_row.set_active(self.b.diag_logs())
+        self.diag_row.connect("notify::active", self._on_diag_logs)
+        lg.add(self.diag_row)
+        d = Adw.ActionRow(title="Save diagnostics", subtitle="Copies the logs to a drive you choose")
+        d.add_prefix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
+        db = Gtk.Button(label="Save…", valign=Gtk.Align.CENTER)
+        db.connect("clicked", lambda *_: self.on_diag())
+        d.add_suffix(db)
+        lg.add(d)
+        page.add(lg)
+
+        if self.b.terminal_policy != "off":
+            tg = Adw.PreferencesGroup(title="Terminal",
+                                      description="A command line on this computer (the Linux underneath the Mac). "
+                                                  "Ctrl+Alt+T opens it from anywhere; type `commands` for the list.")
+            o = Adw.ActionRow(title="Open Terminal")
+            o.add_prefix(Gtk.Image.new_from_icon_name("utilities-terminal-symbolic"))
+            b = Gtk.Button(label="Open…", valign=Gtk.Align.CENTER, css_classes=["suggested-action"])
+            b.connect("clicked", lambda *_: self.on_terminal())
+            o.add_suffix(b)
+            tg.add(o)
+            ex = Adw.ExpanderRow(title="Useful commands")
+            for cmd, what in (("gpu vmware", "Switch to the reliable display (then: relaunch)"),
+                              ("relaunch", "Restart the Mac to apply a change"),
+                              ("maclog", "Show the Mac's startup log"),
+                              ("macdiag usb", "Save a diagnostics bundle to a USB drive")):
+                ex.add_row(Adw.ActionRow(title=cmd, subtitle=what, title_selectable=True))
+            tg.add(ex)
+            page.add(tg)
+
+        ag = Adw.PreferencesGroup(title="Advanced")
+        self.vt_row = Adw.SwitchRow(title="Text consoles")
+        self.vt_row.add_prefix(Gtk.Image.new_from_icon_name("input-keyboard-symbolic"))
+        self.vt_row.set_active(self.b.text_consoles())
+        self._vt_subtitle()
+        self.vt_row.connect("notify::active", self._on_text_consoles)
+        ag.add(self.vt_row)
+        page.add(ag)
+
+        pg = Adw.PreferencesGroup(title="Password")
+        on = self.b.maint_password_set()
+        pr = Adw.ActionRow(
+            title="Maintenance password",
+            subtitle=("On — needed to open Maintenance, the terminal (Ctrl+Alt+T) and the text console"
+                      if on else "Off — anyone at this computer can use Maintenance and the terminal"))
+        pr.add_prefix(Gtk.Image.new_from_icon_name("system-lock-screen-symbolic"))
+        box = Gtk.Box(spacing=6, valign=Gtk.Align.CENTER)
+        if on:
+            ch = Gtk.Button(label="Change…")
+            ch.connect("clicked", lambda *_: self._maint_password_dialog(change=True))
+            rm = Gtk.Button(label="Turn Off…", css_classes=["destructive-action"])
+            rm.connect("clicked", lambda *_: self._maint_password_dialog(remove=True))
+            box.append(ch)
+            box.append(rm)
+        else:
+            st = Gtk.Button(label="Set…")
+            st.connect("clicked", lambda *_: self._maint_password_dialog())
+            box.append(st)
+        pr.add_suffix(box)
+        pg.add(pr)
+        page.add(pg)
+        self._sync_switches()
+        return self._pane("Maintenance", page)
+
+    def _maint_lock_view(self):
+        sp = Adw.StatusPage(icon_name="system-lock-screen-symbolic", title="Maintenance is locked",
+                            description="Enter the Maintenance password to see logs, diagnostics and the terminal.")
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12, halign=Gtk.Align.CENTER)
+        entry = Gtk.PasswordEntry(show_peek_icon=True, width_chars=24)
+        btn = Gtk.Button(label="Unlock", css_classes=["suggested-action", "pill"], halign=Gtk.Align.CENTER)
+        self._maint_entry = entry
+
+        def unlock(*_):
+            if self.b.check_maint_password(entry.get_text()):
+                self._maint_unlocked = True
+                self._rebuild_page("maintenance")
+            else:
+                entry.set_text("")
+                entry.add_css_class("error")
+                self.toast("Wrong password")
+        entry.connect("activate", unlock)
+        btn.connect("clicked", unlock)
+        box.append(entry)
+        box.append(btn)
+        sp.set_child(box)
+        GLib.idle_add(lambda: (entry.grab_focus(), False)[1])
+        return sp
+
+    def _rebuild_page(self, sid):
+        self.pages.pop(sid, None)
+        self.select(sid, from_sidebar=True)
+
+    def _maint_password_dialog(self, change=False, remove=False):
+        heading = ("Turn off the Maintenance password?" if remove
+                   else "Change the Maintenance password" if change else "Set a Maintenance password")
+        body = ("Anyone at this computer will be able to use Maintenance and the terminal." if remove
+                else "Needed to open Maintenance, the terminal (Ctrl+Alt+T) and the text console. "
+                     "It's separate from your macOS password.")
+        d = self._dialog(heading, body)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        cur = new = rep = None
+        if change or remove:
+            cur = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="Current password")
+            box.append(cur)
+        if not remove:
+            new = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="New password")
+            rep = Gtk.PasswordEntry(show_peek_icon=True, placeholder_text="Repeat new password")
+            box.append(new)
+            box.append(rep)
+        d.set_extra_child(box)
+        d.add_response("cancel", "Cancel")
+        d.add_response("ok", "Turn Off" if remove else "Save")
+        d.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE if remove
+                                  else Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("ok")
+        d.set_close_response("cancel")
+
+        def done(_d, r):
+            if r != "ok":
+                return
+            if new is not None and new.get_text() != rep.get_text():
+                self.toast("The new passwords don't match")
+                return
+            ok, msg = self.b.set_maint_password(new.get_text() if new is not None else "",
+                                                cur.get_text() if cur is not None else "")
+            if ok:
+                self._maint_unlocked = True
+                self.toast("Maintenance password turned off" if remove else "Maintenance password saved")
+                self._rebuild_page("maintenance")
+            else:
+                self.toast(msg)
+        d.connect("response", done)
+        self._present(d)
+        (cur or new).grab_focus()
 
     # ---------------------------------------------------------------- About
     def _page_about(self):
@@ -1282,7 +1365,7 @@ class Settings(Adw.ApplicationWindow):
         run_async(lambda: self.b.save_logs_to(device), done)
 
     def on_terminal(self):
-        ok, msg = self.b.open_terminal()
+        ok, msg = self.b.open_terminal(unlocked=self._maint_unlocked)
         self.after_action(ok, msg, "")
         if ok and not self.b.dry_run:
             self.close()

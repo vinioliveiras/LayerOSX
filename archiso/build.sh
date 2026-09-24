@@ -13,14 +13,14 @@ OUTDIR="${2:-./out}"
 # configured like the old release build -- Reims, sound on, Apple-logo boot,
 # console switching locked, terminal behind a password -- and everything the
 # debug build did is a runtime toggle in LayerOSX Settings:
-#   Mac > Show startup log     text boot (OpenCore*-verbose images)
-#   Mac > Detailed logs        serial kernel log + OpenCore log + QEMU
+#   Maintenance > Show startup log   text boot (OpenCore*-verbose images)
+#   Maintenance > Detailed logs      serial kernel log + OpenCore log + QEMU
 #                              guest_errors/unimp (OpenCore*-diag images)
-#   General > Text consoles    Ctrl+Alt+F1..F6 / Ctrl+Alt+Backspace (next boot)
+#   Maintenance > Text consoles      Ctrl+Alt+F1..F6 / Ctrl+Alt+Backspace (next boot)
 # LAYEROSX_MODE is still accepted (old scripts) but no longer changes the ISO.
 if [ -n "${LAYEROSX_MODE:-}" ] && [ "${LAYEROSX_MODE}" != release ]; then
     echo "build.sh: LAYEROSX_MODE=$LAYEROSX_MODE is no longer a build option -- one ISO for all;" >&2
-    echo "          the debug features are toggles in LayerOSX Settings (Mac > Detailed logs, General > Text consoles)." >&2
+    echo "          the debug features are toggles in LayerOSX Settings (Maintenance > Detailed logs, Text consoles)." >&2
 fi
 MODE=release
 export LAYEROSX_MODE="$MODE"
@@ -39,26 +39,25 @@ printf '%s\n' "$MODE" > airootfs/etc/layerosx/mode
 _ver="$(git -C .. describe --always --dirty 2>/dev/null || echo unknown)"
 printf 'version=%s\nbuilt=%s\nmode=%s\n' "$_ver" "$(date +%Y-%m-%d)" "$MODE" > airootfs/etc/layerosx/version
 
-# Maintenance terminal (Ctrl+Alt+T) policy, independent of the mode so any build can
-# ship with or without it -- just set LAYEROSX_TERMINAL:
-#   password -> Ctrl+Alt+T asks for the kiosk user's password, then opens the terminal
-#   open     -> Ctrl+Alt+T opens the terminal directly (no password)
-#   off      -> no terminal at all (fully locked appliance)
-# Default follows the mode: debug=open, release=password. Baked like the mode
-# (airootfs/etc/layerosx/terminal, gitignored), read by lib/maint-terminal.sh.
-TERMINAL="${LAYEROSX_TERMINAL:-}"
-if [ -z "$TERMINAL" ]; then
-    [ "$MODE" = debug ] && TERMINAL=open || TERMINAL=password
-fi
+# Maintenance terminal (Ctrl+Alt+T / Settings > Maintenance):
+#   open (default) -> available; asks for a password only if the user set a
+#                     Maintenance password in Settings (none by default)
+#   off            -> no terminal at all (fully locked appliance)
+# "password" (the old default: the kiosk user's password) is accepted and means
+# "open" now -- the password is the user's own choice in Settings.
+# Baked into airootfs/etc/layerosx/terminal (gitignored), read by
+# lib/maint-terminal.sh, lib/tty2-getty.sh and the panel.
+TERMINAL="${LAYEROSX_TERMINAL:-open}"
 case "$TERMINAL" in
-    password|open|off) : ;;
-    *) echo "build.sh: unknown LAYEROSX_TERMINAL='$TERMINAL' -- using password." >&2; TERMINAL=password ;;
+    open|off) : ;;
+    password) echo "build.sh: LAYEROSX_TERMINAL=password is now 'open' + an optional Maintenance password set in Settings." >&2; TERMINAL=open ;;
+    *) echo "build.sh: unknown LAYEROSX_TERMINAL='$TERMINAL' -- using open." >&2; TERMINAL=open ;;
 esac
 printf '%s\n' "$TERMINAL" > airootfs/etc/layerosx/terminal
 echo "  Maintenance terminal (Ctrl+Alt+T): $TERMINAL"
 
 # Kiosk VT-switch lock: no longer baked here. It's the "Text consoles" toggle
-# (LayerOSX Settings > General), applied at every boot by
+# (LayerOSX Settings > Maintenance), applied at every boot by
 # layerosx-vtlock.service (kiosk/lib/vt-lock.sh), which writes or removes
 # /etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf before X starts. Drop any
 # copy an older build left in airootfs so the ISO doesn't carry it.

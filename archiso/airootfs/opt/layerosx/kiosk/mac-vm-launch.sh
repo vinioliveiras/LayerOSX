@@ -374,7 +374,7 @@ configure_toggles() {
     # ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
     VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo "$VERBOSE_DEFAULT")"
     case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
-    # "Detailed logs" (Settings > Mac, $STATE_DIR/diag-logs): the debug-flavour
+    # "Detailed logs" (Settings > Maintenance, $STATE_DIR/diag-logs): the debug-flavour
     # image (OpenCore*-diag: -v + serial kernel log + OpenCore's own log), and
     # QEMU's guest_errors/unimp further down. What the old debug build did,
     # now a toggle on the one ISO. Implies the text boot.

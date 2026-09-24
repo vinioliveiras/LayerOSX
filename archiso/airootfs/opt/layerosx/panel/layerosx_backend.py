@@ -24,6 +24,8 @@ CLI (handy for debugging and for the future helper):
     layerosx_backend.py drives          JSON list of drives diagnostics can be saved to
     layerosx_backend.py about           JSON: this machine, the Mac, versions, credits
 """
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -254,10 +256,55 @@ class Backend:
 
     @property
     def terminal_policy(self) -> str:
-        t = _read(os.path.join(self.etc_dir, "terminal"))
-        if t in ("open", "password", "off"):
-            return t
-        return "open" if self.mode == "debug" else "password"
+        """Build parameter LAYEROSX_TERMINAL: "off" = no terminal at all,
+        anything else = available. Whether it asks for a password is no longer
+        a build choice but the user's: the Maintenance password (below). An old
+        "password" build means "available" too."""
+        return "off" if _read(os.path.join(self.etc_dir, "terminal")) == "off" else "open"
+
+    # ------------------------------------------------ maintenance password
+    # Optional, set by the user in Settings > Maintenance. When set it guards
+    # that whole section (logs, diagnostics, terminal, text consoles) and the
+    # terminal's other doors: Ctrl+Alt+T (lib/maint-terminal.sh) and tty2
+    # (lib/tty2-login.sh), which verify it through `layerosx_backend.py
+    # check-maint-password`. Stored as scrypt(N=2^14, r=8, p=1) with a random
+    # salt in $STATE_DIR/maint-password (0600) -- never the password itself.
+    @property
+    def _maint_file(self) -> str:
+        return os.path.join(self.state_dir, "maint-password")
+
+    def maint_password_set(self) -> bool:
+        return bool(_read(self._maint_file))
+
+    @staticmethod
+    def _hash_password(pw: str, salt: bytes) -> bytes:
+        return hashlib.scrypt(pw.encode("utf-8"), salt=salt, n=2 ** 14, r=8, p=1, dklen=32)
+
+    def check_maint_password(self, pw: str) -> bool:
+        rec = _read(self._maint_file)
+        try:
+            algo, salt_hex, hash_hex = rec.split("$")
+            if algo != "scrypt":
+                return False
+            return hmac.compare_digest(self._hash_password(pw, bytes.fromhex(salt_hex)),
+                                       bytes.fromhex(hash_hex))
+        except ValueError:
+            return False
+
+    def set_maint_password(self, new: str, current: str = "") -> Tuple[bool, str]:
+        """Set, change ('' current only when none is set) or remove (new='')."""
+        if self.maint_password_set() and not self.check_maint_password(current):
+            return False, "The current password is wrong."
+        if new and len(new) < 4:
+            return False, "Use at least 4 characters."
+        if not new:
+            return self._write_state("maint-password", None)
+        salt = os.urandom(16)
+        ok, msg = self._write_state("maint-password",
+                                    f"scrypt${salt.hex()}${self._hash_password(new, salt).hex()}")
+        if ok and not self.dry_run:
+            os.chmod(self._maint_file, 0o600)
+        return ok, msg
 
     def setting(self, name: str) -> Tuple[str, bool]:
         """Effective value + whether the user saved it (vs the build default)."""
@@ -880,11 +927,16 @@ class Backend:
         ok = any(l.startswith("Copied") for l in out.splitlines())
         return ok, out.strip() if ok else "Plug in a writable USB drive and try again."
 
-    def open_terminal(self) -> Tuple[bool, str]:
+    def open_terminal(self, unlocked: bool = False) -> Tuple[bool, str]:
+        """From the panel: `unlocked` = the user already typed the Maintenance
+        password there, so open straight away instead of asking again."""
         if self.terminal_policy == "off":
             return False, "this build has no maintenance terminal"
-        self._spawn([os.path.join(self.lib, "maint-terminal.sh"),
-                     os.path.expanduser("~/mac-vm.log")])
+        log = os.path.expanduser("~/mac-vm.log")
+        if unlocked or not self.maint_password_set():
+            self._spawn([os.path.join(self.lib, "peek-terminal.sh"), log])
+        else:
+            self._spawn([os.path.join(self.lib, "maint-terminal.sh"), log])
         return True, ""
 
     # ------------------------------------------------------------------ about
@@ -1039,6 +1091,12 @@ def main(argv: List[str]) -> int:
         print(json.dumps(asdict(b.about()), indent=2))
     elif what == "screens":
         print(json.dumps([asdict(x) for x in b.screens()], indent=2))
+    elif what == "check-maint-password":
+        # For shell scripts: password on stdin (first line). Exit 0 = right,
+        # 1 = wrong, 2 = no password is set.
+        if not b.maint_password_set():
+            return 2
+        return 0 if b.check_maint_password(sys.stdin.readline().rstrip("\n")) else 1
     elif what == "resources":
         print(json.dumps(asdict(b.resources()), indent=2))
     elif what == "drives":
@@ -1046,7 +1104,7 @@ def main(argv: List[str]) -> int:
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|check-maint-password]", file=sys.stderr)
         return 2
     return 0
 

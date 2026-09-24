@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# "Text consoles" toggle (LayerOSX Settings > General), applied at boot by
+# "Text consoles" toggle (LayerOSX Settings > Maintenance), applied at boot by
 # layerosx-vtlock.service -- as root, before the kiosk's X server starts.
 #
 # Locked (default -- the appliance behaviour the old release build baked in):
@@ -25,7 +25,7 @@ case "$(cat "$STATE" 2>/dev/null)" in
         cat > "$CONF" <<'CONF'
 # Written at boot by /opt/layerosx/kiosk/lib/vt-lock.sh (layerosx-vtlock.service).
 # Text consoles are locked: no Ctrl+Alt+Fn VT switching, no Ctrl+Alt+Backspace.
-# Unlock in LayerOSX Settings > General > Text consoles, then restart.
+# Unlock in LayerOSX Settings > Maintenance > Text consoles, then restart.
 Section "ServerFlags"
     Option "DontVTSwitch" "on"
     Option "DontZap"      "on"

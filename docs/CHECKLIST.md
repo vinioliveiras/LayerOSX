@@ -1149,6 +1149,21 @@ allow-list and anything not coming from the guest.)
 - Before rebuilding: `tools/run-mac-here.sh --gpu nvidia --model
   MacBookPro16,2` boots to the desktop as a MacBook Pro.
 
+### 5.4u. Settings › Maintenance + Maintenance password
+
+- Sidebar: Maintenance (no Terminal section); it has Logs (startup log,
+  Detailed logs, Save diagnostics), Terminal, Advanced (Text consoles),
+  Password. Mac and General no longer have those rows.
+- No password set: Ctrl+Alt+T and the panel's Open Terminal open straight
+  away; Ctrl+Alt+F2 (with Text consoles on) logs in as mac.
+- Set a password: closing and reopening the panel shows "Maintenance is
+  locked"; a wrong password shakes it off ("Wrong password"), the right one
+  opens the section; Open Terminal then doesn't ask again. Ctrl+Alt+T asks
+  (zenity), Ctrl+Alt+F2 asks ("Maintenance password:"), both accept it.
+- Change needs the current one; Turn Off removes it (back to no prompts).
+- `ls -l /var/lib/layerosx/maint-password` → `-rw-------`, contents start
+  with `scrypt$`.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

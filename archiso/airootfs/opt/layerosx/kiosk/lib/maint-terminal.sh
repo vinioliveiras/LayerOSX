@@ -1,25 +1,18 @@
 #!/usr/bin/env bash
-# Ctrl+Alt+T maintenance terminal (was F2). Policy is baked at build time into
-# /etc/layerosx/terminal (LAYEROSX_TERMINAL=password|open|off, see build.sh);
-# default follows the build mode (debug=open, release=password):
+# Ctrl+Alt+T maintenance terminal (also Settings > Maintenance > Terminal).
 #
-#   open     -> opens the live terminal straight away (developer build).
-#   password -> asks for the kiosk user's ("mac") password first, so the
-#               appliance stays locked for whoever is at the keyboard but is
-#               still maintainable (gpu/verbose/audio/relaunch, logs, macdiag,
-#               and -- via the kiosk user's sudo -- the whole host).
-#   off      -> the chord does nothing (fully locked appliance).
-#
-# The password is checked with PAM's own unix_chkpwd helper, which lets a user
-# verify THEIR OWN password without root (it refuses to run on a tty, so it is
-# fed through a pipe). No password is stored or logged here; failed attempts go
-# to ~/maint-auth.log with a timestamp only. 3 tries per press, with a short
-# growing delay between them.
+# /etc/layerosx/terminal (build parameter LAYEROSX_TERMINAL): "off" = no
+# terminal at all; anything else = available. Whether it asks for a password
+# is the USER's choice: the optional Maintenance password set in LayerOSX
+# Settings > Maintenance (none by default). It's checked by
+# `layerosx_backend.py check-maint-password` against a salted scrypt hash in
+# /var/lib/layerosx/maint-password -- nothing is stored or logged here; failed
+# attempts go to ~/maint-auth.log with a timestamp only. 3 tries per press,
+# with a short growing delay.
 #
 # $1 = log file the terminal shows/follows (passed through to peek-terminal.sh).
 set -uo pipefail
 LOG_TARGET="${1:-$HOME/mac-vm.log}"
-MODE="$(cat /etc/layerosx/mode 2>/dev/null || echo release)"
 PEEK=/opt/layerosx/kiosk/lib/peek-terminal.sh
 AUTH_LOG="$HOME/maint-auth.log"
 T="LayerOSX — Maintenance"
@@ -37,25 +30,17 @@ fi
 [ "$(id -u)" = 0 ] && exec "$PEEK" "$LOG_TARGET"
 
 POLICY="$(cat /etc/layerosx/terminal 2>/dev/null || true)"
-if [ -z "$POLICY" ]; then [ "$MODE" = debug ] && POLICY=open || POLICY=password; fi
-case "$POLICY" in
-    open) exec "$PEEK" "$LOG_TARGET" ;;
-    off)  exit 0 ;;
-    *)    : ;;  # password (also any unknown value: fail closed, not open)
-esac
+[ "$POLICY" = off ] && exit 0
 
-CHK="$(command -v unix_chkpwd || true)"
-for c in /usr/bin/unix_chkpwd /usr/sbin/unix_chkpwd; do [ -n "$CHK" ] || { [ -x "$c" ] && CHK="$c"; }; done
-if [ -z "$CHK" ]; then
-    zenity --error --width=420 --title="$T" --text="Can't verify passwords on this system (unix_chkpwd missing)." 2>/dev/null
-    exit 1
-fi
+BACKEND=/opt/layerosx/panel/layerosx_backend.py
+check() { printf '%s\n' "$1" | python3 "$BACKEND" check-maint-password >/dev/null 2>&1; }
+check "" ; rc=$?
+[ "$rc" = 2 ] && exec "$PEEK" "$LOG_TARGET"      # no Maintenance password set
 
-user="$(id -un)"
 for attempt in 1 2 3; do
     pw="$(zenity --password --title="$T" \
-        --text="Maintenance terminal — enter the password for \"$user\"." 2>/dev/null)" || exit 0
-    if printf '%s\0' "$pw" | "$CHK" "$user" nonull >/dev/null 2>&1; then
+        --text="Maintenance — enter the Maintenance password." 2>/dev/null)" || exit 0
+    if check "$pw"; then
         unset pw
         printf '%s maintenance terminal unlocked\n' "$(date '+%F %T')" >> "$AUTH_LOG"
         exec "$PEEK" "$LOG_TARGET"

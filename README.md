@@ -3591,3 +3591,39 @@ the placeholder serial/MLB/UUID stay.
 - Also fixed: the "Startup & logs" group had no title (libadwaita titles are
   markup; the bare `&` broke it) — now "Startup and logs".
 
+## Settings › Maintenance, and an optional Maintenance password
+
+Everything for troubleshooting now lives in one sidebar section,
+**Maintenance** (it replaces the Terminal section; `LAYEROSX_PANEL_PAGE=terminal`
+still opens it):
+
+- **Logs:** Show startup log, Detailed logs (moved from Mac), Save diagnostics
+  (moved from General).
+- **Terminal:** Open Terminal…, useful commands, the Ctrl+Alt+T hint (hidden
+  in a `LAYEROSX_TERMINAL=off` build).
+- **Advanced:** Text consoles (moved from General).
+- **Password:** Set… / Change… / Turn Off… the Maintenance password.
+
+**No password by default.** The terminal used to ask for the kiosk user's
+(`mac`) password in release builds; now it opens straight away unless the user
+sets a **Maintenance password** in that section. When one is set it guards:
+
+- the Maintenance section itself (a lock screen with an Unlock field; once
+  unlocked, the panel's Open Terminal doesn't ask again);
+- Ctrl+Alt+T (`lib/maint-terminal.sh`: zenity prompt, 3 tries, failures
+  logged with a timestamp only to `~/maint-auth.log`);
+- tty2 (`lib/tty2-getty.sh` → `lib/tty2-login.sh` asks for it, then `login -f
+  mac`; with no password tty2 auto-logs in as before).
+
+It's stored as a salted scrypt hash (N=2^14, r=8, p=1) in
+`/var/lib/layerosx/maint-password` (mode 0600), never in clear; changing or
+turning it off needs the current one. Shell scripts check it with
+`layerosx_backend.py check-maint-password` (password on stdin; exit 0 right,
+1 wrong, 2 none set). `LAYEROSX_TERMINAL` is now `open` (default) or `off`;
+an old `password` value means `open`.
+
+Verified: backend tests (set/check/change/remove, 0600 + no clear text, the
+CLI exit codes, the panel's terminal skipping the prompt once unlocked) — 47
+total; the panel under Xvfb (open section, lock screen, wrong then right
+password). Not yet on hardware.
+

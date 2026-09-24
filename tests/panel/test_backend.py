@@ -163,7 +163,7 @@ class TestSettings(FakeMachine):
         self.assertEqual(b.setting("gfx"), ("reims", False))
         self.assertEqual(b.setting("verbose"), ("off", False))
         self.assertEqual(b.setting("audio"), ("on", False))
-        self.assertEqual(b.terminal_policy, "password")
+        self.assertEqual(b.terminal_policy, "open")   # a password is the user's choice now
 
     def test_debug_defaults_and_policy_file(self):
         write(os.path.join(self.etc, "mode"), "debug\n")
@@ -574,6 +574,55 @@ class TestMacModel(FakeMachine):
         self.assertFalse(os.path.exists(os.path.join(self.state, "mac-model")))
         write(os.path.join(self.state, "mac-model"), "garbage\n")
         self.assertEqual(lb.Backend().mac_model(), "MacBookPro16,2")
+
+
+class TestMaintenancePassword(FakeMachine):
+    def test_set_check_change_remove(self):
+        b = lb.Backend()
+        self.assertFalse(b.maint_password_set())
+        self.assertFalse(b.check_maint_password(""))
+        self.assertFalse(b.set_maint_password("abc")[0])                 # too short
+        self.assertTrue(b.set_maint_password("hunter22")[0])
+        f = os.path.join(self.state, "maint-password")
+        self.assertEqual(stat.S_IMODE(os.stat(f).st_mode), 0o600)
+        with open(f) as fh:
+            rec = fh.read()
+        self.assertTrue(rec.startswith("scrypt$") and "hunter22" not in rec)
+        b2 = lb.Backend()
+        self.assertTrue(b2.maint_password_set())
+        self.assertTrue(b2.check_maint_password("hunter22"))
+        self.assertFalse(b2.check_maint_password("hunter2"))
+        self.assertFalse(b2.set_maint_password("newpass1", current="wrong")[0])
+        self.assertTrue(b2.set_maint_password("newpass1", current="hunter22")[0])
+        self.assertTrue(lb.Backend().check_maint_password("newpass1"))
+        self.assertFalse(b2.set_maint_password("", current="hunter22")[0])
+        self.assertTrue(b2.set_maint_password("", current="newpass1")[0])
+        self.assertFalse(os.path.exists(f))
+
+    def test_cli_for_shell_scripts(self):
+        import subprocess
+        cli = lambda pw: subprocess.run([sys.executable, lb.__file__, "check-maint-password"],
+                                        input=pw + "\n", capture_output=True, text=True).returncode
+        self.assertEqual(cli("x"), 2)                                      # none set
+        lb.Backend().set_maint_password("s3cret!")
+        self.assertEqual((cli("s3cret!"), cli("nope")), (0, 1))
+
+    def test_terminal_skips_the_prompt_when_unlocked_in_the_panel(self):
+        os.environ["LAYEROSX_DRY_RUN"] = "1"
+        try:
+            b = lb.Backend()
+            b.open_terminal()
+            self.assertIn("peek-terminal.sh", b.dry_log[-1])           # no password set
+            b2 = lb.Backend()
+            b2.dry_run = False
+            b2.set_maint_password("s3cret!")
+            b2.dry_run = True
+            b2.open_terminal()
+            self.assertIn("maint-terminal.sh", b2.dry_log[-1])         # asks
+            b2.open_terminal(unlocked=True)
+            self.assertIn("peek-terminal.sh", b2.dry_log[-1])          # already unlocked
+        finally:
+            os.environ["LAYEROSX_DRY_RUN"] = "0"
 
 
 class TestTheme(FakeMachine):

@@ -58,6 +58,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/qemu-libdir.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/oc-model.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/tty2-getty.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/tty2-login.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/mount-removable-media.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/save-logs-to-usb.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/wifi-setup.sh"]="0:0:755"
