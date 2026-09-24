@@ -570,6 +570,11 @@ RETRIES=0
 while true; do
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
+    # Which physical screen shows the Mac (Settings > Displays > Screens): put it
+    # at 0,0 as primary and turn off / mirror the others before QEMU opens its
+    # window there. No-op when nothing is chosen ("Automatic") or the layout
+    # already matches. See lib/displays.py.
+    python3 "$KIOSK_DIR/lib/displays.py" apply 2>/dev/null || true
     # Critical-battery shutdown in progress (lib/battery-watch.sh stopped the
     # VM on purpose): power the host off instead of relaunching.
     if [ -e "$BATTERY_POWEROFF_FLAG" ]; then

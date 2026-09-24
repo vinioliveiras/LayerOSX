@@ -449,6 +449,7 @@ class Settings(Adw.ApplicationWindow):
         r.add_suffix(self.bright)
         self.bright_group.add(r)
         page.add(self.bright_group)
+        page.add(self._screens_group())
 
         g = Adw.PreferencesGroup(title="Graphics",
                                  description="How the Mac draws its screen. Changes apply when the Mac restarts.")
@@ -471,6 +472,83 @@ class Settings(Adw.ApplicationWindow):
         page.add(g)
         self._sync_displays()
         return self._pane("Displays", page)
+
+    # ------------------------------------------------------------ Screens
+    def _screens_group(self):
+        g = Adw.PreferencesGroup(
+            title="Screens",
+            description="The Mac has one display. Choose which screen shows it. "
+                        "Applies when the Mac restarts.")
+        self.screen_row = Adw.ComboRow(title="Show the Mac on")
+        self.screen_row.add_prefix(Gtk.Image.new_from_icon_name("video-display-symbolic"))
+        self.screen_row.connect("notify::selected", self._on_screen)
+        g.add(self.screen_row)
+        self.others_row = Adw.ComboRow(title="Other screens")
+        self.others_row.add_prefix(Gtk.Image.new_from_icon_name("view-dual-symbolic"))
+        self.others_row.connect("notify::selected", self._on_others)
+        g.add(self.others_row)
+        self._sync_screens()
+        return g
+
+    def _sync_screens(self):
+        screens = self.b.screens()
+        target, others = self.b.screen_target(), self.b.screen_others()
+        self._updating = True
+        try:
+            def label(sc):
+                return sc.label
+            names = [sc.name for sc in screens]
+            # A saved screen that's unplugged right now stays listed, so the
+            # choice isn't silently lost.
+            self._screen_values = ["auto"] + names + ([target] if target != "auto" and target not in names else [])
+            labels = ["Automatic"] + [label(sc) for sc in screens] + \
+                     ([f"{target} (not connected)"] if target != "auto" and target not in names else [])
+            self._set_choices(self.screen_row, labels, self._screen_values.index(target))
+            if target == "auto":
+                sub = "Linux's own screen layout" if len(screens) > 1 else ""
+            elif target not in names:
+                sub = "Not connected — every screen is turned on instead"
+            else:
+                sc = next(sc for sc in screens if sc.name == target)
+                sub = f"{sc.name} · {sc.width}×{sc.height}" if sc.width else sc.name
+            if len(screens) <= 1 and target == "auto":
+                sub = "Only one screen connected"
+            self.screen_row.set_subtitle(sub)
+            self._others_values = ["off", "mirror"]
+            self._set_choices(self.others_row, ["Turn off", "Mirror the Mac"],
+                              self._others_values.index(others))
+            self.others_row.set_sensitive(target != "auto")
+            self.others_row.set_visible(len(screens) > 1 or target != "auto")
+        finally:
+            self._updating = False
+        return False
+
+    def _on_screen(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._screen_values):
+            return
+        v = self._screen_values[i]
+        ok, msg = self.b.set_screen_target(v)
+        what = "The Mac's screen: Automatic" if v == "auto" else f"The Mac will show on {row.get_selected_item().get_string()}"
+        self._resource_changed_screens(ok, msg, what)
+
+    def _on_others(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._others_values):
+            return
+        v = self._others_values[i]
+        ok, msg = self.b.set_screen_others(v)
+        self._resource_changed_screens(ok, msg, "Other screens: " + ("off" if v == "off" else "mirror the Mac"))
+
+    def _resource_changed_screens(self, ok, msg, what):
+        self.after_action(ok, msg, f"{what} — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        GLib.idle_add(self._sync_screens)
 
     def _sync_displays(self):
         s = self.status

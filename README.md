@@ -2984,7 +2984,7 @@ and does nothing.
 |---|---|
 | Wi-Fi | Wi-Fi on/off (confirms before cutting the Mac off), connection status, current network, other networks with lock/signal icons and **Connect**, **Other…** for hidden networks |
 | Battery | Level + state, and what the low-battery guard does (20/10% warnings, safe shutdown at 5%, last resort at 3%) |
-| Displays | Brightness slider; Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations |
+| Displays | Brightness slider; **Screens** (which monitor shows the Mac, and whether the others turn off or mirror it); Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations |
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
 | Mac | Running/stopped, "Show startup log" switch, **Resources** (Processor, "Keep 2 threads for Linux", Memory — Automatic or a fixed value), **Restart Mac…** (the black-screen rescue) |
@@ -2993,7 +2993,7 @@ and does nothing.
 | About | "About This Mac"-style: LayerOSX version/build date/mode; **This Computer** (model, processor + threads, memory, graphics, storage, Linux kernel — read live from DMI, /proc, lspci, lsblk); **The Mac** (macOS version + build, the CPU model/cores, RAM and graphics the VM was given); **Credits** (creator) and **Built With** (the open-source projects LayerOSX builds on); shortcuts |
 
 A banner ("Restart the Mac to apply your changes" + Restart Mac) appears after
-changing graphics, sound, the startup log or Resources while the Mac runs. Status refreshes
+changing graphics, screens, sound, the startup log or Resources while the Mac runs. Status refreshes
 every 5 s; scans and restarts run in worker threads; dialogs are in-window
 (`Adw.AlertDialog`).
 
@@ -3268,4 +3268,41 @@ OVMF's black).
 - Verified: the Dockerfile patch against the current upstream qemu-macos
   Dockerfile, and the injected `sed` against `paint.rs` at the pinned Reims
   commit (`2844274`) — the constant becomes `[0x1c, 0x1c, 0x1c, 0xff]`.
+
+## Several monitors: choosing the Mac's screen
+
+The Mac has **one display**: Reims advertises a single display port
+(`EFI_DISPLAY_PORT_COUNT = 1`; the macOS driver would take up to 8, but the
+device decides), and VMware / standard VGA have one head. So extending the
+macOS desktop across monitors isn't possible today — that would be Reims
+work. What LayerOSX manages is the Linux side: **which physical screen shows
+the Mac and what the others do**.
+
+- **LayerOSX Settings › Displays › Screens:** "Show the Mac on" (Automatic,
+  or one of the connected screens, named from the monitor's EDID — e.g. "LG
+  ULTRAGEAR" — or "Built-in display" / "HDMI" / "DisplayPort"), and "Other
+  screens" (Turn off / Mirror the Mac). Applies on Restart Mac.
+- State: `/var/lib/layerosx/display-target` (xrandr output name; absent =
+  Automatic) and `display-others` (`mirror`; absent = off).
+- `kiosk/lib/displays.py` does the work (stdlib only):
+  - `apply` — run by `mac-vm-launch.sh` before every launch: the chosen
+    screen goes to 0,0 as primary (`xrandr --auto --primary --pos 0x0`), the
+    others `--off` or `--same-as` it; the mouse is moved onto it (openbox
+    places the new window there) and the Mac's window ("Reims vGPU" / QEMU)
+    is moved/sized onto it. No-op when the layout already matches (no
+    flicker on relaunch) and when the choice is Automatic (Xorg's own layout,
+    the previous behaviour). `force-max-refresh.sh` runs again afterwards,
+    since `--auto` picks each screen's preferred mode.
+  - `watch` — started from `.xinitrc`: every 3 s it checks which screens are
+    connected and re-applies on a change. If the chosen screen is unplugged,
+    every connected screen is turned back on (`xrandr --auto`), so the user is
+    never left with nothing lit; plugging it back moves the Mac there again.
+  - `list` — JSON used by the panel (`Backend.screens()`).
+- Hybrid laptops: an external port wired to the NVIDIA GPU only shows up in
+  `xrandr` when Xorg drives that GPU (MUX in dGPU mode, or reverse PRIME) —
+  not handled here.
+- Verified: backend tests with a fake `xrandr --query --prop` (EDID names,
+  validation, the xrandr plan for off/mirror, "already applied" = no-op,
+  unplugged → `--auto`, apply moves the mouse) — 33 total; the panel under
+  Xvfb with two fake screens. Not yet on real monitors.
 

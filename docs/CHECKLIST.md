@@ -1032,6 +1032,22 @@ allow-list and anything not coming from the guest.)
 - `LAYEROSX_BOOT_COLOR=000000 ./prepare-qemu-macos.sh` gives a black first
   screen; an invalid value (`LAYEROSX_BOOT_COLOR=zzz`) warns and uses 1c1c1c.
 
+### 5.4l. Several monitors (Settings › Displays › Screens)
+
+- With an external monitor plugged in: "Show the Mac on" lists Automatic,
+  "Built-in display" and the monitor by its name (EDID); the subtitle shows
+  the output name and resolution.
+- Pick the external monitor + Other screens "Turn off" → Restart Mac: the
+  notebook panel goes dark, the Mac fills the external monitor; `maclog
+  launch` / `~/mac-vm.log` shows `displays: xrandr --output ... --primary`.
+- "Mirror the Mac" → Restart Mac: both screens show the Mac.
+- Relaunch again without changes: no flicker (the layout already matches).
+- Unplug the chosen monitor while the Mac runs: within a few seconds the
+  notebook panel lights up again; plug it back → the Mac moves back to it
+  (if the window lands on the wrong screen, Restart Mac).
+- Automatic: nothing is changed (same as before this feature).
+- Ctrl+Alt+W on the Mac's screen still opens the panel there.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

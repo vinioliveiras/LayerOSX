@@ -40,6 +40,9 @@ if [ "$(cat /var/lib/layerosx/compositor 2>/dev/null)" != off ] && command -v pi
     picom -b --config /opt/layerosx/kiosk/picom.conf 2>>"$HOME/picom.log" || true
 fi
 /opt/layerosx/kiosk/lib/force-max-refresh.sh &
+# Re-apply the Mac's screen choice when monitors are plugged/unplugged (and
+# light every screen back up if the chosen one goes away). lib/displays.py.
+python3 /opt/layerosx/kiosk/lib/displays.py watch >/dev/null 2>&1 &
 # Last brightness the user chose (keys or LayerOSX Settings), across reboots.
 /opt/layerosx/kiosk/lib/brightness.sh restore &
 # Laptop battery guard (warnings + clean macOS shutdown at critical); exits

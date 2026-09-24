@@ -4,6 +4,7 @@ Run: python3 -m unittest discover -s tests   (from the panel directory, or
 tools/test-panel-backend.sh from the repo root).
 """
 import os
+import shutil
 import stat
 import sys
 import tempfile
@@ -371,6 +372,90 @@ class TestResources(FakeMachine):
         self.assertFalse(b.set_cores(8)[0])
         write(os.path.join(oc, "OpenCore-amd8.qcow2"), "x")
         self.assertEqual(lb.Backend().resources().cores_auto, 8)
+
+
+def _edid(name):
+    """128-byte EDID hex with a monitor-name (0xFC) descriptor at offset 72."""
+    raw = bytearray(128)
+    raw[0:8] = b"\x00\xff\xff\xff\xff\xff\xff\x00"
+    raw[72:77] = b"\x00\x00\x00\xfc\x00"
+    raw[77:90] = (name.encode() + b"\n").ljust(13, b" ")
+    h = raw.hex()
+    return "".join("\t\t" + h[i:i + 32] + "\n" for i in range(0, len(h), 32))
+
+
+XRANDR = ("Screen 0: minimum 320 x 200, current 4480 x 1600, maximum 16384 x 16384\n"
+          "eDP-1 connected primary 2560x1600+0+0 (normal left inverted right) 344mm x 215mm\n"
+          "\tEDID: \n" + _edid("") +
+          "\tscaling mode: Full aspect \n"
+          "   2560x1600    165.00*+  60.00  \n"
+          "HDMI-1-0 connected 1920x1080+2560+0 (normal left inverted right) 527mm x 296mm\n"
+          "\tEDID: \n" + _edid("LG ULTRAGEAR") +
+          "   1920x1080    144.00*+  60.00  \n"
+          "DP-1 disconnected (normal left inverted right x axis y axis)\n")
+
+
+class TestScreens(FakeMachine):
+    LIBSRC = os.path.join(os.path.dirname(os.path.dirname(HERE)), "archiso", "airootfs",
+                          "opt", "layerosx", "kiosk", "lib")
+
+    def setUp(self):
+        super().setUp()
+        shutil.copy(os.path.join(self.LIBSRC, "displays.py"), self.lib)
+        write(os.path.join(self.tmp, "xrandr.txt"), XRANDR)
+        write(os.path.join(self.bin, "xrandr"),
+              f'#!/bin/sh\ncase "$*" in "--query --prop") cat {self.tmp}/xrandr.txt ;; '
+              f'*) echo "xrandr $*" >> {self.log} ;; esac\n', stat.S_IRWXU)
+        write(os.path.join(self.bin, "xdotool"), f'#!/bin/sh\necho "xdotool $*" >> {self.log}\n', stat.S_IRWXU)
+        sys.path.insert(0, self.lib)
+        import importlib, displays
+        self.d = importlib.reload(displays)
+        self.d.STATE_DIR = self.state
+
+    def test_list_names_from_edid(self):
+        sc = lb.Backend().screens()
+        self.assertEqual([(s.name, s.label, s.builtin) for s in sc],
+                         [("eDP-1", "Built-in display", True), ("HDMI-1-0", "LG ULTRAGEAR", False)])
+        self.assertEqual((sc[1].width, sc[1].height), (1920, 1080))
+
+    def test_settings_validate(self):
+        b = lb.Backend()
+        self.assertEqual((b.screen_target(), b.screen_others()), ("auto", "off"))
+        self.assertTrue(b.set_screen_target("HDMI-1-0")[0])
+        self.assertFalse(b.set_screen_target("DP-1")[0])        # not connected
+        self.assertTrue(b.set_screen_others("mirror")[0])
+        self.assertFalse(b.set_screen_others("extend")[0])
+        b2 = lb.Backend()
+        self.assertEqual((b2.screen_target(), b2.screen_others()), ("HDMI-1-0", "mirror"))
+        self.assertTrue(b.set_screen_target("auto")[0])
+        self.assertTrue(b.set_screen_others("off")[0])
+        self.assertEqual(os.listdir(self.state), [f for f in os.listdir(self.state)
+                                                  if not f.startswith("display-")])
+
+    def test_plan(self):
+        outs = self.d.query()
+        self.assertEqual(self.d.plan(outs, "", "off"), [])                  # Automatic: hands off
+        self.assertEqual(self.d.plan(outs, "HDMI-1-0", "off"),
+                         ["--output", "HDMI-1-0", "--auto", "--primary", "--pos", "0x0",
+                          "--output", "eDP-1", "--off"])
+        self.assertEqual(self.d.plan(outs, "HDMI-1-0", "mirror"),
+                         ["--output", "HDMI-1-0", "--auto", "--primary", "--pos", "0x0",
+                          "--output", "eDP-1", "--auto", "--same-as", "HDMI-1-0"])
+        # already laid out that way -> nothing (no flicker on relaunch)
+        done = [dict(o, active=(o["name"] == "HDMI-1-0"), primary=(o["name"] == "HDMI-1-0"),
+                     x=0, y=0) for o in outs]
+        self.assertEqual(self.d.plan(done, "HDMI-1-0", "off"), [])
+        # the chosen screen is unplugged -> light everything up again
+        gone = [dict(o, connected=o["name"] != "HDMI-1-0", active=False) for o in outs]
+        self.assertEqual(self.d.plan(gone, "HDMI-1-0", "off"), ["--auto"])
+
+    def test_apply_runs_xrandr_and_moves_the_mac(self):
+        write(os.path.join(self.state, "display-target"), "HDMI-1-0\n")
+        self.d.time.sleep = lambda *_: None
+        self.d.apply(quiet=True)
+        calls = self.calls()
+        self.assertIn("xrandr --output HDMI-1-0 --auto --primary --pos 0x0 --output eDP-1 --off", calls)
+        self.assertTrue(any(c.startswith("xdotool mousemove") for c in calls))
 
 
 class TestTheme(FakeMachine):

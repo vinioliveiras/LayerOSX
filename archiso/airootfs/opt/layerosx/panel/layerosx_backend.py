@@ -49,6 +49,19 @@ def _read(path: str) -> str:
 
 
 @dataclass
+class Screen:
+    """A physical monitor as xrandr sees it (kiosk/lib/displays.py list)."""
+    name: str
+    label: str
+    builtin: bool
+    connected: bool
+    active: bool
+    primary: bool
+    width: int
+    height: int
+
+
+@dataclass
 class Resources:
     """What the Mac gets (Settings > Mac > Resources). cores/ram_mb are what the
     next launch will use; *_auto what Automatic resolves to; *_choice the saved
@@ -381,6 +394,39 @@ class Backend:
         if mb < 2048 or mb > self._host_ram_mb() - 2048:
             return False, f"{mb} MB is out of range for this machine"
         return self._write_state("ram-mb", str(mb))
+
+    # --------------------------------------------------------------- screens
+    # Which physical screen shows the Mac: display-target (xrandr output name,
+    # absent = Automatic) and display-others (off|mirror). Applied by
+    # mac-vm-launch.sh (lib/displays.py apply) before each launch.
+    def screens(self) -> List[Screen]:
+        rc, out = self._run([sys.executable, os.path.join(self.lib, "displays.py"), "list"],
+                            changes=False, timeout=15)
+        try:
+            data = json.loads(out) if rc == 0 else []
+        except ValueError:
+            data = []
+        fields = Screen.__dataclass_fields__
+        return [Screen(**{k: d.get(k) for k in fields}) for d in data if d.get("connected")]
+
+    def screen_target(self) -> str:
+        t = _read(os.path.join(self.state_dir, "display-target"))
+        return t if t and t != "auto" else "auto"
+
+    def screen_others(self) -> str:
+        return "mirror" if _read(os.path.join(self.state_dir, "display-others")) == "mirror" else "off"
+
+    def set_screen_target(self, name: str) -> Tuple[bool, str]:
+        if name in ("auto", "", None):
+            return self._write_state("display-target", None)
+        if name not in [s.name for s in self.screens()]:
+            return False, f"screen {name!r} isn't connected"
+        return self._write_state("display-target", name)
+
+    def set_screen_others(self, value: str) -> Tuple[bool, str]:
+        if value not in ("off", "mirror"):
+            return False, "other screens must be off or mirror"
+        return self._write_state("display-others", None if value == "off" else "mirror")
 
     # ------------------------------------------------------------ appearance
     def panel_theme(self) -> str:
@@ -848,6 +894,8 @@ def main(argv: List[str]) -> int:
         print(json.dumps([asdict(n) for n in b.wifi_scan()], indent=2))
     elif what == "about":
         print(json.dumps(asdict(b.about()), indent=2))
+    elif what == "screens":
+        print(json.dumps([asdict(x) for x in b.screens()], indent=2))
     elif what == "resources":
         print(json.dumps(asdict(b.resources()), indent=2))
     elif what == "drives":
@@ -855,7 +903,7 @@ def main(argv: List[str]) -> int:
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens]", file=sys.stderr)
         return 2
     return 0
 
