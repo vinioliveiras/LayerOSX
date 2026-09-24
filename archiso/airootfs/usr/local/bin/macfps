@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The Mac's frame rate on Reims, live: one line per second from the Reims
+# window's own loop census (always logged to /tmp/reims-vgpu-fail.log).
+# draws_fresh = new Mac frames shown in that second. Ctrl+C to stop.
+#   macfps          live
+#   macfps --once   the last 10 s average (same as Settings > Displays)
+LOG="${LAYEROSX_REIMS_FAIL_LOG:-/tmp/reims-vgpu-fail.log}"
+if [ "${1:-}" = "--once" ]; then
+    exec python3 /opt/layerosx/panel/layerosx_backend.py fps
+fi
+[ -r "$LOG" ] || { echo "No $LOG yet -- is the Mac running on Reims (gpu reims)?" >&2; exit 1; }
+echo "Mac frame rate (Reims window), one line per second -- Ctrl+C to stop"
+tail -n 0 -F "$LOG" 2>/dev/null | awk '/host_window_loop/ {
+    ms = 0; fresh = 0
+    for (i = 1; i <= NF; i++) {
+        split($i, kv, "=")
+        if (kv[1] == "win_ms") ms = kv[2]
+        if (kv[1] == "draws_fresh") fresh = kv[2]
+    }
+    if (ms > 0) { printf "%s  %5.1f fps\n", strftime("%H:%M:%S"), fresh * 1000 / ms; fflush() }
+}'

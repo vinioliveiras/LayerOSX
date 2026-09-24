@@ -100,6 +100,14 @@ if [ ! -x airootfs/opt/layerosx/bin/qemu-system-x86_64 ] || \
     echo "No pre-built qemu-system-x86_64 (or its bundled runtime libraries) yet — building it now (Docker, real QEMU source build, 30-60+ min)."
     ./prepare-qemu-macos.sh
 fi
+# Our Reims patches / QEMU build options changed since that binary was built
+# (or it predates the stamp): rebuild, or the ISO would ship without them.
+_want="$(./qemu-inputs-hash.sh)"
+_have="$(cat airootfs/opt/layerosx/bin/.qemu-inputs 2>/dev/null)"
+if [ "$_want" != "$_have" ]; then
+    echo "==> QEMU/Reims inputs changed (patches/reims or build options: ${_have:-no stamp} -> $_want) — rebuilding qemu-system-x86_64 (30-60+ min)."
+    ./prepare-qemu-macos.sh
+fi
 
 # Same idea as the qemu-system-x86_64 check above: without OpenCore.qcow2
 # staged, mac-vm-launch.sh has nothing to attach as the boot disk and

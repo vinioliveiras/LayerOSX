@@ -6,6 +6,7 @@ provider. Imported by layerosx_panel.py and layerosx_terminal.py so every
 LayerOSX window has the same frame.
 """
 import os
+import subprocess
 
 import gi
 
@@ -100,6 +101,15 @@ def _in_kiosk() -> bool:
     return os.path.exists(os.environ.get("LAYEROSX_ETC_DIR", "/etc/layerosx") + "/mode")
 
 
+def _picom_running() -> bool:
+    """The kick window only makes sense with picom (Settings > Displays >
+    Window effects); without it, it'd just be a stray pixel."""
+    try:
+        return subprocess.run(["pgrep", "-x", "picom"], capture_output=True, timeout=2).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return True
+
+
 def present_animated(win: Gtk.Window, delay_ms: int = 80) -> None:
     """Present `win` so picom's open animation (kiosk/picom.conf) plays even
     over the fullscreen Mac.
@@ -113,7 +123,7 @@ def present_animated(win: Gtk.Window, delay_ms: int = 80) -> None:
     picom redirect the screen; the real window is presented `delay_ms` later and
     animates. Verified with picom 12.5 under Xvfb against a fullscreen window.
     Outside the kiosk (repo previews) it's a plain present()."""
-    if not _in_kiosk() or os.environ.get("LAYEROSX_NO_KICK") == "1":
+    if not _in_kiosk() or os.environ.get("LAYEROSX_NO_KICK") == "1" or not _picom_running():
         win.present()
         return
     kick = Gtk.Window(title=KICK_TITLE, decorated=False, resizable=False,

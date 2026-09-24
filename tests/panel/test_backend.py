@@ -658,6 +658,35 @@ class TestAudioOutputs(FakeMachine):
         self.assertIsNone(lb.Backend().audio_output_now())
 
 
+class TestPerformance(FakeMachine):
+    def test_fps_from_reims_loop_census(self):
+        log = os.path.join(self.tmp, "reims-fail.log")
+        lines = ["OFF m2v refused_by=m2v_vertex_translate\n"]
+        lines += [f"OFF host_window_loop win_ms=1000 ticks=90 redraws_asked=31 draws=31 "
+                  f"draws_fresh={n} draws_stale=1 draws_held=0\n" for n in [5] * 5 + [30] * 10]
+        write(os.path.join(log), "".join(lines))
+        os.environ["LAYEROSX_REIMS_FAIL_LOG"] = log
+        try:
+            b = lb.Backend()
+            self.assertEqual(b.mac_fps(), 30.0)          # last 10 s only
+            self.assertEqual(b.mac_fps(seconds=15), 21.7)
+            os.utime(log, (1, 1))                        # stale log: Mac stopped
+            self.assertIsNone(b.mac_fps())
+            os.environ["LAYEROSX_REIMS_FAIL_LOG"] = os.path.join(self.tmp, "none.log")
+            self.assertIsNone(lb.Backend().mac_fps())
+        finally:
+            os.environ.pop("LAYEROSX_REIMS_FAIL_LOG", None)
+
+    def test_window_effects_switch(self):
+        b = lb.Backend()
+        self.assertTrue(b.effects())
+        self.assertTrue(b.set_effects(False)[0])
+        self.assertEqual(open(os.path.join(self.state, "compositor")).read().strip(), "off")
+        self.assertFalse(lb.Backend().effects())
+        self.assertTrue(b.set_effects(True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "compositor")))
+
+
 class TestDebugToggles(FakeMachine):
     def test_detailed_logs_and_text_consoles(self):
         lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")

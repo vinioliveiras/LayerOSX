@@ -471,8 +471,41 @@ class Settings(Adw.ApplicationWindow):
             self.gfx_checks[key] = chk
         page.add(g)
         page.add(self._reims_gpu_group())
+        page.add(self._performance_group())
         self._sync_displays()
         return self._pane("Displays", page)
+
+    # ------------------------------------------------------ Performance
+    def _performance_group(self):
+        g = Adw.PreferencesGroup(title="Performance")
+        self.fps_row = Adw.ActionRow(title="Frame rate", subtitle="Shown while the Mac runs on Reims")
+        self.fps_row.add_prefix(Gtk.Image.new_from_icon_name("video-display-symbolic"))
+        self.fps_label = Gtk.Label(label="—", css_classes=["dim-label"])
+        self.fps_row.add_suffix(self.fps_label)
+        g.add(self.fps_row)
+        self.effects_row = Adw.SwitchRow(
+            title="Window effects",
+            subtitle="Animations and rounded corners for these windows. If the Mac feels slow, "
+                     "turn this off and compare the frame rate. Changes right away.")
+        self.effects_row.add_prefix(Gtk.Image.new_from_icon_name("preferences-desktop-appearance-symbolic"))
+        self.effects_row.set_active(self.b.effects())
+        self.effects_row.connect("notify::active", self._on_effects)
+        g.add(self.effects_row)
+        self._sync_fps()
+        return g
+
+    def _sync_fps(self):
+        run_async(self.b.mac_fps, self._show_fps)
+
+    def _show_fps(self, v):
+        if hasattr(self, "fps_label"):
+            self.fps_label.set_label("—" if v is None or isinstance(v, Exception) else f"{v:g} fps")
+        return False
+
+    def _on_effects(self, row, _pspec):
+        on = row.get_active()
+        ok, msg = self.b.set_effects(on)
+        self.after_action(ok, msg, "Window effects on" if on else "Window effects off")
 
     # ------------------------------------------------------------ Screens
     def _screens_group(self):
@@ -1354,6 +1387,8 @@ class Settings(Adw.ApplicationWindow):
         self.status = s
         net = s.wifi_ssid or ("Wired" if s.wired else "Offline")
         self.side_status.set_label(f"Mac {'running' if s.vm_running else 'stopped'} · {net}")
+        if "displays" in self.pages and hasattr(self, "fps_label"):
+            self._sync_fps()                # refreshed with the 5 s status
         if "sound" in self.pages and hasattr(self, "vol_group"):
             self._sync_volume()             # volume keys change it outside the panel
         if "wifi" in self.pages:

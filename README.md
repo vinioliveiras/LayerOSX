@@ -89,7 +89,7 @@ banner.
 |---|---|
 | Wi-Fi | On/off, current network, nearby networks, hidden networks. |
 | Battery | Level, state, what the low-battery guard does. |
-| Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with. |
+| Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
 | Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Restart the Mac** (the black-screen rescue). |
@@ -114,6 +114,7 @@ From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
 | `usb [list\|attach\|detach\|always\|forget] [VVVV:PPPP]` | USB passthrough. |
 | `wifi [status\|pick\|list]` | Host Wi-Fi. |
 | `maclog [tail\|oc\|err\|launch\|qemu\|all]` | Boot / launcher logs. |
+| `macfps [--once]` | The Mac's frame rate on Reims, live. |
 | `macdiag [usb]` | Full diagnostics bundle (optionally onto a USB drive). |
 | `macstatus` | Current settings and VM disk state. |
 | `erasevm [-y]` | Delete the Mac (disk, recovery, NVRAM) so the first-run wizard runs again. |
@@ -159,7 +160,10 @@ Installed system: tty1 autologin → startx → .xinitrc
   written into a cached copy (`lib/oc-model.sh`, qemu-img + mtools).
 - **Reims:** runs in its own Vulkan window (`REIMS_VGPU_WINDOW=1`, QEMU
   `-display none`). Our QEMU build keeps Reims' `host-window` feature and
-  applies `archiso/patches/reims/*.patch`. Shader translation needs `llvm-dis`
+  applies `archiso/patches/reims/*.patch` (0001: release held keys on focus
+  loss; 0002: keep Caps Lock in sync with the host's LED). `build.sh`
+  rebuilds QEMU whenever those patches or the QEMU build options change
+  (`qemu-inputs-hash.sh`, stamp `bin/.qemu-inputs`). Shader translation needs `llvm-dis`
   and `spirv-val` at runtime (in the ISO). The bundled Debian libraries are
   linked in only where the host lacks them (`lib/qemu-libdir.sh`), so the
   host's own Vulkan drivers win.
@@ -236,12 +240,10 @@ devices.
   the PipeWire sink. Watch A2DP latency, reconnect after reboot, the mic
   (HFP) later. Today: a Broadcom (BCM20702) USB dongle goes to the Mac with
   automatic USB and pairs in macOS.
-- **Caps Lock out of sync** — Linux's Caps Lock (the LED) and the Mac's can
-  disagree. Reims patch: track the Mac's state and send a Caps tap when it
-  differs from the host's before forwarding a key.
-- **Reims frame rate** — Reims advertises 120 Hz, but we measured ~30. Check
-  picom compositing over the Mac window (the 1×1 animation helper window,
-  vsync), and log a frame counter.
+- **Reims frame rate** — Reims advertises 120 Hz; measure with `macfps` /
+  Settings › Displays › Performance, with Window effects on and off, then
+  fix what the numbers point at (picom not unredirecting the Mac, CPU cores,
+  shader translation warm-up).
 - **Reboot from the terminal hangs** — the launcher should exit when the
   system is stopping and stop QEMU cleanly through QMP.
 - **Installer and first-run wizard in GTK** — one window like Settings (steps,

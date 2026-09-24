@@ -1176,6 +1176,24 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5a. Caps Lock sync, frame rate, QEMU rebuild on patch changes
+
+- Build: the first `./rebuild.sh` after this change says "QEMU/Reims inputs
+  changed … rebuilding" and recompiles QEMU once; the next build doesn't.
+  In the build log: "LayerOSX: applying …0002-host-window-sync-caps-lock…".
+- Caps Lock (Reims): open Settings (Ctrl+Alt+W), press Caps Lock there
+  (LED on), close it, type a letter in macOS: it comes out uppercase (the Mac
+  followed the LED). Caps off in Settings the same way → lowercase. Restart
+  the Mac with the LED on → first letter typed is uppercase. Shift+letter
+  with Caps on → lowercase.
+- Settings › Displays › Performance: while the Mac runs on Reims, Frame rate
+  shows a number (updates every 5 s); "—" on VMware / Mac stopped.
+- `macfps` prints one fps line per second; move windows / play a video in
+  macOS and note the numbers.
+- Window effects off → picom stops (`pgrep picom` empty), panel opens without
+  animation/rounded corners; note `macfps` again. On → picom back. Report
+  both numbers — they decide the next frame-rate fix.
+
 ### 5.4z. Sound and USB on by default (new install)
 
 - Fresh install, no Settings touched: Settings › Sound "Sound from the Mac"

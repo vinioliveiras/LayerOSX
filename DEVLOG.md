@@ -3804,3 +3804,41 @@ frame rate and the terminal-reboot hang added). Code comments and
 docs/CHECKLIST.md that pointed at README.md for background now point here.
 From now on a change updates the README where behaviour changes and adds a
 short entry here.
+
+## Caps Lock in sync with the host; measuring the frame rate
+
+**Caps Lock.** The host (X11: the keyboard LED) and macOS each keep their own
+Caps Lock state and only see the same key presses, so they drift apart for
+good when one side sees a press the other doesn't (Caps pressed while the
+panel had focus, the Mac restarting with the host's Caps on, a Caps
+auto-repeat). Symptom: LED off, the Mac types capitals. Reims patch 0002
+(`archiso/patches/reims/0002-host-window-sync-caps-lock-with-the-host.patch`):
+winit doesn't expose the host's lock state, but a letter's text does — an
+uppercase letter without Shift (or lowercase with Shift) means the host's Caps
+Lock is on. The window tracks what the guest was told (every forwarded Caps
+press toggles it; a new QEMU starts at off), and before a letter goes to the
+guest it sends a Caps tap if the two disagree. Repeated Caps presses aren't
+forwarded. Checked: `cargo check` and a unit test for the text → state rule
+against the pinned Reims (`--features backend-vulkan,host-window`); not yet
+on hardware.
+
+**Rebuilding QEMU when our patches change.** `build.sh` only rebuilt QEMU
+when the binary was missing, so a new Reims patch could be silently left out
+of an ISO. `qemu-inputs-hash.sh` hashes `patches/reims/*.patch` plus the
+options that change the binary (`LAYEROSX_BOOT_COLOR`,
+`LAYEROSX_REIMS_HOST_WINDOW`); `prepare-qemu-macos.sh` stores it in
+`bin/.qemu-inputs`, and `build.sh` rebuilds when it differs (or is missing,
+as on every existing build machine — so the next build recompiles once).
+
+**Frame rate.** Reims already logs, every second and always on, a
+`host_window_loop … draws_fresh=N` line to `/tmp/reims-vgpu-fail.log`: N is
+the new Mac frames shown that second. `Backend.mac_fps()` averages the last
+10 s (Settings › Displays › Performance, `macfps --once`, `macdiag`), and
+`macfps` prints it live. **Window effects** (the same panel group) starts or
+stops picom live (`/var/lib/layerosx/compositor`), so the compositor's cost
+can be measured directly: picom should unredirect the fullscreen Mac, but
+only when the Mac window is the topmost, solid (no alpha visual) and covers
+the whole X screen — any of those failing means every frame is composited on
+the CPU (xrender). The kick window for the open animation is skipped when
+picom isn't running. Tests: 56.
+

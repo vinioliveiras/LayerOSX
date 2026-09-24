@@ -201,6 +201,8 @@ PYEOF_SDL_VERIFY
 # commit verified; `git apply` fails the build if one no longer fits.
 #   0001: the host window releases keys still held when it loses focus (Alt+Tab
 #         left Alt/Ctrl pressed in macOS -- every key became a shortcut).
+#   0002: Caps Lock follows the host's (the LED): before a letter reaches the
+#         guest, a Caps tap is sent if the two states drifted apart.
 mkdir -p "$WORK/qemu-macos/layerosx-reims-patches"
 cp patches/reims/*.patch "$WORK/qemu-macos/layerosx-reims-patches/" 2>/dev/null || true
 python3 - "$WORK/qemu-macos/Dockerfile" <<'PYEOF_REIMSPATCH'
@@ -402,4 +404,7 @@ LD_LIBRARY_PATH="$(pwd)/airootfs/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY
     airootfs/opt/layerosx/bin/qemu-system-x86_64 -device reims-vgpu-pci,help || \
     echo "WARNING: couldn't query it on this host — that's OK, it doesn't need KVM for a -device,help query, but worth checking why." >&2
 
+# What this binary was built from (patches + options): build.sh rebuilds when
+# it no longer matches (qemu-inputs-hash.sh).
+./qemu-inputs-hash.sh > airootfs/opt/layerosx/bin/.qemu-inputs
 echo "==> done: $(du -h airootfs/opt/layerosx/bin/qemu-system-x86_64 | cut -f1) binary staged into the archiso profile"

@@ -1,0 +1,102 @@
+diff --git a/crates/reims-vgpu/src/host_window/present.rs b/crates/reims-vgpu/src/host_window/present.rs
+index 37dd6bb..213b591 100644
+--- a/crates/reims-vgpu/src/host_window/present.rs
++++ b/crates/reims-vgpu/src/host_window/present.rs
+@@ -946,6 +946,17 @@ impl ApplicationHandler<FramePublished> for App {
+                 if let PhysicalKey::Code(code) = event.physical_key {
+                     if let Some(evdev) = input_map::keycode_to_evdev(code) {
+                         let down = event.state == ElementState::Pressed;
++                        if evdev == CAPS_LOCK_EVDEV && event.repeat {
++                            // An auto-repeated Caps Lock would toggle the guest
++                            // again on every repeat; the host toggles once.
++                            return;
++                        }
++                        if down && evdev != CAPS_LOCK_EVDEV {
++                            caps_sync(event.text.as_deref(), &*self.on_input);
++                        }
++                        if down && evdev == CAPS_LOCK_EVDEV {
++                            GUEST_CAPS.fetch_xor(true, Ordering::Relaxed);
++                        }
+                         held_keys_track(evdev, down);
+                         (self.on_input)(HostAction::input_key(evdev, down));
+                     }
+@@ -971,6 +982,9 @@ impl ApplicationHandler<FramePublished> for App {
+                 self.loop_census.draws += 1;
+                 self.draw();
+             }
++            WindowEvent::ModifiersChanged(mods) => {
++                HOST_SHIFT.store(mods.state().shift_key(), Ordering::Relaxed);
++            }
+             WindowEvent::Focused(false) => {
+                 // LayerOSX: keys still held when the window loses focus
+                 // (Alt+Tab, a panel opening on top) would never see their
+@@ -1985,3 +1999,69 @@ fn held_keys_track(evdev: u32, down: bool) {
+ fn held_keys_drain() -> Vec<u32> {
+     std::mem::take(&mut *HELD_KEYS.lock().unwrap_or_else(|p| p.into_inner()))
+ }
++
++/// LayerOSX: Caps Lock sync. The host (X11/Wayland: the keyboard LED) and the
++/// guest each keep their own Caps Lock state and only ever see the same key
++/// presses, so they drift apart for good as soon as one side sees a press the
++/// other doesn't -- Caps Lock pressed while another window had focus, the Mac
++/// restarting with the host's Caps Lock on. Then the LED is off and the Mac
++/// types capitals. The host's state isn't exposed by winit, but it shows in
++/// the text a letter key produces: an uppercase letter without Shift (or a
++/// lowercase one with Shift) means the host's Caps Lock is on. Before a letter
++/// reaches the guest, if that disagrees with what the guest was told, tap Caps
++/// Lock in the guest first. The LED is the reference.
++const CAPS_LOCK_EVDEV: u32 = 58;
++/// What the guest's Caps Lock is, as far as the keys sent to it go. A guest
++/// starts with it off (a Mac restart is a new QEMU process).
++static GUEST_CAPS: AtomicBool = AtomicBool::new(false);
++static HOST_SHIFT: AtomicBool = AtomicBool::new(false);
++
++/// The host's Caps Lock state implied by the text of one key press, or `None`
++/// when the text says nothing about it (no text, not a single cased letter).
++fn host_caps_from_text(text: Option<&str>, shift: bool) -> Option<bool> {
++    let mut chars = text?.chars();
++    let c = chars.next()?;
++    if chars.next().is_some() {
++        return None;
++    }
++    let upper = if c.is_uppercase() && !c.is_lowercase() {
++        true
++    } else if c.is_lowercase() && !c.is_uppercase() {
++        false
++    } else {
++        return None;
++    };
++    Some(upper != shift)
++}
++
++fn caps_sync(text: Option<&str>, on_input: &dyn Fn(HostAction)) {
++    let Some(host) = host_caps_from_text(text, HOST_SHIFT.load(Ordering::Relaxed)) else {
++        return;
++    };
++    if host != GUEST_CAPS.load(Ordering::Relaxed) {
++        on_input(HostAction::input_key(CAPS_LOCK_EVDEV, true));
++        on_input(HostAction::input_key(CAPS_LOCK_EVDEV, false));
++        GUEST_CAPS.store(host, Ordering::Relaxed);
++    }
++}
++
++#[cfg(test)]
++mod layerosx_caps_tests {
++    use super::host_caps_from_text;
++
++    #[test]
++    fn caps_state_from_letters() {
++        assert_eq!(host_caps_from_text(Some("a"), false), Some(false));
++        assert_eq!(host_caps_from_text(Some("A"), false), Some(true));
++        assert_eq!(host_caps_from_text(Some("A"), true), Some(false));
++        assert_eq!(host_caps_from_text(Some("a"), true), Some(true));
++        assert_eq!(host_caps_from_text(Some("ç"), false), Some(false));
++        assert_eq!(host_caps_from_text(Some("Ç"), false), Some(true));
++        // digits, symbols, control chars, dead-key output, nothing: no opinion
++        assert_eq!(host_caps_from_text(Some("1"), false), None);
++        assert_eq!(host_caps_from_text(Some("!"), true), None);
++        assert_eq!(host_caps_from_text(Some("\u{1}"), false), None);
++        assert_eq!(host_caps_from_text(Some("´a"), false), None);
++        assert_eq!(host_caps_from_text(None, false), None);
++    }
++}

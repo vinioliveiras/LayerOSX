@@ -237,6 +237,8 @@ class Backend:
         self.dmi = _env("LAYEROSX_DMI", "/sys/class/dmi/id")
         self.vm_profile = _env("LAYEROSX_VM_PROFILE", "/tmp/layerosx-vm-profile")
         self.opencore_dir = _env("LAYEROSX_OPENCORE_DIR", "/opt/layerosx/opencore")
+        self.reims_fail_log = _env("LAYEROSX_REIMS_FAIL_LOG", "/tmp/reims-vgpu-fail.log")
+        self.picom_conf = _env("LAYEROSX_PICOM_CONF", "/opt/layerosx/kiosk/picom.conf")
         self.dry_run = _env("LAYEROSX_DRY_RUN", "0") == "1"
         self.dry_log: List[str] = []
 
@@ -741,6 +743,49 @@ class Backend:
         rc, out = self._run(["amixer", "-q", "-c", c, "sset", ctl, f"{pct}%",
                              "mute" if muted else "unmute"], timeout=5)
         return rc == 0, out.strip()
+
+    # Frame rate: Reims' host window logs, once a second and always on, a
+    # "host_window_loop win_ms=… draws_fresh=…" line to its failure log --
+    # draws_fresh is the number of new Mac frames shown in that window.
+    _LOOP_RE = re.compile(r"host_window_loop win_ms=(\d+)\b.*?\bdraws_fresh=(\d+)")
+
+    def mac_fps(self, seconds: int = 10) -> Optional[float]:
+        """Frames per second the Mac showed over the last `seconds`, or None
+        when there's nothing current (Mac stopped, not on Reims)."""
+        try:
+            st = os.stat(self.reims_fail_log)
+            if time.time() - st.st_mtime > 5:
+                return None
+            with open(self.reims_fail_log, "rb") as f:
+                f.seek(max(0, st.st_size - 512 * 1024))
+                tail = f.read().decode("utf-8", "replace")
+        except OSError:
+            return None
+        rows = [(int(m.group(1)), int(m.group(2))) for m in self._LOOP_RE.finditer(tail)][-seconds:]
+        ms = sum(r[0] for r in rows)
+        return round(sum(r[1] for r in rows) * 1000.0 / ms, 1) if ms else None
+
+    # Window effects: picom (animations, rounded corners). It should step
+    # aside for the fullscreen Mac (unredir-if-possible), but if it doesn't on
+    # some machine every Mac frame is composited on the CPU -- this switch is
+    # the A/B test, live.
+    def effects(self) -> bool:
+        return _read(os.path.join(self.state_dir, "compositor")) != "off"
+
+    def set_effects(self, on: bool) -> Tuple[bool, str]:
+        ok, msg = self._write_state("compositor", None if on else "off")
+        if not ok:
+            return ok, msg
+        if on:
+            rc, out = self._run(["pgrep", "-x", "picom"], changes=False, timeout=5)
+            if rc != 0 and shutil.which("picom"):
+                try:
+                    self._spawn(["picom", "-b", "--config", self.picom_conf])
+                except OSError as exc:
+                    return False, f"couldn't start picom: {exc}"
+        else:
+            self._run(["pkill", "-x", "picom"], timeout=5)
+        return True, ""
 
     def screen_target(self) -> str:
         t = _read(os.path.join(self.state_dir, "display-target"))
@@ -1332,6 +1377,9 @@ def main(argv: List[str]) -> int:
         print(json.dumps(None if v is None else {"percent": v[0], "muted": v[1]}))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
+    elif what == "fps":
+        v = b.mac_fps()
+        print("no current frame-rate data (Mac stopped, or not on Reims)" if v is None else f"{v} fps")
     elif what == "usb-auto-watch":
         b.usb_auto_watch()
     elif what == "usb":
