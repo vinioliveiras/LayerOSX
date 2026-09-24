@@ -22,8 +22,9 @@ Commands:
           others; if the saved screen isn't connected, turn every connected
           screen back on (never leave the user with nothing lit). No-op when
           the layout already matches (no flicker on every relaunch).
-  watch   poll every 3 s; when screens are plugged/unplugged, apply again and
-          move the Mac's window onto its screen. Started from .xinitrc.
+  watch   poll every 3 s (xrandr --current: no re-probe); when screens are
+          plugged/unplugged and a choice exists, apply again and move the
+          Mac's window onto its screen. Started from .xinitrc.
 
 Run by mac-vm-launch.sh before each launch (apply) and by the panel (list).
 Env: LAYEROSX_STATE_DIR overrides the state dir (tests). stdlib only.
@@ -263,13 +264,37 @@ def apply(quiet=False):
     return args
 
 
+def connected_now():
+    """Names of connected outputs WITHOUT making the driver re-probe.
+
+    `xrandr --query` (RRGetScreenResources) makes the X driver re-detect every
+    output and re-read EDIDs over DDC; on NVIDIA that stalls the display for a
+    moment. Doing it every few seconds froze the screen periodically in every
+    graphics mode (seen on hardware). `--current` (RRGetScreenResourcesCurrent)
+    only reads the server's state, which the driver updates by itself on
+    hotplug -- cheap enough to poll."""
+    if not shutil.which("xrandr"):
+        return ()
+    try:
+        out = subprocess.run(["xrandr", "--current"], capture_output=True,
+                             text=True, timeout=5).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+    return tuple(sorted(m.group(1) for m in re.finditer(r"^(\S+) connected", out, re.M)))
+
+
 def watch():
+    """Re-apply the screen choice on plug/unplug. Polls the cheap
+    connected_now(); the full query() (a real probe) runs only when something
+    actually changed and a choice exists."""
     last = None
     while True:
-        seen = tuple(sorted(o["name"] for o in query() if o["connected"]))
+        seen = connected_now()
         if last is not None and seen != last:
-            time.sleep(2)            # EDID settling right after a plug
-            apply(quiet=True)
+            target, _ = settings()
+            if target or saved_modes():
+                time.sleep(2)            # EDID settling right after a plug
+                apply(quiet=True)
         last = seen
         time.sleep(3)
 

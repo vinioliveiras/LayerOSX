@@ -777,7 +777,17 @@ while true; do
 
     ACTION=$(python3 "$KIOSK_DIR/qmp-watch.py" "$QMP_SOCK")
     wait "$QEMU_PID" 2>/dev/null
+    QEMU_RC=$?
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
+    # How QEMU ended, always logged: >128 = killed by signal (rc-128; 11 =
+    # segfault, 6 = abort, 9 = SIGKILL, 15 = SIGTERM). Together with the QMP
+    # SHUTDOWN reason qmp-watch.py prints, this says whether a "relaunching"
+    # was a crash, a window close or a real guest request.
+    if [ "$QEMU_RC" -gt 128 ]; then
+        echo "QEMU ended: killed by signal $((QEMU_RC - 128)) after ${RAN_FOR}s (exit status $QEMU_RC)."
+    else
+        echo "QEMU ended: exit status $QEMU_RC after ${RAN_FOR}s."
+    fi
 
     # Every QEMU session's outcome, good or bad, gets a fresh copy of
     # this log (and a journal snapshot) onto the USB -- during testing

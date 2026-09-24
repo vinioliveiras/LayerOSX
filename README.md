@@ -3459,3 +3459,22 @@ be switched on from LayerOSX Settings when it's needed:
   working; About shows "Debug build" only for an old debug ISO.
 - Verified: 43 backend tests (the two toggles, `vt-lock.sh` writing/removing
   the xorg snippet); the panel under Xvfb. Not yet on hardware.
+
+## Fix: periodic screen freezes in every graphics mode; clearer exit logging
+
+- **Freezes (VMware too):** the monitor watcher from "Several monitors"
+  polled `xrandr --query --prop` every 3 s. That request
+  (RRGetScreenResources) makes the X driver re-probe every output and re-read
+  EDIDs over DDC — on NVIDIA the picture stalls each time. `displays.py watch`
+  now polls `xrandr --current` (RRGetScreenResourcesCurrent: the server's
+  cached state, which the driver updates on hotplug) and only does the full
+  query + apply when the set of connected screens changed *and* a screen
+  choice or fixed mode exists. On Automatic it never probes.
+- **Why QEMU ended is now always logged:** `mac-vm-launch.sh` logs QEMU's exit
+  status ("killed by signal N" / "exit status N") and `qmp-watch.py` logs the
+  QMP `SHUTDOWN` reason (`host-ui` = the display window was closed,
+  `host-signal`, `host-error`, `guest-*`), or that QMP closed without one
+  (a crash). Hardware logs showed Reims' window presenting its first frame and
+  QEMU leaving 2–3 s later with nothing else in the log — these two lines are
+  what tells a window close from a crash.
+

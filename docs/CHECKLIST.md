@@ -1109,6 +1109,15 @@ allow-list and anything not coming from the guest.)
 - A `LAYEROSX_TERMINAL=open` build: tty2 logs in as mac directly; `off`: tty2
   shows the "no maintenance console" notice.
 
+### 5.4q. No periodic freezes; QEMU exit reason in the log
+
+- VMware, a few minutes of use: no periodic hitches. `ps aux | grep
+  'displays.py watch'` is running; with the choice on Automatic it never runs
+  `xrandr --query` (only `--current`).
+- Every VM stop logs "QEMU ended: exit status N" or "killed by signal N", and
+  a "QMP: SHUTDOWN reason=..." (or "connection closed without a SHUTDOWN
+  event") line before "relaunching".
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

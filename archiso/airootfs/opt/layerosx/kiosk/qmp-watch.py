@@ -67,10 +67,17 @@ def main() -> None:
             print("vm-only")
             return
         if msg is None:
+            # QMP closed with no SHUTDOWN event first: QEMU died (crash,
+            # SIGKILL) -- mac-vm-launch.sh logs its exit status next.
+            print("QMP: connection closed without a SHUTDOWN event (QEMU crashed or was killed)", file=sys.stderr)
             print("vm-only")
             return
         if msg.get("event") == "SHUTDOWN":
             reason = msg.get("data", {}).get("reason", "")
+            # Say WHY in the log: host-ui = the display window was closed (for
+            # Reims' own window that's a WM_DELETE/CloseRequested), host-signal
+            # = something killed it, host-error = QEMU gave up, guest-* = macOS.
+            print(f"QMP: SHUTDOWN reason={reason or '?'} guest={msg.get('data', {}).get('guest')}", file=sys.stderr)
             if reason in GUEST_SHUTDOWN_REASONS:
                 print("host-poweroff")
             elif reason in GUEST_REBOOT_REASONS:
