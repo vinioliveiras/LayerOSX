@@ -159,6 +159,17 @@ if "layerosx-usb" not in content and "</keyboard>" in content:
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
 
+# 7c) Both modes: the laptop's volume keys -> this computer's volume (the
+#     same control as Settings > Sound > Volume). openbox grabs them before the
+#     VM window, like the brightness keys.
+if "layerosx-volume" not in content and "</keyboard>" in content:
+    keybind = "".join(
+        f'  <keybind key="{k}"> <!-- layerosx-volume -->\n'
+        f'    <action name="Execute"><command>python3 /opt/layerosx/panel/layerosx_backend.py volume {op}</command></action>\n'
+        "  </keybind>\n"
+        for k, op in (("XF86AudioRaiseVolume", "up"), ("XF86AudioLowerVolume", "down"), ("XF86AudioMute", "mute")))
+    content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
 # 7b) Both modes: the laptop's brightness keys. The panel backlight belongs to
 #     the host (macOS has nothing to drive), so openbox catches the keys before
 #     the VM window does and runs lib/brightness.sh (brightnessctl; the kiosk

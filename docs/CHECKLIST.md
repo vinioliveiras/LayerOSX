@@ -1187,6 +1187,12 @@ allow-list and anything not coming from the guest.)
   take over.
 - Pick an HDMI output with a screen that has speakers: sound moves there
   after the Mac restarts.
+- Settings › Sound › Volume: dragging the slider changes the loudness while
+  a sound plays; the mute button silences it; both survive a Mac restart
+  and a reboot.
+- Volume keys on the laptop (Mac window focused): louder / quieter / mute;
+  the panel slider moves with them.
+- With an HDMI output chosen, the Volume group is hidden.
 
 ### 5.4x. macOS Restart comes back
 

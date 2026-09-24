@@ -3720,13 +3720,28 @@ backend for voice 'usb-audio'") and the Mac had no sound.
   `audio-device` prints the one to use: Settings › Sound › Output if it's
   still there, else the first non-HDMI device (speakers / headphone jack).
 - The launcher passes it as `-audiodev alsa,out.dev=plughw:CARD=<id>,,DEV=<n>`
-  and unmutes that card's Master / Speaker / Headphone / PCM at 100% (a fresh
-  kiosk never restored ALSA state, so codecs start muted); macOS's volume
-  slider sets the loudness.
+  and runs `layerosx_backend.py apply-volume`: a fresh kiosk never restored
+  ALSA state, so codecs start muted — Speaker / Headphone (and PCM under
+  Master) go to 100%, headphone auto-mute on, and Master to the saved volume.
 - Settings › Sound › Output: Automatic, or any listed device (HDMI screens
   included). Applies when the Mac restarts.
 - The `mac` user is in the `audio` group; `macdiag` has a SOUND section
   (cards, `aplay -l`, chosen output, the launcher's audio lines).
 - Tested: parsing with a Ryzen-like `/proc/asound` (HDMI on card 0, analog on
   card 1) in the unit tests. Not yet heard on hardware.
+
+## Volume in Settings and on the volume keys
+
+- Settings › Sound › Volume: a slider and a mute button for this computer's
+  volume (the ALSA Master — or PCM — of the output the Mac plays through).
+  It changes right away, no Mac restart; macOS's own volume works on top of
+  it. Saved in `/var/lib/layerosx/audio-volume` / `audio-muted` (default
+  80%, unmuted) and restored every time the Mac starts.
+- The laptop's volume keys (XF86AudioRaiseVolume / LowerVolume / Mute) do the
+  same, 5% steps, through openbox keybinds, so they work while the Mac window
+  has focus. The panel's slider follows them.
+- An output without a mixer (usually HDMI) hides the slider: the screen's own
+  volume applies.
+- CLI: `layerosx_backend.py volume [up|down|mute]`. Unit tests drive a fake
+  `amixer` (53 tests).
 

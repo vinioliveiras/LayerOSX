@@ -550,6 +550,81 @@ class TestAudioOutputs(FakeMachine):
         write(os.path.join(self.state, "audio-output"), "USB:0\n")
         self.assertEqual(lb.Backend().audio_output_now().id, "Generic_1:0")
 
+    def _fake_amixer(self, controls=("Master", "PCM", "Speaker")):
+        # State in files: <tmp>/mix/<control> = "pct on|off"; logs every call.
+        mix = os.path.join(self.tmp, "mix")
+        os.makedirs(mix, exist_ok=True)
+        for c in controls:
+            write(os.path.join(mix, c), "0 off")
+        write(os.path.join(self.bin, "amixer"), textwrap.dedent(f"""\
+            #!/usr/bin/env python3
+            import os, sys
+            mix = {mix!r}
+            open(os.path.join(mix, "calls"), "a").write(" ".join(sys.argv[1:]) + "\\n")
+            a = [x for x in sys.argv[1:] if x != "-q"]
+            card, cmd, rest = a[1], a[2], a[3:]
+            if cmd == "scontrols":
+                for c in sorted(os.listdir(mix)):
+                    if c != "calls":
+                        print(f"Simple mixer control '{{c}}',0")
+                sys.exit(0)
+            p = os.path.join(mix, rest[0])
+            if not os.path.exists(p):
+                sys.exit(1)
+            pct, sw = open(p).read().split()
+            if cmd == "sget":
+                print(f"  Front Left: Playback 50 [{{pct}}%] [-10.00dB] [{{sw}}]")
+                sys.exit(0)
+            for x in rest[1:]:
+                if x.endswith("%"): pct = x[:-1]
+                elif x == "mute": sw = "off"
+                elif x == "unmute": sw = "on"
+            open(p, "w").write(f"{{pct}} {{sw}}")
+            """))
+        os.chmod(os.path.join(self.bin, "amixer"), 0o755)
+        return mix
+
+    def test_volume_live_and_saved(self):
+        self._asound()
+        mix = self._fake_amixer()
+        b = lb.Backend()
+        self.assertEqual(b.volume(), (0, True))
+        # launch: path opened fully, Master at the default level, unmuted
+        self.assertTrue(b.apply_volume()[0])
+        self.assertEqual(open(os.path.join(mix, "Speaker")).read(), "100 on")
+        self.assertEqual(open(os.path.join(mix, "PCM")).read(), "100 on")
+        self.assertEqual(b.volume(), (lb.Backend.VOLUME_DEFAULT, False))
+        self.assertIn("-c 1", open(os.path.join(mix, "calls")).read())   # the speakers' card, not HDMI card 0
+        self.assertTrue(b.set_volume(35)[0])
+        self.assertTrue(b.set_volume(muted=True)[0])
+        self.assertEqual(b.volume(), (35, True))
+        self.assertEqual(lb.Backend().saved_volume(), (35, True))
+        self.assertTrue(b.set_volume(150, muted=False)[0])
+        self.assertEqual(b.volume(), (100, False))
+        # next launch restores the saved level
+        write(os.path.join(mix, "Master"), "0 off")
+        lb.Backend().apply_volume()
+        self.assertEqual(b.volume(), (100, False))
+
+    def test_volume_keys_cli(self):
+        self._asound()
+        self._fake_amixer()
+        b = lb.Backend()
+        b.set_volume(50, muted=False)
+        self.assertEqual(lb.main(["x", "volume", "up"]), 0)
+        self.assertEqual(b.volume(), (55, False))
+        self.assertEqual(lb.main(["x", "volume", "mute"]), 0)
+        self.assertEqual(b.volume(), (55, True))
+        self.assertEqual(lb.main(["x", "volume", "down"]), 0)   # a volume key also unmutes
+        self.assertEqual(b.volume(), (50, False))
+
+    def test_output_without_mixer_has_no_volume(self):
+        self._asound()
+        self._fake_amixer(controls=("IEC958",))
+        b = lb.Backend()
+        self.assertIsNone(b.volume())
+        self.assertFalse(b.set_volume(50)[0])
+
     def test_no_sound_card(self):
         self.assertEqual(lb.Backend().audio_outputs(), [])
         self.assertIsNone(lb.Backend().audio_output_now())

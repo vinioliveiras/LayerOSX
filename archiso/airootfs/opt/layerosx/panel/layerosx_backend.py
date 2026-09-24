@@ -668,6 +668,79 @@ class Backend:
         cur = self.audio_output()
         return next((o for o in outs if o.id == cur), None) or (outs[0] if outs else None)
 
+    # Volume: the host ALSA mixer of the output the Mac plays through. The Mac
+    # has its own slider (it scales the usb-audio stream); this one is the
+    # laptop's, and it's live -- no Mac restart. Master when the card has it,
+    # else PCM; HDMI devices usually have neither (volume is None -> the panel
+    # hides the slider and the TV/monitor's own volume applies).
+    VOLUME_CONTROLS = ("Master", "PCM")
+    VOLUME_DEFAULT = 80
+
+    def _volume_control(self, card: int) -> Optional[str]:
+        rc, out = self._run(["amixer", "-c", str(card), "scontrols"], changes=False, timeout=5)
+        have = re.findall(r"'([^']+)'", out) if rc == 0 else []
+        return next((c for c in self.VOLUME_CONTROLS if c in have), None)
+
+    def volume(self) -> Optional[Tuple[int, bool]]:
+        """(percent, muted) of the Mac's output, or None when it has no mixer."""
+        o = self.audio_output_now()
+        ctl = self._volume_control(o.card) if o else None
+        if not ctl:
+            return None
+        rc, out = self._run(["amixer", "-c", str(o.card), "sget", ctl], changes=False, timeout=5)
+        pct = re.search(r"\[(\d+)%\]", out) if rc == 0 else None
+        if not pct:
+            return None
+        sw = re.search(r"\[(on|off)\]", out)
+        return int(pct.group(1)), bool(sw and sw.group(1) == "off")
+
+    def saved_volume(self) -> Tuple[int, bool]:
+        v = _read(os.path.join(self.state_dir, "audio-volume"))
+        pct = int(v) if v.isdigit() and int(v) <= 100 else self.VOLUME_DEFAULT
+        return pct, _read(os.path.join(self.state_dir, "audio-muted")) == "on"
+
+    def set_volume(self, percent: Optional[int] = None, muted: Optional[bool] = None) -> Tuple[bool, str]:
+        o = self.audio_output_now()
+        ctl = self._volume_control(o.card) if o else None
+        if not ctl:
+            return False, "this sound output has no volume control"
+        args = []
+        if percent is not None:
+            percent = max(0, min(100, int(percent)))
+            args.append(f"{percent}%")
+        if muted is not None:
+            args.append("mute" if muted else "unmute")
+        if not args:
+            return True, ""
+        rc, out = self._run(["amixer", "-q", "-c", str(o.card), "sset", ctl] + args, timeout=5)
+        if rc != 0:
+            return False, out.strip() or "amixer failed"
+        if percent is not None:
+            self._write_state("audio-volume", str(percent))
+        if muted is not None:
+            self._write_state("audio-muted", "on" if muted else None)
+        return True, ""
+
+    def apply_volume(self) -> Tuple[bool, str]:
+        """At Mac launch (mac-vm-launch.sh): a fresh kiosk never restored ALSA
+        state, so HDA codecs come up muted / at 0. Open the path under the main
+        control (Speaker / Headphone, and PCM when Master leads) fully, turn
+        on headphone auto-mute, then put the main control at the saved level."""
+        o = self.audio_output_now()
+        if not o:
+            return False, "no sound output"
+        ctl = self._volume_control(o.card)
+        c = str(o.card)
+        for sub in ("Speaker", "Headphone") + (("PCM",) if ctl == "Master" else ()):
+            self._run(["amixer", "-q", "-c", c, "sset", sub, "100%", "unmute"], timeout=5)
+        self._run(["amixer", "-q", "-c", c, "sset", "Auto-Mute Mode", "Enabled"], timeout=5)
+        if not ctl:
+            return True, ""
+        pct, muted = self.saved_volume()
+        rc, out = self._run(["amixer", "-q", "-c", c, "sset", ctl, f"{pct}%",
+                             "mute" if muted else "unmute"], timeout=5)
+        return rc == 0, out.strip()
+
     def screen_target(self) -> str:
         t = _read(os.path.join(self.state_dir, "display-target"))
         return t if t and t != "auto" else "auto"
@@ -1177,12 +1250,26 @@ def main(argv: List[str]) -> int:
         if not o:
             return 1
         print(f"{o.alsa} {o.card} {o.label}")
+    elif what == "apply-volume":
+        return 0 if b.apply_volume()[0] else 1
+    elif what == "volume":
+        # volume [up|down|mute]: no argument prints it (JSON); the others are
+        # the laptop's volume keys (openbox keybinds), 5% steps.
+        op = argv[2] if len(argv) > 2 else ""
+        v = b.volume()
+        if op in ("up", "down") and v is not None:
+            return 0 if b.set_volume(v[0] + (5 if op == "up" else -5), muted=False)[0] else 1
+        if op == "mute" and v is not None:
+            return 0 if b.set_volume(muted=not v[1])[0] else 1
+        if op:
+            return 1
+        print(json.dumps(None if v is None else {"percent": v[0], "muted": v[1]}))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|audio-outputs|audio-device|check-maint-password]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|audio-outputs|audio-device|volume|apply-volume|check-maint-password]", file=sys.stderr)
         return 2
     return 0
 

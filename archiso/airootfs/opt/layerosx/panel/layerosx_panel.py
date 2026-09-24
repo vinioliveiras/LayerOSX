@@ -693,9 +693,79 @@ class Settings(Adw.ApplicationWindow):
         self.audio_row.connect("notify::active", self._on_switch, "audio", "Sound")
         g.add(self.audio_row)
         page.add(g)
+        page.add(self._volume_group())
         page.add(self._audio_output_group())
         self._sync_switches()
         return self._pane("Sound", page)
+
+    def _volume_group(self):
+        """This computer's volume (host ALSA mixer), live. macOS's own slider
+        still works on top of it."""
+        self.vol_group = Adw.PreferencesGroup(
+            title="Volume",
+            description="This computer's volume. It changes right away; the Mac's own volume works on top of it.")
+        r = Adw.ActionRow()
+        self.vol_mute = Gtk.ToggleButton(icon_name="audio-volume-high-symbolic", valign=Gtk.Align.CENTER,
+                                         tooltip_text="Mute")
+        self.vol_mute.add_css_class("flat")
+        self.vol_mute.connect("toggled", self._on_mute)
+        r.add_prefix(self.vol_mute)
+        self.vol = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, 0, 100, 5)
+        self.vol.set_hexpand(True)
+        self.vol.set_draw_value(False)
+        self.vol.connect("value-changed", self._on_volume)
+        r.add_suffix(self.vol)
+        self.vol_group.add(r)
+        self._vol_src = None
+        self._sync_volume()
+        return self.vol_group
+
+    def _sync_volume(self):
+        v = self.b.volume()
+        self.vol_group.set_visible(v is not None)
+        if v is None or self._vol_src is not None:
+            return False
+        self._updating = True
+        try:
+            self.vol.set_value(v[0])
+            self.vol_mute.set_active(v[1])
+            self._vol_icon(v[0], v[1])
+        finally:
+            self._updating = False
+        return False
+
+    def _vol_icon(self, pct, muted):
+        name = ("audio-volume-muted-symbolic" if muted or pct == 0 else
+                "audio-volume-low-symbolic" if pct < 34 else
+                "audio-volume-medium-symbolic" if pct < 67 else "audio-volume-high-symbolic")
+        self.vol_mute.set_icon_name(name)
+        self.vol_mute.set_tooltip_text("Unmute" if muted else "Mute")
+
+    def _on_volume(self, scale):
+        if self._updating:
+            return
+        if self._vol_src:
+            GLib.source_remove(self._vol_src)
+        self._vol_icon(int(scale.get_value()), self.vol_mute.get_active())
+
+        def apply():
+            self._vol_src = None
+            ok, msg = self.b.set_volume(int(scale.get_value()))
+            if not ok:
+                self.toast(msg or "Couldn't change the volume")
+            elif self.b.dry_run:
+                self.after_action(ok, msg, "")
+            return False
+        self._vol_src = GLib.timeout_add(100, apply)
+
+    def _on_mute(self, btn):
+        if self._updating:
+            return
+        muted = btn.get_active()
+        ok, msg = self.b.set_volume(muted=muted)
+        if not ok:
+            self.toast(msg or "Couldn't mute")
+        self._vol_icon(int(self.vol.get_value()), muted)
 
     def _audio_output_group(self):
         g = Adw.PreferencesGroup(
@@ -741,6 +811,7 @@ class Settings(Adw.ApplicationWindow):
         if ok:
             self._pending_restart()
         GLib.idle_add(self._sync_audio_output)
+        GLib.idle_add(self._sync_volume)
 
     # ------------------------------------------------------------------ USB
     def _page_usb(self):
@@ -1265,6 +1336,8 @@ class Settings(Adw.ApplicationWindow):
         self.status = s
         net = s.wifi_ssid or ("Wired" if s.wired else "Offline")
         self.side_status.set_label(f"Mac {'running' if s.vm_running else 'stopped'} · {net}")
+        if "sound" in self.pages and hasattr(self, "vol_group"):
+            self._sync_volume()             # volume keys change it outside the panel
         if "wifi" in self.pages:
             if s.wifi_ssid:
                 self.wifi_state_row.set_title(f"Connected to {esc(s.wifi_ssid)}")

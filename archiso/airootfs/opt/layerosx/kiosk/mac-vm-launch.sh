@@ -620,16 +620,9 @@ configure_toggles() {
             if [ -n "$_snd_pick" ]; then
                 _snd_dev="${_snd_pick%% *}"; _snd_rest="${_snd_pick#* }"
                 _snd_card="${_snd_rest%% *}"; _snd_label="${_snd_rest#* }"
-                # A bare kiosk never ran `alsactl restore`: HDA codecs come up
-                # muted / at 0. Unmute the playback path of that card at full
-                # level -- macOS's own volume slider then sets the loudness
-                # (QEMU applies the usb-audio volume to the stream).
-                for _ctl in Master Speaker Headphone PCM "Auto-Mute Mode"; do
-                    case "$_ctl" in
-                        "Auto-Mute Mode") amixer -q -c "$_snd_card" sset "$_ctl" Enabled >/dev/null 2>&1 || true ;;
-                        *) amixer -q -c "$_snd_card" sset "$_ctl" 100% unmute >/dev/null 2>&1 || true ;;
-                    esac
-                done
+                # Unmute the card and set Settings > Sound > Volume (a bare
+                # kiosk never ran `alsactl restore`: codecs start muted / at 0).
+                python3 /opt/layerosx/panel/layerosx_backend.py apply-volume >/dev/null 2>&1 || true
             fi
         fi
         if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
