@@ -5,12 +5,11 @@
   sure a VM exists (otherwise calls the wizard), launches QEMU in
   fullscreen, and waits for a QMP `SHUTDOWN` event to find out whether
   macOS asked to Shut Down (`reason: guest-shutdown` → a real
-  `systemctl poweroff`) or Restart (`reason:
-  guest-reset`/`guest-panic` → a real `systemctl reboot` — on purpose,
-  this also reboots the Arch underneath, in case it's the one having
-  problems). If QEMU dies for some other reason, it just relaunches
-  the VM (up to 5 times in a row; after that it reboots the physical
-  machine as a safety net).
+  `systemctl poweroff`) or Restart (`reason: guest-reset`/`guest-panic` →
+  the Mac starts again; the computer stays on — restarting the computer
+  is Settings › General). If QEMU ends for any other reason it just
+  relaunches the VM; after 5 fast failures in a row it stops and leaves
+  the screen still so the terminal stays usable.
 - **`qmp-watch.py`** — speaks raw QMP (JSON lines) over a Unix socket,
   returns `host-poweroff` / `host-reboot` / `vm-only` on stdout.
 - **`macos-source-wizard.sh`** — runs once, on first run (while no VM

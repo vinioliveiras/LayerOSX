@@ -3,7 +3,7 @@
 # snapshot of the current boot) onto EVERY eligible disk it can find
 # -- not just one. We were burned once already by picking a single
 # "best" candidate that silently turned out to be unwritable for a
-# reason we couldn't see from the outside (see README.md); trying
+# reason we couldn't see from the outside (see DEVLOG.md); trying
 # every candidate instead of guessing which one is "the" USB drive
 # costs a few extra seconds but means a bad guess on one drive no
 # longer means zero logs anywhere. Ventoy-labeled partitions are

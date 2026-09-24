@@ -3,7 +3,7 @@
 # in Arch's official repos (only the AUR), and we decided against both
 # pulling in a third-party binary repo (Chaotic-AUR doesn't carry it
 # anyway) and compiling its Qt/KDE dependency chain from the AUR at
-# build time (see README.md for the full reasoning).
+# build time (see DEVLOG.md for the full reasoning).
 #
 # GParted (official Arch package, graphical, does exactly one job)
 # handles partitioning and formatting interactively — partitioning is

@@ -8,7 +8,7 @@
 # that already broke zenity once on this project (a bundled QEMU
 # build's Debian-flavored libglib/libgtk leaking into zenity's
 # environment via a shared LD_LIBRARY_PATH crashed it outright on
-# every call -- see README.md). Tk has no dependency on GTK at all, so
+# every call -- see DEVLOG.md). Tk has no dependency on GTK at all, so
 # that whole class of bug can't recur here regardless of what
 # qemus/qemu-macos or anything else ends up bundling.
 #

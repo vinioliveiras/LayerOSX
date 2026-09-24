@@ -25,7 +25,7 @@ EOF
 # check to know this is really Arch underneath, and changing them
 # would risk breaking something for a cosmetic rename. /etc/os-release
 # is normally a symlink to /usr/lib/os-release on Arch; sed -i still
-# edits it correctly either way (see README.md).
+# edits it correctly either way (see DEVLOG.md).
 if [ -f /etc/os-release ]; then
     sed -i 's/^NAME=.*/NAME="LayerOSX"/' /etc/os-release
     sed -i 's/^PRETTY_NAME=.*/PRETTY_NAME="LayerOSX"/' /etc/os-release

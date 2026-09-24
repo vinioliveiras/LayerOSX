@@ -54,7 +54,7 @@ source "$LIB_DIR/wifi-setup.sh"
 # terminal -- a download or a disk-image conversion can take a
 # while, and used to just open an xterm running the command directly
 # (correct, but exactly the kind of raw-terminal-by-default the
-# install experience is trying to get away from -- see README.md).
+# install experience is trying to get away from -- see DEVLOG.md).
 # Real percentage isn't available for every command here
 # (fetch-macOS-v2.py's download and dmg2img's extraction don't print
 # anything reliably parseable), so this pulsates rather than guessing
@@ -189,7 +189,7 @@ run_download_with_progress() {
 # `set -e` in this script) -- it printed an error and just kept going
 # straight into an 800MB+ download that was doomed from the start,
 # since mac-vm-launch.sh's own OVMF_CODE.fd reference was equally
-# wrong (fixed there too, see README.md). Centralized into one
+# wrong (fixed there too, see DEVLOG.md). Centralized into one
 # function that actually fails loudly instead, so a future path
 # change like this doesn't waste a download again before anyone
 # notices.

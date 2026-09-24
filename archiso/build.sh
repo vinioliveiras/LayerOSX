@@ -89,7 +89,7 @@ fi
 
 # Checking just the binary isn't enough: confirmed on real hardware
 # that an ISO built from an already-existing qemu-system-x86_64 (from
-# before the libjpeg.so.62 bundling fix, see README.md) kept shipping
+# before the libjpeg.so.62 bundling fix, see DEVLOG.md) kept shipping
 # the old broken binary forever, since this check never noticed
 # anything was missing and never re-ran prepare-qemu-macos.sh. The
 # bundled runtime libraries are just as required as the binary itself
@@ -104,7 +104,7 @@ fi
 # Same idea as the qemu-system-x86_64 check above: without OpenCore.qcow2
 # staged, mac-vm-launch.sh has nothing to attach as the boot disk and
 # macOS's kernel will never come up on plain OVMF alone (see
-# prepare-opencore.sh and README.md for why). This one's just a download
+# prepare-opencore.sh and DEVLOG.md for why). This one's just a download
 # (no Docker build), so it's quick.
 if [ ! -s airootfs/opt/layerosx/opencore/OpenCore.qcow2 ]; then
     echo "No OpenCore boot image yet — staging it now."

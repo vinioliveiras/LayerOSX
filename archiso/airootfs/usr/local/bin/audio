@@ -16,7 +16,7 @@
 #
 # NOTE: whether sound actually comes out also depends on (a) the custom
 # qemu-macos binary having been built with an audio backend (it's built for
-# VNC/noVNC, so it may not be -- see README's audio note), and (b) the host's
+# VNC/noVNC, so it may not be -- see DEVLOG.md), and (b) the host's
 # sound card working under Linux. If `audio on` boots but there's no sound,
 # that's the QEMU-build side, which needs the build patched and QEMU rebuilt.
 #
@@ -44,7 +44,7 @@ case "${1:-}" in
         echo on | sudo tee "$AUDIO_FILE" >/dev/null
         echo "Audio ON -- a usb-audio device will be attached next launch (if this QEMU build supports it)."
         echo "Relaunch to apply:  relaunch       (or reboot)"
-        echo "If there's no sound after this, the custom QEMU was built without audio -- see README's audio note."
+        echo "No sound after a relaunch? Check Settings > Sound > Output, then 'macdiag' (SOUND section)."
         ;;
     off|0|no|false)
         sudo mkdir -p "$(dirname "$AUDIO_FILE")"

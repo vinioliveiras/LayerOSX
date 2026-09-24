@@ -12,7 +12,7 @@ to need adjustment.
   `setup-build-host: ready.` and that `docker info` works.
 
 - Build-host tools for the OpenCore image patching (verbose boot AND the
-  AMD_Vanilla-patched image — see README.md): `qemu-img` and `mtools`.
+  AMD_Vanilla-patched image — see DEVLOG.md): `qemu-img` and `mtools`.
   `build.sh` now auto-installs them via pacman if missing, so normally nothing
   to do here. On a non-pacman host (or with no network) install them by hand,
   else the build still succeeds but ships without the verbose and/or AMD
@@ -32,7 +32,7 @@ This step alone will already show if anything is missing from
 
 ## 1.5. Build mode (release / debug)
 
-> **Superseded:** there is one build now (README: "One build: the debug
+> **Superseded:** there is one build now (DEVLOG: "One build: the debug
 > features are toggles"). `./rebuild.sh` doesn't ask for a mode; check 5.4p
 > instead. The notes below describe the old two-build setup.
 
@@ -87,7 +87,7 @@ ISO build like the original plan assumed. Instead:
   enough: a binary built *before* the libjpeg bundling fix existed
   already made `build.sh` skip re-running this step forever, silently
   shipping the old broken binary on every build after that (see
-  README.md). If you're not sure whether your local `airootfs/opt/`
+  DEVLOG.md). If you're not sure whether your local `airootfs/opt/`
   is stale, just delete `airootfs/opt/layerosx/bin/qemu-system-x86_64`
   and let `build.sh` rebuild it from scratch.
 - Expect this single step to take 30-60+ minutes (it's compiling real
@@ -97,7 +97,7 @@ ISO build like the original plan assumed. Instead:
   its `master` branch, so a rebuild takes whatever is newest — and on
   2026-09-21 the newest commit (`2c3cae7`, #508) didn't compile
   (`implicit declaration of vmsvga3d_screen_target_async_poll_present_live`,
-  a pure upstream call-before-declaration ordering bug; see README.md).
+  a pure upstream call-before-declaration ordering bug; see DEVLOG.md).
   We pin to `c51c680` (#507), the commit right before it. If a rebuild
   fails to compile inside qemu-vmvga again, that almost always means
   upstream moved and the pin needs bumping to a newer good commit — not
@@ -124,7 +124,7 @@ ISO build like the original plan assumed. Instead:
   `--disable-gtk` (it's meant to be viewed over VNC/noVNC, not as a
   local window). `prepare-qemu-macos.sh` now patches the Dockerfile to
   `--enable-sdl` and installs `libsdl2-dev` in the builder image before
-  the `docker build --target artifact` step (see README.md). If a
+  the `docker build --target artifact` step (see DEVLOG.md). If a
   future rebuild ever hits `-display sdl` errors again, check that
   this patch's anchors (`--disable-sdl \`, the `libbz2-dev \` /
   `libvulkan-dev \` apt-get block) still match upstream's Dockerfile --
@@ -139,7 +139,7 @@ ISO build like the original plan assumed. Instead:
   all), so the anchor strings never matched. Fixed by writing the
   string literals in explicit single-line form and verifying the
   script against a real fetched Dockerfile before redeploying (see
-  README.md). Lesson for future edits to this file: never generate
+  DEVLOG.md). Lesson for future edits to this file: never generate
   this script's content through nested string-literal layers (bash
   heredoc -> Python string -> another Python string) -- edit it
   directly and test the extracted inner script against real input
@@ -152,7 +152,7 @@ ISO build like the original plan assumed. Instead:
   builder stage links the binary against both, but the verify stage's
   own base image never had them installed. Fixed by also patching the
   Dockerfile to `apt-get install libsdl2-2.0-0 libsdl2-image-2.0-0` in
-  the verify stage, right after its two `COPY` lines (see README.md).
+  the verify stage, right after its two `COPY` lines (see DEVLOG.md).
   If a future rebuild ever hits this again, check that this second
   patch's anchor (the `COPY ... reims-vgpu-gop.rom` / `RUN <<'EOF_VERIFY'`
   pair) still matches upstream.
@@ -187,7 +187,7 @@ ISO build like the original plan assumed. Instead:
   with no error at all — the extraction used to pipe `ldd` into a
   `while read` loop inside a POSIX `sh -c` script, and `sh` has no
   `pipefail`, so a failing/empty `ldd` just made the loop silently do
-  nothing (see README.md). Fixed to fail loudly instead. After running
+  nothing (see DEVLOG.md). Fixed to fail loudly instead. After running
   `prepare-qemu-macos.sh`, always check the `==> bundled N runtime
   librar(y|ies)` line near the end — `N` should never be `0`, and the
   script now refuses to continue if it is. `prepare-qemu-macos.sh`
@@ -201,7 +201,7 @@ ISO build like the original plan assumed. Instead:
   running everything through `tini`, and `docker run` only replaces
   CMD, not ENTRYPOINT, so the extraction's `sh -c '...'` was getting
   appended onto that fixed entrypoint instead of replacing it. Fixed
-  with `--entrypoint sh` on that `docker run` call (see README.md).
+  with `--entrypoint sh` on that `docker run` call (see DEVLOG.md).
   If you hit this exact tini error again in the future, it means some
   other `docker run` call in this repo forgot the same `--entrypoint`
   override.
@@ -211,16 +211,16 @@ ISO build like the original plan assumed. Instead:
 - The whole install is meant to be UI-only now (no visible
   terminal) — press **F2** at any point during the install to
   confirm a terminal opens tailing `/var/log/layerosx-install.log`
-  live (see README.md). Closing it again shouldn't affect the
+  live (see DEVLOG.md). Closing it again shouldn't affect the
   install in progress.
 - **Logs now auto-save to every eligible disk found, not just the
   Ventoy drive** (`layerosx-logs/` folder at each one's root — see
-  README.md) on any install failure, on a successful install, on
+  DEVLOG.md) on any install failure, on a successful install, on
   every boot of the installed system, and after every QEMU session.
   When something goes wrong during testing, check that folder from
   Windows (or anywhere) before reaching for a tty or a photo — much
   faster. If it's ever empty everywhere (happened once — see
-  README.md's gotcha on this), press F2 (or tty2, login
+  DEVLOG.md's gotcha on this), press F2 (or tty2, login
   `root`/`layerosx`) and `cat /var/log/layerosx-save-logs-status.log`
   — it now records one line per disk it tried, so it should say
   exactly why each one didn't work rather than nothing at all.
@@ -245,7 +245,7 @@ ISO build like the original plan assumed. Instead:
   device at all (only `/dev/loop-control`, and `/proc/partitions`
   lists only the real physical disks), the ISO itself is never being
   exposed as a mountable disk to begin with — see the isohybrid MBR
-  gotcha in README.md. Fixed by adding `bios.syslinux` to `bootmodes`
+  gotcha in DEVLOG.md. Fixed by adding `bios.syslinux` to `bootmodes`
   in `profiledef.sh` (not to add real BIOS support — this project
   stays UEFI-only — just to get `mkarchiso` to embed the isohybrid
   MBR/El Torito structure tools like Ventoy need to loopback-mount
@@ -259,7 +259,7 @@ ISO build like the original plan assumed. Instead:
   VirtualBox (which has its own known EFI NVRAM quirks — see the GRUB
   gotcha further down), QEMU with OVMF firmware is the closest thing
   to real UEFI firmware behavior short of actual hardware — see
-  "Testing with QEMU+OVMF" in README.md.
+  "Testing with QEMU+OVMF" in DEVLOG.md.
 - The live root account now has a debug password (`layerosx`,
   live-ISO-only, see `customize_airootfs.sh`) — if the screen is stuck
   or flickering, switch to another console (Ctrl+Alt+F2) and log in as
@@ -308,9 +308,9 @@ ISO build like the original plan assumed. Instead:
   label naming the current step throughout (down to postinstall's own
   4 numbered steps) — then a "reboot now" dialog. All black
   window/white bar (`GTK_THEME=Adwaita:dark` + a `gtk.css` override,
-  not a recreation of Apple's boot screen, see README.md). If you see
+  not a recreation of Apple's boot screen, see DEVLOG.md). If you see
   the bar jump backward or a new dialog pop up mid-copy looking like
-  it restarted, that's the two bugs already fixed in README.md
+  it restarted, that's the two bugs already fixed in DEVLOG.md
   (rsync's incremental recursion revising its total downward, and the
   old one-dialog-per-phase design) — flag it here if either recurs.
 - If something fails partway through (mount, rsync, genfstab,
@@ -419,7 +419,7 @@ ISO build like the original plan assumed. Instead:
     rsynced too, and would otherwise bake the *live medium's* HOOKS —
     `archiso`, `memdisk`, the PXE hooks — into the installed system's
     initramfs) before running `mkinitcpio -P`, so it falls back to the
-    normal installed-system HOOKS. See README.md for the full
+    normal installed-system HOOKS. See DEVLOG.md for the full
     explanation. To recover an already-installed disk without
     reinstalling from scratch: boot the live ISO, then (still outside
     the chroot) find and copy the kernel, then finish inside the
@@ -461,7 +461,7 @@ ISO build like the original plan assumed. Instead:
   (the file that makes the live initramfs actually live-aware; without
   it `mkarchiso` builds a normal install-target-style initramfs that
   can't find its own root). Fixed by copying that file from the
-  official `releng` reference profile (see README.md for the full
+  official `releng` reference profile (see DEVLOG.md for the full
   explanation).
 - If, after that fix, it instead shows `running hook [memdisk]` /
   `memdiskfind: not found` then `mounting '' on real root` and the
@@ -469,14 +469,14 @@ ISO build like the original plan assumed. Instead:
   rebuild later. The `mkinitcpio.conf.d/archiso.conf` hooks need the
   `mkinitcpio-archiso` package **inside the ISO** to actually provide
   them at build time — fixed by adding it to `packages.x86_64` (see
-  README.md). A rebuild after this fix should get past both issues.
+  DEVLOG.md). A rebuild after this fix should get past both issues.
   If it hangs on a black screen for a different reason (never reaches
   either of these emergency-mode messages), the problem is more likely
   the `.xinitrc`/`.bash_profile`/tty1 autologin, not GParted or the
   wizard script itself.
 - Calamares was dropped (it's never been in Arch's official repos,
   only the AUR, and Chaotic-AUR doesn't carry it either — see
-  README.md) in favor of GParted + a plain rsync-based install script
+  DEVLOG.md) in favor of GParted + a plain rsync-based install script
   (`kiosk/install-wizard.sh`). This is still one of the **least-tested
   parts of the whole project** — the live-boot bug above was found and
   fixed before the wizard itself was ever reached, so the GParted/rsync
@@ -503,7 +503,7 @@ actually run the detection logic against real hardware yet.
   cause if you hit this. **Check the BIOS/UEFI setting first** before
   assuming it's a LayerOSX bug. Hardened with a second registration
   path (`/etc/modules-load.d/layerosx-kvm.conf`) and a best-effort
-  `modprobe` + log line right at install time (see README.md) — after
+  `modprobe` + log line right at install time (see DEVLOG.md) — after
   a fresh install, grep `/var/log/layerosx-postinstall.log` for
   `[10]` to see whether it already reported success or failure right
   there, instead of waiting to find out at first VM launch.
@@ -534,7 +534,7 @@ actually run the detection logic against real hardware yet.
 - Should boot straight into the `mac` user, no password prompt, and
   land on `macos-source-wizard.sh` (zenity). The mouse cursor should
   be visible here (a real bug found and fixed: `-nocursor` was hiding
-  it for the whole session, not just inside the VM — see README.md).
+  it for the whole session, not just inside the VM — see DEVLOG.md).
 - Test both options at least once each, even just to see they open
   without crashing: automatic download, and "pick a file" (one merged
   picker for a complete VM disk in `.qcow2`/`.img`/`.raw`/`.vmdk`/
@@ -545,7 +545,7 @@ actually run the detection logic against real hardware yet.
   the same folder as the descriptor you pick.
 - Confirm the "where should macOS come from" list itself renders both
   rows on one line each, no horizontal scrollbar cutting text off —
-  confirmed on real hardware once already (see README.md), fixed by
+  confirmed on real hardware once already (see DEVLOG.md), fixed by
   shortening the second option's label.
 - The `.dmg`/`.iso` installer paths are the most fragile (see
   `kiosk/lib/extract-dmg-installer.sh`) — if they fail, they fail
@@ -563,19 +563,19 @@ actually run the detection logic against real hardware yet.
   never appeared (same GTK-dependency fragility as the
   `LD_LIBRARY_PATH`-leaking-into-zenity bug above). Replaced with a
   native Tkinter picker (`kiosk/lib/pick-source-file.py`, needs the
-  `tk` package — see README.md). Confirm the file dialog now actually
+  `tk` package — see DEVLOG.md). Confirm the file dialog now actually
   opens, that it starts browsing at `/mnt/media/`, and that the
   filter still only shows `.qcow2`/`.img`/`.raw`/`.iso`/`.dmg`/`.app`
   by default (with "All files" selectable too).
 - If "download from Apple" is picked on a Wi-Fi-only machine with no
   connection yet, it should now offer a zenity list of nearby networks
-  to click (`kiosk/lib/wifi-setup.sh`, see README.md) — confirm the
+  to click (`kiosk/lib/wifi-setup.sh`, see DEVLOG.md) — confirm the
   scan actually finds real networks, a password prompt shows for a
   secured one, and the download proceeds afterward. Also try
   "Advanced (nmtui)…" at the bottom of the list once, to confirm
   the fallback still works.
 - "Download from Apple" now asks which macOS version first (High
-  Sierra through Tahoe, Ventura pre-selected — see README.md). Confirm
+  Sierra through Tahoe, Ventura pre-selected — see DEVLOG.md). Confirm
   the list opens, that picking a version other than Ventura actually
   downloads that version (check the progress text / F2 log mentions
   the right name, and `lib/fetch-work/recovery/` ends up with that
@@ -597,7 +597,7 @@ actually run the detection logic against real hardware yet.
   `verify_image()`, tripped by this pipeline's output never being a
   real terminal. Fixed with an idempotent patch applied in
   `kiosk/lib/fetch-recovery.sh` after the script is downloaded (see
-  README.md) — confirm the download now proceeds past "Verifying
+  DEVLOG.md) — confirm the download now proceeds past "Verifying
   image with chunklist..." instead of crashing right after the
   download bar finishes.
 - Confirmed on real hardware: `cp: cannot stat
@@ -605,7 +605,7 @@ actually run the detection logic against real hardware yet.
   first-run setup — Arch's `edk2-ovmf` package actually installs to
   `/usr/share/edk2/x64/OVMF_CODE.4m.fd` / `OVMF_VARS.4m.fd`, not the
   path both `mac-vm-launch.sh` and `macos-source-wizard.sh` assumed
-  (see README.md). Fixed in both places — confirm first-run setup no
+  (see DEVLOG.md). Fixed in both places — confirm first-run setup no
   longer prints this error (check via F2) and that the VM actually
   gets a NVRAM file at `/var/lib/layerosx/OVMF_VARS.fd`.
 - Confirmed on real hardware: a failed first-run attempt (download
@@ -615,7 +615,7 @@ actually run the detection logic against real hardware yet.
   `mac-vm-launch.sh`'s "has a VM already been set up?" check. Fixed
   with an EXIT trap in `macos-source-wizard.sh` that removes any
   partial `$VM_DISK`/recovery/installer disk/`$OVMF_VARS` whenever the
-  wizard exits non-zero (see README.md) — to test, deliberately fail
+  wizard exits non-zero (see DEVLOG.md) — to test, deliberately fail
   a first-run attempt (e.g. disconnect Wi-Fi mid-download) and confirm
   the *next* boot shows the "where should macOS come from" screen
   again instead of a black screen.
@@ -623,7 +623,7 @@ actually run the detection logic against real hardware yet.
   corrupted/noisy image (a second monitor showing this was the
   original report) — `kiosk/lib/force-max-refresh.sh` should have
   already forced each one to its real max refresh rate at `.xinitrc`
-  startup (see README.md), now retrying for about a minute total to
+  startup (see DEVLOG.md), now retrying for about a minute total to
   cover monitors that settle slowly right at boot. If a display is
   still wrong after that, run `xrandr --query` from a tty2 shell
   (Ctrl+Alt+F2, login `mac`/`mac`) to see what mode it actually
@@ -636,7 +636,7 @@ actually run the detection logic against real hardware yet.
   now wipes any previous download (`rm -rf recovery BaseSystem.img`) before
   fetching, so a stale cross-version `BaseSystem.dmg` can no longer be picked
   up — but kholia's `os_type: "latest"` on the Ventura entry can still let
-  Apple hand back a newer image (see README's "Ventura selection could install
+  Apple hand back a newer image (see DEVLOG's "Ventura selection could install
   Sequoia" bug). If it does, `erasevm` and re-run, and if it persists pin an
   explicit board-id in `fetch-recovery.sh`.
 - After a download, the wizard should pop a confirmation of the REAL version
@@ -684,7 +684,7 @@ actually run the detection logic against real hardware yet.
   Debian-based image's `libjpeg62-turbo`, and Arch's own
   `libjpeg-turbo` package only ships the incompatible `libjpeg.so.8`
   SONAME — not a missing package, a SONAME mismatch (see
-  README.md). Fixed at the source: `prepare-qemu-macos.sh` now
+  DEVLOG.md). Fixed at the source: `prepare-qemu-macos.sh` now
   bundles the real matching libraries (extracted from the
   Dockerfile's own already-validated `verify` stage) into
   `airootfs/opt/layerosx/lib/`, and `mac-vm-launch.sh` points
@@ -704,7 +704,7 @@ actually run the detection logic against real hardware yet.
 - If the VM window is just solid black with nothing happening at all
   (no OVMF text, no Apple logo) right after the first-run wizard
   finishes: `mac-vm-launch.sh` now attaches the recovery/installer
-  disk the wizard just prepared (see README.md) — if it's still black
+  disk the wizard just prepared (see DEVLOG.md) — if it's still black
   after that fix, check `~/mac-vm.log` (the `mac` user's home) for
   what QEMU itself printed, and suspect the `reims-vgpu-pci romfile=`
   property above next.
@@ -727,7 +727,7 @@ actually run the detection logic against real hardware yet.
   `export`ed for the whole of `mac-vm-launch.sh`, leaking the bundled
   Debian-flavored glib (meant only for `qemu-system-x86_64`) into
   every zenity call. Fixed by scoping it to just the qemu invocation
-  (see README.md). If you ever see this exact zenity crash again, it
+  (see DEVLOG.md). If you ever see this exact zenity crash again, it
   means `LD_LIBRARY_PATH` is leaking somewhere new — check what's
   exporting it before assuming it's a package problem.
 - Right-click on the desktop should no longer show openbox's full
@@ -748,7 +748,7 @@ report back from this exact point:
 
 - Confirm `airootfs/opt/layerosx/opencore/OpenCore.qcow2` exists after
   a build (`prepare-opencore.sh` stages it, `build.sh` calls it
-  automatically if missing — see README.md). If it's missing,
+  automatically if missing — see DEVLOG.md). If it's missing,
   `mac-vm-launch.sh` now fails fast with a clear `FATAL` instead of
   silently booting without it.
 - Confirmed on real hardware: `Block format 'qcow2' does not support
@@ -756,7 +756,7 @@ report back from this exact point:
   drive specifically (the only one of the three drives that sets
   `bootindex`). Fixed by splitting it into the explicit `-drive
   if=none,id=opencore,...` + `-device virtio-blk-pci,drive=opencore,
-  bootindex=0` form (see README.md). If you ever see this exact error
+  bootindex=0` form (see DEVLOG.md). If you ever see this exact error
   on a *different* drive after editing `mac-vm-launch.sh`, it means
   that drive picked up a `bootindex=` on the `-drive if=virtio,...`
   shorthand — split it the same way instead.
@@ -779,7 +779,7 @@ report back from this exact point:
   future edit.
 - If OpenCore's own picker shows up but macOS's kernel panics or
   reboots shortly after being chosen: this is exactly the kind of
-  failure the shared/default OpenCore identity (see README.md's
+  failure the shared/default OpenCore identity (see DEVLOG.md's
   "Known v1 limitation") could plausibly cause — note down the exact
   panic text/screenshot, since diagnosing this blind without real
   hardware to test against is not realistic from this side.
@@ -794,7 +794,7 @@ report back from this exact point:
 ### 5.2. The launch profile (CPU / memfd / display / SATA / USB)
 
 `mac-vm-launch.sh` now mirrors Reims' own `vm/boot-x86.sh` and
-OSX-KVM's `OpenCore-Boot.sh` (see README.md, "Root cause of the
+OSX-KVM's `OpenCore-Boot.sh` (see DEVLOG.md, "Root cause of the
 real-hardware boot stall"). Check, in this order:
 
 - `~/mac-vm.log` (F2 → `logs`) shows a `Launch profile:` line before
@@ -815,7 +815,7 @@ real-hardware boot stall"). Check, in this order:
   Xorg`).
 - Confirmed on real hardware: `'vmware-svga' is not a valid device
   model name` — this build's VMware adapter is `vmvga` (qemu-vmvga
-  renames it), not stock QEMU's `vmware-svga`. Fixed (see README.md). If
+  renames it), not stock QEMU's `vmware-svga`. Fixed (see DEVLOG.md). If
   a launch dies instantly on the display device, check the `-device`
   name against what the actual binary offers: `sudo LD_LIBRARY_PATH=/opt/
   layerosx/lib /opt/layerosx/bin/qemu-system-x86_64 -device help | grep
@@ -826,12 +826,12 @@ real-hardware boot stall"). Check, in this order:
   `sudo reboot`. If you instead see the screen flickering endlessly and
   can't reach a tty, the launcher on the machine is from before this
   hardening — power-cycle and use the GRUB `init=/bin/bash` route to edit
-  `mac-vm-launch.sh` (see README.md/the recovery notes).
+  `mac-vm-launch.sh` (see DEVLOG.md/the recovery notes).
 - Confirmed on real hardware: `Unsupported PCI slot 0 for standard
   hotplug controller` from the `reims-vgpu-pci` device -- stock QEMU
   reserves slot 0 of a pci-bridge for its hotplug controller, but Reims'
   own launcher (a QEMU fork) puts the device there. Fixed with `shpc=off`
-  on the bridge (see README.md). If you see this again, the `shpc=off`
+  on the bridge (see DEVLOG.md). If you see this again, the `shpc=off`
   was lost from the `pci-bridge` line in `mac-vm-launch.sh`.
 - The screen flickering repeatedly (X session flashing) is this class of
   bug: a QEMU arg/device error that exits instantly, relaunched by the
@@ -863,7 +863,7 @@ real-hardware boot stall"). Check, in this order:
   physical reboot. If you see the physical machine rebooting on its
   own, something regressed here.
 - **The display now defaults to VMware SVGA; Reims is opt-in** (see
-  README.md). Confirm a fresh launch's `Launch profile:` line says
+  DEVLOG.md). Confirm a fresh launch's `Launch profile:` line says
   `gfx=vmware-svga` with no `/var/lib/layerosx/gfx` file present. Switch
   with the `gpu` command: `gpu reims` then `sudo pkill Xorg` to try
   acceleration, `gpu vmware` (or `gpu` alone to check) to go back. If
@@ -923,7 +923,7 @@ in the image; `build.sh` runs it on the base before deriving variants.
 The macOS kernel is Intel-only; on an `AuthenticAMD` host it hangs at
 `EXITBS` → `HANDOFF TO XNU` without the AMD_Vanilla patches (confirmed on the
 AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
-`mac-vm-launch.sh` selects it automatically by CPU vendor. See README.md's
+`mac-vm-launch.sh` selects it automatically by CPU vendor. See DEVLOG.md's
 "Running macOS on an AMD host CPU" for the why.
 
 - After a build, confirm all four OpenCore images exist under
@@ -976,7 +976,7 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   that needs the Dockerfile patched (`libasound2-dev` + `--audio-drv-list=alsa`)
   and QEMU rebuilt. `audio off` returns to no audio. The host ALSA packages
   (`alsa-lib`, `alsa-utils`, `sof-firmware`) are already on the ISO. See
-  README.md's "Audio: an opt-in usb-audio toggle" for the full picture.
+  DEVLOG.md's "Audio: an opt-in usb-audio toggle" for the full picture.
 
 (Planned, not built yet — see README TODO "LayerOSX menu-bar app": once it
 exists, add its checks here: Wi-Fi join from inside macOS, battery level
@@ -1351,7 +1351,7 @@ allow-list and anything not coming from the guest.)
 ## 5.5. Branding (GRUB menu, boot message)
 
 - Confirmed on real hardware: without this, both said "Arch Linux"
-  instead of "LayerOSX" (see README.md). After a fresh install, check:
+  instead of "LayerOSX" (see DEVLOG.md). After a fresh install, check:
   the GRUB boot menu's top entry should read "LayerOSX" (not
   "Arch Linux"), and the "Welcome to ...!" line during early boot
   (visible if `quiet` is ever removed from the kernel cmdline, or by
@@ -1385,7 +1385,7 @@ allow-list and anything not coming from the guest.)
 - Confirmed on real hardware: openbox's stock 4 desktops (never used by
   this kiosk) let a stray mouse-wheel scroll switch to an empty one,
   leaving the QEMU window behind — looked like the VM going black.
-  Fixed in `lib/install-f2-keybind.sh` (see README.md): only 1 desktop
+  Fixed in `lib/install-f2-keybind.sh` (see DEVLOG.md): only 1 desktop
   now, plus an `<application>` rule pinning the QEMU window to it,
   focused, always on top.
 - After a fresh boot with a VM already prepared (no wizard), confirm
@@ -1416,7 +1416,7 @@ allow-list and anything not coming from the guest.)
   confirm nothing breaks (mainly `paccache`, which depends on
   `pacman-contrib` actually being installed).
 - `erasevm` should be on `PATH` already (installed straight
-  to `/usr/local/bin`, see README.md) — run it once with an existing
+  to `/usr/local/bin`, see DEVLOG.md) — run it once with an existing
   VM to confirm it lists `macos.qcow2` (and `OVMF_VARS.fd`, and
   whichever of `macos-recovery.qcow2`/`macos-installer.qcow2` exists),
   asks for confirmation, deletes them, and that the *next* boot shows

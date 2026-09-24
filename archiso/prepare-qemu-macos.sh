@@ -324,7 +324,7 @@ echo "==> building the 'verify' stage too, to inspect + bundle its runtime libra
 # any library whose SONAME doesn't match what Arch ships (confirmed
 # on real hardware: libjpeg is one -- Arch's libjpeg-turbo only ships
 # libjpeg.so.8, this binary was built against Debian's libjpeg62-turbo
-# and needs libjpeg.so.62 specifically, see README.md). BuildKit will
+# and needs libjpeg.so.62 specifically, see DEVLOG.md). BuildKit will
 # reuse the layers already built above for --target artifact, so this
 # is effectively free.
 "$ENGINE" build --target verify -t layerosx/qemu-macos-verify:local "$WORK/qemu-macos"
@@ -343,7 +343,7 @@ mkdir -p "$WORK/libs" airootfs/opt/layerosx/lib
 # launch, no error anywhere in the build log. Rewritten to capture
 # `ldd`'s own exit status explicitly (no pipe to hide behind) and,
 # below, to hard-fail the whole build if the bundle ends up empty --
-# libjpeg alone is known to always need bundling (see README.md), so
+# libjpeg alone is known to always need bundling (see DEVLOG.md), so
 # zero libraries bundled is never a valid outcome, only a silent bug.
 #
 # Also confirmed on real hardware: qemux/qemu:latest (the base image
@@ -389,7 +389,7 @@ cp -a "$WORK"/libs/. airootfs/opt/layerosx/lib/
 LIBCOUNT=$(find airootfs/opt/layerosx/lib -type f | wc -l)
 echo "==> bundled $LIBCOUNT runtime librar$([ "$LIBCOUNT" = 1 ] && echo y || echo ies) into airootfs/opt/layerosx/lib: $(ls airootfs/opt/layerosx/lib 2>/dev/null | tr '\n' ' ')"
 if [ "$LIBCOUNT" -eq 0 ]; then
-    echo "FAIL: bundled zero runtime libraries. This is never expected (libjpeg alone always needs bundling, see README.md) -- aborting instead of silently shipping a qemu-system-x86_64 that will crash on every launch." >&2
+    echo "FAIL: bundled zero runtime libraries. This is never expected (libjpeg alone always needs bundling, see DEVLOG.md) -- aborting instead of silently shipping a qemu-system-x86_64 that will crash on every launch." >&2
     exit 1
 fi
 

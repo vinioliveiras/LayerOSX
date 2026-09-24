@@ -18,7 +18,7 @@ mkinitcpio
 mkinitcpio-archiso
 # Required by the bios.syslinux bootmode in profiledef.sh (mkarchiso
 # extracts the actual syslinux binaries from this package to embed in
-# the ISO's isohybrid MBR/El Torito boot catalog -- see README.md for
+# the ISO's isohybrid MBR/El Torito boot catalog -- see DEVLOG.md for
 # why that mode is enabled at all on a UEFI-only project). Without it,
 # mkarchiso refuses to build: "ERROR: Validating 'bios.syslinux': The
 # 'syslinux' package is missing from the package list!"
@@ -116,7 +116,7 @@ zenity
 
 # live environment: just enough to run GParted + zenity graphically
 # (Calamares would need Chaotic-AUR or an AUR source build — see
-# README.md — GParted is official and does exactly the one job we
+# DEVLOG.md — GParted is official and does exactly the one job we
 # actually need, partitioning)
 xorg-server
 xorg-xinit

@@ -103,7 +103,7 @@ fatal() {
 # ("error while loading shared libraries: libjpeg.so.62: cannot open
 # shared object file"), which made QEMU fail to even start at all
 # (immediately, every single launch) rather than a display/rendering
-# problem -- see README.md. prepare-qemu-macos.sh now bundles an
+# problem -- see DEVLOG.md. prepare-qemu-macos.sh now bundles an
 # exact copy of every such library (extracted from the same verified
 # build image the binary was tested in) alongside the binary.
 #
@@ -182,7 +182,7 @@ fi
 # Plain OVMF + a bare QEMU command line is not enough for macOS's kernel
 # to boot at all -- it probes for Apple-specific hardware (SMC, SMBIOS,
 # a handful of ACPI/kernel quirks) that only OpenCore supplies here. See
-# prepare-opencore.sh and README.md for the full story.
+# prepare-opencore.sh and DEVLOG.md for the full story.
 if [ ! -s "$OPENCORE_IMG" ]; then
     fatal "$OPENCORE_IMG is missing." "The ISO was built without running prepare-opencore.sh first — see docs/CHECKLIST.md."
 fi
@@ -234,7 +234,7 @@ fi
 # ---------------------------------------------------------------------------
 # Everything from here down mirrors the two upstream references this project
 # is built from, deliberately and closely, after a long real-hardware detour
-# (see README.md, "Root cause of the boot stall"):
+# (see DEVLOG.md, "Root cause of the boot stall"):
 #   - Reims' own vm/boot-x86.sh (github.com/steelbrain/reims-vgpu) -- THE
 #     validated invocation for the reims-vgpu-pci device on x86/KVM.
 #   - kholia/OSX-KVM's OpenCore-Boot.sh -- the launcher the OpenCore.qcow2
@@ -636,7 +636,7 @@ configure_toggles() {
             fi
         else
             echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
-            echo "         The custom qemu-macos build needs an audio backend compiled in; see README's audio note. Boot is unaffected." >&2
+            echo "         The custom qemu-macos build needs an audio backend compiled in; see DEVLOG.md. Boot is unaffected." >&2
         fi
     fi
 

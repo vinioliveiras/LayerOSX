@@ -1,0 +1,265 @@
+# LayerOSX
+
+An installer ISO for a deliberately empty Arch Linux whose only job is to boot
+straight into an accelerated macOS VM: QEMU from
+[qemus/qemu-macos](https://github.com/qemus/qemu-macos) with the
+[Reims-vGPU](https://reims-vgpu.com/) paravirtual GPU. Turn the laptop on, see
+macOS — no Linux desktop, no manual steps after install other than choosing
+where macOS comes from, once.
+
+- **Any x86-64 laptop/PC:** Intel or AMD (Ryzen) CPU; NVIDIA, AMD or Intel
+  GPU. Reims accelerates over Vulkan on the host, so it isn't tied to a
+  vendor. The installer detects the CPU (KVM module) and GPU (driver config)
+  and configures only that.
+- **Nothing from Apple is in the ISO.** macOS is downloaded from Apple's own
+  servers (or taken from a disk/installer you already have), onto your disk,
+  when you run the first-run wizard. Running macOS on non-Apple hardware is
+  still against Apple's EULA; this project only automates the Linux side.
+
+> **History:** how every piece got here — bugs, root causes, decisions — is in
+> [DEVLOG.md](DEVLOG.md). This README describes the current state.
+
+## Status
+
+Boots and runs macOS (Ventura tested) on real hardware — an ASUS TUF A15
+(Ryzen 7 7735HS, RTX 4060 + Radeon 680M) — with Reims acceleration. Still
+alpha: Reims itself is alpha, and several
+recent features are marked "not yet on hardware" in
+[docs/CHECKLIST.md](docs/CHECKLIST.md), the step-by-step test plan.
+
+## Install
+
+1. Build the ISO (see [Build](#build)) and copy it to a
+   [Ventoy](https://www.ventoy.net/) USB drive (or `dd` it).
+2. Boot it. The installer opens **GParted**: make (or keep) a partition for
+   LayerOSX and reuse the existing EFI partition — don't format the EFI one.
+   The Mac's disk lives on the LayerOSX partition, so give it room
+   (100 GB+).
+3. Pick the root and EFI partitions and a password for the Linux user `mac`
+   (text console / sudo; Cancel keeps `mac`). Everything else — copy, fstab,
+   locale `en_US`, keyboard `us`, GRUB (with other OSes via os-prober), the
+   kiosk — is automatic.
+4. Reboot into LayerOSX.
+
+**Reinstalling without losing the Mac:** don't format the LayerOSX partition
+in GParted. The installer finds the existing Mac and asks **Keep my Mac /
+Erase it**; Keep preserves `/var/lib/layerosx` (macOS disk, NVRAM, settings)
+and replaces everything else. A backup of `macos.qcow2` + `OVMF_VARS.fd` to
+another drive first never hurts.
+
+## First boot
+
+The first-run wizard asks where macOS comes from:
+
+1. **Download from Apple** (default) — pick a version (High Sierra → Tahoe,
+   Ventura pre-selected); Wi-Fi can be set up right there.
+2. **I already have a macOS VM/disk** — qcow2, raw, VMware (vmdk), VirtualBox
+   (vdi), Hyper-V (vhd/vhdx), from any drive.
+3. **I already have an installer .dmg** — experimental.
+
+The Mac then starts in fullscreen and **you** take over: Disk Utility, install
+macOS, Setup Assistant. The Mac's disk is sized to the partition's free space
+(minus a margin) and grown automatically later if the partition has room; grow
+APFS inside macOS with `sudo diskutil apfs resizeContainer <container> 0`.
+
+## Everyday use
+
+| | |
+|---|---|
+| **Ctrl+Alt+W** | LayerOSX Settings (below). Falls back to a zenity menu if GTK can't start. |
+| **Ctrl+Alt+T** | Maintenance terminal (open, unless a Maintenance password is set). |
+| **Ctrl+Alt+U** | USB picker: give a device to the Mac or take it back. |
+| Brightness / volume keys | Handled by Linux, work while the Mac has focus. |
+| Apple menu › **Restart** | Restarts the Mac only (the computer stays on). |
+| Apple menu › **Shut Down** | Shuts the computer down. |
+| Settings › General › Restart | Restarts the computer. |
+| Lid close | Laptop suspends, the Mac is paused and resumed around it. |
+| Low battery | Warnings at 20% / 10%, clean macOS shutdown at 5%, forced stop at 3%. |
+
+The Mac always has internet through the host (a wired NAT link inside
+macOS); Wi-Fi is chosen in Settings.
+
+## LayerOSX Settings
+
+A GTK4/libadwaita window styled after macOS System Settings (light/dark in
+General). "Applies when the Mac restarts" changes show a **Restart the Mac**
+banner.
+
+| Section | What's there |
+|---|---|
+| Wi-Fi | On/off, current network, nearby networks, hidden networks. |
+| Battery | Level, state, what the low-battery guard does. |
+| Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with. |
+| Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
+| USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
+| Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Restart the Mac** (the black-screen rescue). |
+| General | Appearance, Restart / Shut Down the computer. |
+| Maintenance | **Logs** — Show startup log, Detailed logs, Save diagnostics to a drive; **Terminal**; **Advanced** — text consoles (Ctrl+Alt+F1…F6, next boot); **Password** — an optional Maintenance password that locks this whole section, the terminal and tty2. |
+| About | This computer (model, CPU, RAM, GPUs, disk), the Mac (macOS version, what the VM got), credits. |
+
+Defaults on a new install: Reims graphics, Apple-logo boot, sound on,
+automatic USB, all cores but 2 (max 8, power of two), RAM minus 12%
+(min 4 GB), no Maintenance password.
+
+## Terminal commands
+
+From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
+`/var/lib/layerosx/`, so everything is scriptable. `commands` lists them all.
+
+| Command | What it does |
+|---|---|
+| `relaunch` | Restart just the Mac (applies graphics/log/sound changes). |
+| `gpu reims\|vmware\|std` | Graphics for the next launch. |
+| `verbose on\|off`, `audio on\|off` | Startup log / sound. |
+| `usb [list\|attach\|detach\|always\|forget] [VVVV:PPPP]` | USB passthrough. |
+| `wifi [status\|pick\|list]` | Host Wi-Fi. |
+| `maclog [tail\|oc\|err\|launch\|qemu\|all]` | Boot / launcher logs. |
+| `macdiag [usb]` | Full diagnostics bundle (optionally onto a USB drive). |
+| `macstatus` | Current settings and VM disk state. |
+| `erasevm [-y]` | Delete the Mac (disk, recovery, NVRAM) so the first-run wizard runs again. |
+
+## Troubleshooting
+
+- **Black screen / stuck Mac:** Settings › Mac › Restart the Mac, or
+  `relaunch`. If Reims shows nothing, switch Displays › Graphics to VMware
+  (works everywhere, no acceleration) and collect logs.
+- **Logs:** `~/mac-vm.log` (launcher: exact QEMU command line, why QEMU
+  ended), `~/mac-vm-serial.log` (macOS kernel, with Detailed logs),
+  `~/mac-vm-qemu.log` (QEMU / Reims messages), `/tmp/reims-vgpu-fail.log`
+  (Reims translation refusals), `~/usb-auto.log`. `macdiag` bundles them all
+  with host info; Maintenance › Save diagnostics copies the bundle to a drive.
+  A bundle is also saved to any USB drive after every Mac session.
+- **Something fails the same way 5 times in a row:** the launcher stops and
+  leaves the screen still, so the terminal (Ctrl+Alt+T) stays usable.
+
+## How it works
+
+```
+ISO (live, from USB) ── install-wizard.sh: GParted → pick partitions → rsync
+                        the live system → postinstall/ (chroot: user "mac",
+                        hardware detection, GRUB, kiosk autologin)
+
+Installed system: tty1 autologin → startx → .xinitrc
+  openbox (locked down: no desktop, no stray shortcuts) + picom (animations)
+  + displays.py watch + usb-auto-watch + brightness restore + battery guard
+  └─ mac-vm-launch.sh (loop)
+       no Mac yet → macos-source-wizard.sh
+       pick resources / OpenCore image / model / graphics / sound / USB
+       QEMU (KVM, OpenCore, Reims host window or SDL) ── QMP ── qmp-watch.py
+         guest-shutdown → power off · guest-reset → start the Mac again
+         anything else → relaunch (5 fast failures → stop and wait)
+```
+
+- **Panel:** `opt/layerosx/panel/layerosx_backend.py` holds all the logic (one
+  `Backend` class with a fixed allow-list of actions; also a JSON CLI used by
+  the shell scripts); `layerosx_panel.py` is only the front-end. A planned
+  in-macOS menu-bar app would be a second front-end on the same backend.
+- **OpenCore:** images per CPU family (`OpenCore`, AMD 2/4/8-core with
+  AMD_Vanilla patches), each also `-verbose` and `-diag`; the Mac model is
+  written into a cached copy (`lib/oc-model.sh`, qemu-img + mtools).
+- **Reims:** runs in its own Vulkan window (`REIMS_VGPU_WINDOW=1`, QEMU
+  `-display none`). Our QEMU build keeps Reims' `host-window` feature and
+  applies `archiso/patches/reims/*.patch`. Shader translation needs `llvm-dis`
+  and `spirv-val` at runtime (in the ISO). The bundled Debian libraries are
+  linked in only where the host lacks them (`lib/qemu-libdir.sh`), so the
+  host's own Vulkan drivers win.
+- **State:** `/var/lib/layerosx/` — `macos.qcow2`, `OVMF_VARS.fd`,
+  `macos-recovery.qcow2`, and one small file per setting (`gfx`, `verbose`,
+  `audio`, `audio-output`, `audio-volume`, `usb-auto`, `usb-passthrough`,
+  `usb-keep-on-linux`, `cpu-cores`, `ram-mb`, `mac-model`, `reims-gpu`,
+  `display-*`, `diag-logs`, `vt-switch`, `maint-password`, …). Absent file =
+  default.
+
+## Build
+
+Needs an Arch-based Linux with `archiso` and Docker (for the one-time QEMU
+build). On Arch/CachyOS:
+
+```sh
+git clone https://github.com/vinioliveiras/LayerOSX.git
+cd LayerOSX
+./rebuild.sh
+```
+
+`rebuild.sh` runs `setup-build-host.sh` (installs `archiso docker
+docker-buildx qemu-img mtools git python curl`, starts Docker, checks for
+~30 GB free) and then `archiso/build.sh`. The first build compiles QEMU +
+Reims in Docker (**30–60+ min**); later builds reuse it. The ISO lands in
+`archiso/out/`.
+
+Build options (environment variables):
+
+| Variable | Default | |
+|---|---|---|
+| `LAYEROSX_TERMINAL` | `open` | `off` removes the maintenance terminal entirely. |
+| `LAYEROSX_MAC_MODEL` | `MacBookPro16,2` | Default Mac model baked into OpenCore. |
+| `LAYEROSX_BOOT_COLOR` | `1C1C1C` | Colour of the first (firmware) screen. |
+| `LAYEROSX_REIMS_HOST_WINDOW` | `1` | `0` builds Reims without its own window (SDL only). |
+
+On Windows, the same works inside WSL2 (`wsl --install -d ArchLinux`), cloned
+into WSL's own filesystem (not `/mnt/c`), since the ISO build needs loop
+devices.
+
+**Gotchas:** scripts must keep their exec bit (`git ls-files -s | grep -E
+'\.(sh|py)$' | grep ^100644` should print nothing); Docker must use BuildKit
+(`prepare-qemu-macos.sh` forces it).
+
+## Testing
+
+- [docs/CHECKLIST.md](docs/CHECKLIST.md) — what to check on hardware, per
+  feature.
+- `tools/run-mac-here.sh` — run an installed LayerOSX's Mac on the build
+  machine itself (read-only snapshot of the partition; `--gfx`, `--gpu`,
+  `--model`, `--cores`, `--ram`, …). Logs in `test-runs/`.
+- `tools/preview-panel.sh` — the Settings window on any desktop, dry run.
+- `tools/test-panel.sh` / `python3 -m unittest` in `tests/panel` — backend
+  tests against a fake machine (sysfs, `/proc/asound`, nmcli, amixer, QMP).
+
+## Repository layout
+
+- `archiso/` — the archiso profile. `build.sh`, `prepare-qemu-macos.sh`
+  (QEMU + Reims build), `prepare-opencore.sh` and `patch-opencore-*.sh`
+  (OpenCore images), `patches/reims/` (our Reims patches), `packages.x86_64`.
+- `archiso/airootfs/opt/layerosx/kiosk/` — launcher, installer, first-run
+  wizard, QMP watcher, `lib/` helpers.
+- `archiso/airootfs/opt/layerosx/panel/` — LayerOSX Settings (backend + UI).
+- `archiso/airootfs/root/postinstall/` — runs once, chrooted, on the
+  installed system.
+- `archiso/airootfs/usr/local/bin/` — the terminal commands.
+- `tests/`, `tools/`, `docs/CHECKLIST.md`, `DEVLOG.md`.
+
+## TODO
+
+- **Bluetooth audio through Linux** — bluez + PipeWire in the kiosk, QEMU's
+  audio on the `pipewire` backend when a Bluetooth sink is chosen, a Bluetooth
+  section in Settings (scan, pair, connect, battery) and the volume slider on
+  the PipeWire sink. Watch A2DP latency, reconnect after reboot, the mic
+  (HFP) later. Today: a Broadcom (BCM20702) USB dongle goes to the Mac with
+  automatic USB and pairs in macOS.
+- **Caps Lock out of sync** — Linux's Caps Lock (the LED) and the Mac's can
+  disagree. Reims patch: track the Mac's state and send a Caps tap when it
+  differs from the host's before forwarding a key.
+- **Reims frame rate** — Reims advertises 120 Hz, but we measured ~30. Check
+  picom compositing over the Mac window (the 1×1 animation helper window,
+  vsync), and log a frame counter.
+- **Reboot from the terminal hangs** — the launcher should exit when the
+  system is stopping and stop QEMU cleanly through QMP.
+- **Installer and first-run wizard in GTK** — one window like Settings (steps,
+  guided disk page with GParted as "Advanced…", real progress bars), zenity as
+  fallback.
+- **Update without the USB** — today an update is "reinstall, Keep my Mac";
+  later a downloadable, signed update (A/B root or pacman-based), with kernel
+  + NVIDIA moving together.
+- **Easy dependency updates** — one command to bump qemu-macos/Reims, the
+  OpenCore pin and AMD_Vanilla patches; forks or a release archive so a
+  deleted upstream repo can't break the build.
+- **Per-install SMBIOS identity** — unique serial/MLB/UUID per install
+  (iMessage/App Store).
+- **Host disks in macOS** — an SMB share over the NAT link first; read-only
+  disk passthrough later.
+- **LayerOSX menu-bar app in macOS** — Wi-Fi, battery, brightness, Bluetooth,
+  USB from inside the Mac, through a small host helper using the same
+  `Backend` allow-list.
+- **Smaller items** — battery level inside macOS; macOS Sleep → host suspend;
+  qcow2 snapshots before macOS updates; OpenCore picker default/timeout;
+  pre-boot cursor duplication; tty2 refresh rate.

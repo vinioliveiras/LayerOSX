@@ -1,4 +1,17 @@
-# LayerOSX
+# LayerOSX — development log
+
+The project's history, in the order it happened: every bug, root cause,
+gotcha and feature, with the reasoning behind each decision. It was the
+README until September 2026. For how LayerOSX works **today**, read
+[README.md](README.md); come here for the *why*.
+
+Sections near the top describe early states that later sections replace
+(e.g. the release/debug build modes, VMware as the default display, Restart
+rebooting the computer). When two sections disagree, the later one wins.
+
+---
+
+## Original introduction
 
 An installer ISO for a deliberately empty Arch Linux whose only job is
 to boot straight into an accelerated macOS VM (via
@@ -3778,3 +3791,16 @@ backend for voice 'usb-audio'") and the Mac had no sound.
   attaches a device on the QEMU command line, built-in ones included.
 - `macdiag` has a USB section. Tests: 54.
 
+
+## README split: current state in README.md, history here
+
+The README had grown to ~3,800 lines, almost all of it this log. It moved here
+verbatim (`git mv`, so `git log --follow DEVLOG.md` keeps its history) and a
+new ~270-line README describes only how LayerOSX works today: install
+(incl. Keep my Mac), first boot, shortcuts, Settings, commands,
+troubleshooting, architecture, build options, testing, layout and a
+refreshed TODO (done items dropped; Bluetooth audio, Caps Lock sync, Reims
+frame rate and the terminal-reboot hang added). Code comments and
+docs/CHECKLIST.md that pointed at README.md for background now point here.
+From now on a change updates the README where behaviour changes and adds a
+short entry here.

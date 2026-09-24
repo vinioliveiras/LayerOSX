@@ -6,7 +6,7 @@
 # half-finished VM disk. Usage: erasevm [-y|--force]
 #
 # NVRAM (OVMF_VARS.fd) has to go too, not just the disk: it remembers
-# OpenCore's last boot choice (see README.md's OpenCore/SMBIOS
+# OpenCore's last boot choice (see DEVLOG.md's OpenCore/SMBIOS
 # section), which can point at nothing useful once the disk it
 # pointed at is gone.
 #

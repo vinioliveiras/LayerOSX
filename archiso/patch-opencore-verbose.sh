@@ -11,7 +11,7 @@
 #     logging (serial=3 debug=0x108 keepsyms=1), turns on OpenCore's own Misc>
 #     Debug logging, and enables kholia's kernel serial patches so XNU's log
 #     reaches the serial port. This is the "show me everything, find the hang"
-#     image -- see README.md / CLAUDE.md. (No OpenCore BINARY swap: it caused an
+#     image -- see DEVLOG.md / CLAUDE.md. (No OpenCore BINARY swap: it caused an
 #     "Already started" halt and the kernel log doesn't need it -- see below.)
 #
 # Everything diagnostic lives only in the debug-flavour image (OpenCore*-diag),
