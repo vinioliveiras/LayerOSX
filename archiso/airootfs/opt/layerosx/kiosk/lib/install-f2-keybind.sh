@@ -192,6 +192,22 @@ if "layerosx-dialogs-above" not in content and "</applications>" in content:
     )
     content = content.replace("</applications>", rules + "</applications>", 1)
 
+# 9) layerosx_style.present_animated()'s 1x1 helper ("layerosx-kick"): it must
+#    sit ABOVE the fullscreen VM for picom to redirect the screen (so the
+#    panel's open animation plays), but never take focus or be seen -- parked
+#    at 0,0, undecorated (picom also makes it fully transparent).
+if "layerosx-kick" not in content and "</applications>" in content:
+    rules = (
+        '  <application title="layerosx-kick"> <!-- layerosx-kick -->\n'
+        "    <decor>no</decor>\n"
+        "    <focus>no</focus>\n"
+        "    <layer>above</layer>\n"
+        "    <skip_taskbar>yes</skip_taskbar>\n"
+        '    <position force="yes"><x>0</x><y>0</y></position>\n'
+        "  </application>\n"
+    )
+    content = content.replace("</applications>", rules + "</applications>", 1)
+
 if content != original:
     path.write_text(content, encoding="utf-8")
 PYEOF

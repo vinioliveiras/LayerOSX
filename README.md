@@ -3306,3 +3306,38 @@ the Mac and what the others do**.
   unplugged → `--auto`, apply moves the mouse) — 33 total; the panel under
   Xvfb with two fake screens. Not yet on real monitors.
 
+## Window animations (GNOME-style open/close)
+
+LayerOSX's own windows (Settings, Terminal, zenity dialogs, GParted) now open
+and close like GNOME's: opening scales up from 50% while fading in (0.15 s,
+ease-out-expo — GNOME Shell's `_mapWindow`), closing shrinks to 80% while
+fading out (0.15 s, ease-out-quad — `_destroyWindow`). The Mac's window is
+never animated.
+
+- It's picom 12's animation scripts, in window rules (`rules = (...)` in
+  `kiosk/picom.conf`). picom 12 ignores the old per-window options
+  (`rounded-corners-exclude`, ...) once `rules` is used, so the rounded-corner
+  exclusions moved into rules too (CSD GTK windows, the Mac's window,
+  anything fullscreen). The config loads with no warnings on picom 12.5.
+- **The catch, and the fix:** picom runs with `unredir-if-possible`, so while
+  the fullscreen Mac is on top the screen isn't composited at all (the VM's
+  latency is untouched). A window mapped then is drawn before picom redirects
+  the screen, and its open animation is skipped — reproduced under Xvfb with
+  a fullscreen window. `layerosx_style.present_animated()` (used by Settings
+  and Terminal) first maps a 1×1 helper window titled `layerosx-kick`
+  (openbox: above, no focus, at 0,0; picom: 1% opacity — at 0 it isn't
+  painted and doesn't trigger the redirect), which makes picom redirect; the
+  real window is presented 80 ms later and animates. Outside the kiosk
+  (repo previews: no `/etc/layerosx/mode`) it's a plain `present()`;
+  `LAYEROSX_NO_KICK=1` disables it.
+- Closing needs no trick: the panel is on screen, so the screen is still
+  composited when it closes; picom finishes the animation, then unredirects.
+- Not animated over the Mac: zenity dialogs and GParted opened while the Mac
+  is fullscreen (they don't go through `present_animated()`), and a hidden
+  panel shown again by the hotkey. They still get the close animation.
+- Verified with picom 12.5 built from source, under Xvfb: open and close
+  start for "LayerOSX Settings" over a fullscreen window, not for the
+  "Reims vGPU" window; the panel ends fully opaque; without the helper (or
+  with the helper at opacity 0) the open animation doesn't start. Needs
+  picom ≥ 12 (Arch ships 12.x).
+

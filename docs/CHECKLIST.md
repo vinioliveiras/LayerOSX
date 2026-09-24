@@ -1048,6 +1048,20 @@ allow-list and anything not coming from the guest.)
 - Automatic: nothing is changed (same as before this feature).
 - Ctrl+Alt+W on the Mac's screen still opens the panel there.
 
+### 5.4m. Window animations (picom 12)
+
+- `picom --version` on the installed system is 12 or newer, and
+  `~/picom.log` has no warnings about `rules` / deprecated options.
+- Ctrl+Alt+W over the running Mac: the panel grows in from the centre with a
+  fade (quick, ~0.15 s); closing it (red light) shrinks it with a fade. Same
+  for Ctrl+Alt+T (terminal).
+- No stray pixel/flash in the top-left corner when it opens (the 1×1
+  `layerosx-kick` helper), and focus ends up in the panel.
+- The Mac's window never animates (starting/restarting the Mac: no zoom).
+- Mac still smooth with the panel closed (picom unredirects: no extra
+  latency); `echo off > /var/lib/layerosx/compositor` + reboot still turns
+  it all off.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

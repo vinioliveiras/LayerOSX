@@ -29,7 +29,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from layerosx_backend import Backend  # noqa: E402
-from layerosx_style import apply_theme, install_css, traffic_lights  # noqa: E402
+from layerosx_style import apply_theme, install_css, present_animated, traffic_lights  # noqa: E402
 
 APP_ID = "org.layerosx.Settings"
 REFRESH_SECONDS = 5
@@ -1122,7 +1122,7 @@ class App(Adw.Application):
         backend = Backend()
         theme = backend.panel_theme()
         apply_theme(theme)
-        Settings(app, backend).present()
+        present_animated(Settings(app, backend))
 
 
 def main():

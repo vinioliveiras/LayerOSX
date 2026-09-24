@@ -30,7 +30,7 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango, Vte  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from layerosx_backend import Backend  # noqa: E402
-from layerosx_style import apply_theme, install_css, traffic_lights  # noqa: E402
+from layerosx_style import apply_theme, install_css, present_animated, traffic_lights  # noqa: E402
 
 TITLE = "LayerOSX — terminal"
 
@@ -148,7 +148,7 @@ class App(Adw.Application):
         install_css(CSS)
         theme = Backend().panel_theme()
         apply_theme(theme)
-        Terminal(app, self.log, theme).present()
+        present_animated(Terminal(app, self.log, theme))
 
 
 def main():

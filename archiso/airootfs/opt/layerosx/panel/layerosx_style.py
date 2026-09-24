@@ -5,11 +5,15 @@ the macOS-style "traffic light" window controls, theme handling and the CSS
 provider. Imported by layerosx_panel.py and layerosx_terminal.py so every
 LayerOSX window has the same frame.
 """
+import os
+
 import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
+
+KICK_TITLE = "layerosx-kick"   # matched by picom.conf and openbox's rc.xml rules
 
 TRAFFIC_CSS = """
 /* macOS-style window controls ("traffic lights"). Every state is spelled out
@@ -88,3 +92,38 @@ def traffic_lights(on_close, on_hide, on_zoom=None, dark=False) -> Gtk.Box:
             b.set_can_target(False)
         box.append(b)
     return box
+
+
+def _in_kiosk() -> bool:
+    """True on an installed/live LayerOSX (the build bakes /etc/layerosx/mode);
+    False when previewing from the repo on a normal desktop."""
+    return os.path.exists(os.environ.get("LAYEROSX_ETC_DIR", "/etc/layerosx") + "/mode")
+
+
+def present_animated(win: Gtk.Window, delay_ms: int = 80) -> None:
+    """Present `win` so picom's open animation (kiosk/picom.conf) plays even
+    over the fullscreen Mac.
+
+    picom runs with unredir-if-possible: while the VM's fullscreen window is on
+    top, the screen isn't composited at all, and a window mapped then has its
+    first frames drawn before picom redirects the screen -- so its "open"
+    animation is skipped. Mapping a 1x1 helper window first (KICK_TITLE: 1% opaque
+    via picom -- 0 would not be painted and wouldn't redirect -- parked at 0,0
+    above everything by openbox) makes
+    picom redirect the screen; the real window is presented `delay_ms` later and
+    animates. Verified with picom 12.5 under Xvfb against a fullscreen window.
+    Outside the kiosk (repo previews) it's a plain present()."""
+    if not _in_kiosk() or os.environ.get("LAYEROSX_NO_KICK") == "1":
+        win.present()
+        return
+    kick = Gtk.Window(title=KICK_TITLE, decorated=False, resizable=False,
+                      default_width=1, default_height=1)
+    kick.set_can_focus(False)
+    kick.present()
+
+    def show():
+        win.present()
+        GLib.timeout_add(500, lambda: (kick.destroy(), False)[1])
+        return False
+    GLib.timeout_add(delay_ms, show)
+
