@@ -114,7 +114,7 @@ From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
 | `gpu reims\|vmware\|std` | Graphics for the next launch. |
 | `verbose on\|off`, `audio on\|off` | Startup log / sound. |
 | `usb [list\|attach\|detach\|always\|forget] [VVVV:PPPP]` | USB passthrough. |
-| `wifi [status\|pick\|list]` | Host Wi-Fi. |
+| `wifi [status\|pick\|list]` | Host Wi-Fi (`pick` opens Settings › Wi-Fi). |
 | `maclog [tail\|oc\|err\|launch\|qemu\|all]` | Boot / launcher logs. |
 | `macfps [--once]` | The Mac's frame rate on Reims, live. |
 | `echo N > /var/lib/layerosx/audio-buffer-ms` | Sound buffer in ms (default 128; then `relaunch`). |

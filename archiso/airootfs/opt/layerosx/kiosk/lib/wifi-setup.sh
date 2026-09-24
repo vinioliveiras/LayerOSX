@@ -49,13 +49,31 @@ _wifi_scan() {
     ' | sort -t "$(printf '\t')" -k2,2 -rn
 }
 
+# Signal as filled/empty bars (zenity lists are text-only; the GTK picker in
+# LayerOSX Settings uses real Wi-Fi icons and is preferred, see _wifi_pick_gui).
 _wifi_bars() {
     local sig="$1"
-    if   [ "$sig" -ge 80 ]; then printf '((((' # excellent
-    elif [ "$sig" -ge 60 ]; then printf '((( '
-    elif [ "$sig" -ge 40 ]; then printf '((  '
-    else                          printf '(   '
+    if   [ "$sig" -ge 80 ]; then printf '▂▄▆█'   # excellent
+    elif [ "$sig" -ge 60 ]; then printf '▂▄▆▁'
+    elif [ "$sig" -ge 40 ]; then printf '▂▄▁▁'
+    else                          printf '▂▁▁▁'
     fi
+}
+
+# The Wi-Fi picker of LayerOSX Settings (GTK4: real Wi-Fi icons, same look as
+# every other LayerOSX window), opened on its Wi-Fi page. Blocks until that
+# window is closed, then returns 0 if Wi-Fi is connected. Returns 2 when the
+# panel can't run here (no GTK4/libadwaita, no X, or root on the live ISO) so
+# the caller falls back to the zenity list.
+_wifi_pick_gui() {
+    local panel=/opt/layerosx/panel/layerosx_panel.py lock="/tmp/layerosx-panel-$(id -u).lock"
+    [ -n "${DISPLAY:-}" ] && [ "$(id -u)" != 0 ] && [ -r "$panel" ] || return 2
+    python3 -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1"); from gi.repository import Gtk, Adw' 2>/dev/null || return 2
+    LAYEROSX_PANEL_PAGE=wifi /opt/layerosx/kiosk/lib/panel.sh
+    # Settings may already have been open (panel.sh then only raised it):
+    # wait for that window to close as well.
+    flock "$lock" true 2>/dev/null
+    [ -n "$(_wifi_current)" ]
 }
 
 _wifi_connect() {
@@ -89,6 +107,9 @@ _wifi_current() {
 
 _wifi_pick_and_connect() {
     _wifi_radio_on
+    local gui=0
+    _wifi_pick_gui || gui=$?
+    case "$gui" in 0) return 0 ;; 1) return 1 ;; esac   # 2 = no GTK picker here
 
     local -A sec_of=()
     local rows=() ssid signal sec bars secured current header

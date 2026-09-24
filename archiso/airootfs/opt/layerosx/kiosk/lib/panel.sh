@@ -9,7 +9,7 @@ LIB=/opt/layerosx/kiosk/lib
 LOG="$HOME/panel.log"
 
 # Already open (maybe hidden behind the VM after a click on it)? Bring it back.
-if ! ( flock -n 9 ) 9>"/tmp/layerosx-panel-$(id -u).lock" 2>/dev/null; then
+if ! flock -n "/tmp/layerosx-panel-$(id -u).lock" true 2>/dev/null; then
     "$LIB/raise-window.sh" '^LayerOSX Settings$' && exit 0
 fi
 

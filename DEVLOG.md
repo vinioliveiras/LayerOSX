@@ -3982,3 +3982,25 @@ effects off (picom stopped) they are square, and GTK decides this when a
 window opens — a window opened while effects were off stays square until
 reopened. Not a bug in itself; noted in the README.
 
+## The installer looks like the installed system; Wi-Fi picker with real icons
+
+**Installer windows.** The live ISO's session ran openbox only: no picom, so
+no rounded corners or open/close animations, and `install-wizard.sh` forced a
+black-and-white GTK theme (`GTK_THEME=Adwaita:dark` + a gtk-3.0 CSS) from the
+early days. The installed system's dialogs (default Adwaita, rounded and
+animated by picom) looked better. Now the live `.xinitrc` exports the same
+no-portal variables and starts picom with the kiosk's `picom.conf`, and the
+installer no longer forces its theme (and removes the CSS older sessions
+left). The openbox rules (centering, above the fullscreen window) were
+already shared.
+
+**Wi-Fi signal.** The zenity picker showed signal as `((((` / `(((` … . Where
+it can, the picker is now LayerOSX Settings opened on its Wi-Fi page (GTK4,
+real `network-wireless-signal-*` icons, lock icons) — the first-run wizard's
+"Set up Wi-Fi", the `wifi pick` command and anything else calling
+`_wifi_pick_and_connect`; it waits until that window closes (also if
+Settings was already open) and reports whether Wi-Fi is connected. The
+zenity list stays as the fallback (no GTK4, root on the live ISO, the zenity
+kiosk menu) with bar glyphs `▂▄▆█` instead of parentheses. `panel.sh`'s
+"already open?" check now tests the lock without holding it.
+

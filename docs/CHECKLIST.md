@@ -1176,6 +1176,17 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5g. Installer look, Wi-Fi picker
+
+- Live ISO: the installer dialogs and GParted have rounded corners and the
+  open/close animation, same default look as dialogs on the installed system
+  (no black-and-white theme).
+- First run → "Download from Apple" with no internet → "Set up Wi-Fi" opens
+  LayerOSX Settings on Wi-Fi (signal icons); connect, close it → the wizard
+  continues. Same with `wifi pick` in the terminal.
+- Zenity fallback (e.g. `LAYEROSX_NO_GTK` test or the zenity kiosk menu):
+  Signal column shows ▂▄▆█-style bars.
+
 ### 5.5f. One terminal
 
 - Ctrl+Alt+T, click on the Mac (terminal goes behind), Ctrl+Alt+T again:

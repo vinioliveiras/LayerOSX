@@ -17,44 +17,10 @@ LOG=/var/log/layerosx-install.log
 exec > >(tee -a "$LOG") 2>&1
 echo "===== LayerOSX install: $(date -Is) ====="
 
-# Force every zenity/GTK dialog in this script to a black/white look,
-# from the very first one. GTK_THEME=Adwaita:dark picks the theme's
-# own dark variant as a baseline (Adwaita ships built into GTK3, no
-# extra package needed). gtk.css on top then forces the exact colors
-# (pure black / pure white, not Adwaita-dark's default greys) --
-# confirmed on real hardware that this GTK3 build's CSS parser does
-# NOT understand `!important` at all ("Junk at end of value", every
-# single declaration silently dropped whole, not just the
-# `!important` part -- the theme never actually applied). Turns out
-# it was never needed anyway: ~/.config/gtk-3.0/gtk.css is loaded by
-# GTK at GTK_STYLE_PROVIDER_PRIORITY_USER, the highest priority in
-# its whole cascade by definition, so it already wins over the active
-# theme's own styles without any `!important` at all -- once the
-# declarations can actually be parsed.
-export GTK_THEME=Adwaita:dark
-mkdir -p ~/.config/gtk-3.0
-cat > ~/.config/gtk-3.0/settings.ini <<'INI'
-[Settings]
-gtk-application-prefer-dark-theme=1
-INI
-cat > ~/.config/gtk-3.0/gtk.css <<'CSS'
-window, window.background {
-    background-color: #000000;
-}
-label {
-    color: #ffffff;
-}
-progressbar trough {
-    background-color: #1c1c1c;
-    border-style: none;
-    min-height: 6px;
-    border-radius: 0;
-}
-progressbar progress {
-    background-color: #ffffff;
-    border-radius: 0;
-}
-CSS
+# Dialogs use the same look as the installed system (default Adwaita,
+# rounded by picom -- started in the live .xinitrc), not the old forced
+# black-and-white GTK theme. Clear what older live sessions wrote.
+rm -f ~/.config/gtk-3.0/gtk.css ~/.config/gtk-3.0/settings.ini 2>/dev/null || true
 
 # Without this, a failure partway through (mount, rsync, genfstab,
 # arch-chroot, ...) would just get logged and the script would keep
