@@ -55,6 +55,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/fetch-recovery.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/force-max-refresh.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/vt-lock.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/power-mode.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/qemu-libdir.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/oc-model.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/tty2-getty.sh"]="0:0:755"

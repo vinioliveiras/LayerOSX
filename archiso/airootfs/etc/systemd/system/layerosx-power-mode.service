@@ -1,0 +1,10 @@
+[Unit]
+Description=LayerOSX — apply the power mode (Settings > Battery > Power mode)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/layerosx/kiosk/lib/power-mode.sh restore
+
+[Install]
+WantedBy=multi-user.target

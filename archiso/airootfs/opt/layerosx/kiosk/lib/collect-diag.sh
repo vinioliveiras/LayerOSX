@@ -89,6 +89,10 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
     [ -r "$SERIAL_LOG" ] && { grep -a 'OCAK' "$SERIAL_LOG" | tail -40 || echo '(none)'; } \
         || echo '(none — needs debug OpenCore / a debug build with verbose on)'
 
+    _sec "POWER MODE (host CPU clock policy)"
+    /opt/layerosx/kiosk/lib/power-mode.sh status 2>&1
+    grep -H . /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq /sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq 2>/dev/null
+
     _sec "FRAME RATE (Reims window, last 10 s) + window effects"
     python3 /opt/layerosx/panel/layerosx_backend.py fps 2>&1
     echo "window effects (picom): $(cat "$STATE_DIR/compositor" 2>/dev/null || echo on), running: $(pgrep -x picom >/dev/null && echo yes || echo no)"

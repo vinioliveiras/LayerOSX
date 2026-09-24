@@ -56,6 +56,7 @@ systemctl enable layerosx-cleanup.timer
 systemctl enable layerosx-save-logs.service
 # Text consoles lock/unlock (Settings > General), applied before X starts.
 systemctl enable layerosx-vtlock.service
+systemctl enable layerosx-power-mode.service
 
 # The rsync-based install (see install-wizard.sh) copies the running
 # live system's "/" onto the target disk -- but archiso deliberately

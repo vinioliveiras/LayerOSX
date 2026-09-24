@@ -434,7 +434,59 @@ class Settings(Adw.ApplicationWindow):
             r.add_prefix(Gtk.Image.new_from_icon_name(icon))
             p.add(r)
         page.add(p)
+        page.add(self._power_mode_group())
         return self._pane("Battery", page)
+
+    def _power_mode_group(self):
+        g = Adw.PreferencesGroup(
+            title="Power mode",
+            description="How fast this computer's processor runs. macOS can't control it, so it's set "
+                        "here. Performance makes the Mac feel quicker; Power Saver lasts longer on battery.")
+        self.power_row = Adw.ComboRow(title="Mode")
+        self.power_row.add_prefix(Gtk.Image.new_from_icon_name("power-profile-balanced-symbolic"))
+        self._power_values = [m[0] for m in self.b.POWER_MODES]
+        self.power_row.set_model(Gtk.StringList.new([m[1] for m in self.b.POWER_MODES]))
+        self.power_row.connect("notify::selected", self._on_power_mode)
+        g.add(self.power_row)
+        self._sync_power_mode()
+        return g
+
+    def _sync_power_mode(self):
+        cur = self.b.power_mode()
+        self._updating = True
+        try:
+            if self.power_row.get_selected() != self._power_values.index(cur):
+                self.power_row.set_selected(self._power_values.index(cur))
+        finally:
+            self._updating = False
+        run_async(self.b.power_status, self._show_power_status)
+        return False
+
+    def _show_power_status(self, st):
+        if isinstance(st, Exception) or not st:
+            self.power_row.set_subtitle(dict((m[0], m[2]) for m in self.b.POWER_MODES)[self.b.power_mode()])
+            return False
+        names = {m[0]: m[1] for m in self.b.POWER_MODES}
+        now = names.get(st.get("effective", ""), st.get("effective", ""))
+        bits = [f"Now: {now}" + (" (on the charger)" if st.get("saved") == "auto" and st.get("on_ac") == "yes"
+                                 else " (on battery)" if st.get("saved") == "auto" else "")]
+        if st.get("driver"):
+            bits.append(f"{st['driver']} · {st.get('governor', '')}" + (f" · {st['epp']}" if st.get("epp") else ""))
+        if st.get("profile"):
+            bits.append(f"profile {st['profile']}")
+        self.power_row.set_subtitle(" — ".join(bits))
+        return False
+
+    def _on_power_mode(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._power_values):
+            return
+        v = self._power_values[i]
+        ok, msg = self.b.set_power_mode(v)
+        self.after_action(ok, msg, f"Power mode: {row.get_selected_item().get_string()}")
+        GLib.idle_add(self._sync_power_mode)
 
     # ------------------------------------------------------------- Displays
     def _page_displays(self):
@@ -1387,6 +1439,8 @@ class Settings(Adw.ApplicationWindow):
         self.status = s
         net = s.wifi_ssid or ("Wired" if s.wired else "Offline")
         self.side_status.set_label(f"Mac {'running' if s.vm_running else 'stopped'} · {net}")
+        if "battery" in self.pages and hasattr(self, "power_row"):
+            run_async(self.b.power_status, self._show_power_status)   # charger plugged/unplugged
         if "displays" in self.pages and hasattr(self, "fps_label"):
             self._sync_fps()                # refreshed with the 5 s status
         if "sound" in self.pages and hasattr(self, "vol_group"):

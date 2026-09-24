@@ -1,0 +1,3 @@
+# LayerOSX: re-apply the power mode when the charger is plugged in or out, so
+# "Automatic" switches between Performance (charger) and Balanced (battery).
+SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ACTION=="change", RUN+="/opt/layerosx/kiosk/lib/power-mode.sh restore"

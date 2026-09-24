@@ -1102,6 +1102,31 @@ class Backend:
         cap = _read(os.path.join(b, "capacity"))
         return (int(cap) if cap.isdigit() else None), _read(os.path.join(b, "status"))
 
+    # Power mode: the host CPU's clock policy (macOS can't manage it -- its
+    # cores are host threads). kiosk/lib/power-mode.sh does the root part
+    # (cpufreq governor / EPP, ACPI platform_profile); it's applied at boot,
+    # on charger plug/unplug (udev) and from Settings > Battery via sudo.
+    POWER_MODES = (
+        ("auto", "Automatic", "Performance on the charger, Balanced on battery"),
+        ("performance", "Performance", "Highest clocks, fastest response; warmer and louder"),
+        ("balanced", "Balanced", "Clocks up when the Mac needs it"),
+        ("power-saver", "Power Saver", "Lower clocks and fan; longest battery life"),
+    )
+
+    def power_mode(self) -> str:
+        m = _read(os.path.join(self.state_dir, "power-mode"))
+        return m if m in [x[0] for x in self.POWER_MODES] else "auto"
+
+    def power_status(self) -> dict:
+        rc, out = self._run([os.path.join(self.lib, "power-mode.sh"), "status"], changes=False, timeout=5)
+        return dict(l.split("=", 1) for l in out.splitlines() if "=" in l) if rc == 0 else {}
+
+    def set_power_mode(self, mode: str) -> Tuple[bool, str]:
+        if mode not in [x[0] for x in self.POWER_MODES]:
+            return False, f"unknown power mode {mode!r}"
+        rc, out = self._run(["sudo", "-n", os.path.join(self.lib, "power-mode.sh"), "apply", mode], timeout=15)
+        return rc == 0, out.strip()
+
     def brightness(self) -> Optional[int]:
         if not shutil.which("brightnessctl"):
             return None

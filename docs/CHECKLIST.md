@@ -1176,6 +1176,19 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5b. Power mode
+
+- Settings › Battery › Power mode: Automatic by default; the line under it
+  says "Now: Performance (on the charger)" with the driver (amd-pstate-epp),
+  governor/EPP and platform profile.
+- Unplug the charger: within a few seconds it says "Now: Balanced (on
+  battery)" (reopen the section if needed); plug in → Performance again.
+- Pick Power Saver: `cat /sys/devices/system/cpu/cpu0/cpufreq/energy_performance_preference`
+  → `power`; `cat /sys/firmware/acpi/platform_profile` → `quiet` (ASUS) or
+  `low-power`; the fan gets quieter. Performance → governor `performance`.
+- Survives a reboot (`systemctl status layerosx-power-mode` ran OK).
+- With the frame-rate test (5.5a): `macfps` in Performance vs Balanced.
+
 ### 5.5a. Caps Lock sync, frame rate, QEMU rebuild on patch changes
 
 - Build: the first `./rebuild.sh` after this change says "QEMU/Reims inputs

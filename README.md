@@ -88,7 +88,7 @@ banner.
 | Section | What's there |
 |---|---|
 | Wi-Fi | On/off, current network, nearby networks, hidden networks. |
-| Battery | Level, state, what the low-battery guard does. |
+| Battery | Level, state, what the low-battery guard does; **Power mode** — Automatic (Performance on the charger, Balanced on battery), Performance, Balanced, Power Saver. |
 | Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
@@ -98,6 +98,7 @@ banner.
 | About | This computer (model, CPU, RAM, GPUs, disk), the Mac (macOS version, what the VM got), credits. |
 
 Defaults on a new install: Reims graphics, Apple-logo boot, sound on,
+power mode Automatic,
 automatic USB, all cores but 2 (max 8, power of two), RAM minus 12%
 (min 4 GB), no Maintenance password.
 
@@ -167,9 +168,14 @@ Installed system: tty1 autologin → startx → .xinitrc
   and `spirv-val` at runtime (in the ISO). The bundled Debian libraries are
   linked in only where the host lacks them (`lib/qemu-libdir.sh`), so the
   host's own Vulkan drivers win.
+- **CPU clock:** macOS can't manage it (its cores are host threads), so the
+  host does: `lib/power-mode.sh` sets the cpufreq governor / EPP hint and the
+  laptop's ACPI platform profile (fan/power limits) per Settings › Battery ›
+  Power mode — at boot (`layerosx-power-mode.service`), on charger
+  plug/unplug (udev) and from the panel (sudo).
 - **State:** `/var/lib/layerosx/` — `macos.qcow2`, `OVMF_VARS.fd`,
   `macos-recovery.qcow2`, and one small file per setting (`gfx`, `verbose`,
-  `audio`, `audio-output`, `audio-volume`, `usb-auto`, `usb-passthrough`,
+  `audio`, `audio-output`, `audio-volume`, `power-mode`, `compositor`, `usb-auto`, `usb-passthrough`,
   `usb-keep-on-linux`, `cpu-cores`, `ram-mb`, `mac-model`, `reims-gpu`,
   `display-*`, `diag-logs`, `vt-switch`, `maint-password`, …). Absent file =
   default.

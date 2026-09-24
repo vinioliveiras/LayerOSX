@@ -3842,3 +3842,27 @@ the whole X screen — any of those failing means every frame is composited on
 the CPU (xrender). The kick window for the open animation is skipped when
 picom isn't running. Tests: 56.
 
+## Power mode: the host decides the CPU clock
+
+macOS in the VM can't manage the processor's frequency: its cores are host
+threads, it sees a fixed nominal speed, and its power management has no real
+hardware under it. The real clock was left to the kernel's defaults (on the
+Ryzen 7735HS: amd-pstate-epp, whatever EPP/platform profile the firmware
+started with), which can hold back boost or ramp slowly — felt as hitches in
+a VM. Now Settings › Battery › **Power mode** sets it:
+
+- `kiosk/lib/power-mode.sh` (root): Performance → cpufreq governor
+  `performance`; Balanced / Power Saver → `powersave` + EPP
+  `balance_performance` / `power` (amd-pstate-epp, intel_pstate), or
+  `schedutil` / `powersave` on acpi-cpufreq; and the ACPI `platform_profile`
+  (ASUS Silent/Balanced/Turbo etc.: `performance`, `balanced`,
+  `low-power`/`quiet`). Only what the hardware offers is touched.
+- **Automatic** (default): Performance on the charger (or with no battery),
+  Balanced on battery. Re-applied at boot (`layerosx-power-mode.service`) and
+  on charger plug/unplug (`80-layerosx-power-mode.rules`, udev).
+- The panel calls it via `sudo -n` (the kiosk user is in `wheel`); status
+  (driver, governor, EPP, profile, charger) shows under the mode.
+  `macdiag` has a POWER MODE section.
+- Tests: the real script against a fake cpufreq/platform_profile/power_supply
+  tree through the backend (57 tests). Not yet on hardware.
+

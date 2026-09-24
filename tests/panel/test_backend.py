@@ -687,6 +687,56 @@ class TestPerformance(FakeMachine):
         self.assertFalse(os.path.exists(os.path.join(self.state, "compositor")))
 
 
+class TestPowerMode(FakeMachine):
+    def test_modes_via_the_root_helper(self):
+        real = os.path.join(os.path.dirname(__file__), "..", "..", "archiso", "airootfs",
+                            "opt", "layerosx", "kiosk", "lib", "power-mode.sh")
+        write(os.path.join(self.lib, "power-mode.sh"), open(real).read(), stat.S_IRWXU)
+        write(os.path.join(self.bin, "sudo"), '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n', stat.S_IRWXU)
+        cpu = os.path.join(self.tmp, "cpufreq")
+        for i in (0, 1):
+            d = os.path.join(cpu, f"policy{i}")
+            write(os.path.join(d, "scaling_available_governors"), "performance powersave\n")
+            write(os.path.join(d, "scaling_governor"), "powersave\n")
+            write(os.path.join(d, "scaling_driver"), "amd-pstate-epp\n")
+            write(os.path.join(d, "energy_performance_available_preferences"),
+                  "default performance balance_performance balance_power power\n")
+            write(os.path.join(d, "energy_performance_preference"), "balance_performance\n")
+        pp = os.path.join(self.tmp, "platform_profile")
+        write(pp, "balanced\n")
+        write(pp + "_choices", "quiet balanced performance\n")
+        env = {"LAYEROSX_CPUFREQ": cpu, "LAYEROSX_PLATFORM_PROFILE": pp,
+               "LAYEROSX_POWER_RUN": os.path.join(self.tmp, "power-run")}
+        os.environ.update(env)
+        try:
+            b = lb.Backend()
+            self.assertEqual(b.power_mode(), "auto")
+            rd = lambda *p: open(os.path.join(*p)).read().strip()
+            # the fake machine has a battery; put it on the charger
+            write(os.path.join(self.ps, "AC0", "type"), "Mains\n")
+            write(os.path.join(self.ps, "AC0", "online"), "1\n")
+            self.assertTrue(b.set_power_mode("auto")[0])
+            st = b.power_status()
+            self.assertEqual((st["effective"], st["on_ac"]), ("performance", "yes"))
+            self.assertEqual(rd(cpu, "policy1", "scaling_governor"), "performance")
+            self.assertEqual(rd(pp), "performance")
+            self.assertTrue(b.set_power_mode("power-saver")[0])
+            self.assertEqual(lb.Backend().power_mode(), "power-saver")
+            self.assertEqual(rd(cpu, "policy0", "scaling_governor"), "powersave")
+            self.assertEqual(rd(cpu, "policy0", "energy_performance_preference"), "power")
+            self.assertEqual(rd(pp), "quiet")
+            self.assertFalse(b.set_power_mode("turbo")[0])
+            self.assertTrue(b.set_power_mode("auto")[0])
+            self.assertEqual(b.power_mode(), "auto")
+            write(os.path.join(self.ps, "AC0", "online"), "0\n")      # unplugged -> Balanced
+            self.assertTrue(b.set_power_mode("auto")[0])
+            self.assertEqual(rd(cpu, "policy0", "energy_performance_preference"), "balance_performance")
+            self.assertEqual(rd(pp), "balanced")
+        finally:
+            for k in env:
+                os.environ.pop(k, None)
+
+
 class TestDebugToggles(FakeMachine):
     def test_detailed_logs_and_text_consoles(self):
         lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")
