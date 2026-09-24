@@ -512,6 +512,31 @@ configure_toggles() {
         esac
     fi
 
+    # --- Which GPU Reims draws with (Settings > Displays > Graphics card) ------
+    # Reims picks its Vulkan device itself: capable devices only, then by type
+    # (discrete > integrated > virtual > CPU), first-enumerated on a tie -- no
+    # override of its own. So the choice is made one level down: the Vulkan
+    # loader only sees the ICD (driver manifest) named in $STATE_DIR/reims-gpu
+    # (e.g. nvidia_icd.json, radeon_icd.x86_64.json), via VK_DRIVER_FILES (and
+    # the older VK_ICD_FILENAMES). Useful on hybrid laptops where the screen
+    # hangs off the integrated GPU but Reims would pick the dedicated one.
+    # Absent/"auto" or a manifest that no longer exists = Reims' own choice.
+    if [ "$GFX" = "reims-vgpu-pci" ]; then
+        _rg="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || true)"
+        if [ -n "$_rg" ] && [ "$_rg" != auto ]; then
+            _icd=""
+            for _d in /usr/share/vulkan/icd.d /etc/vulkan/icd.d; do
+                [ -f "$_d/$_rg" ] && { _icd="$_d/$_rg"; break; }
+            done
+            if [ -n "$_icd" ]; then
+                REIMS_ENV+=(VK_DRIVER_FILES="$_icd" VK_ICD_FILENAMES="$_icd")
+                echo "Reims: Vulkan limited to $_icd (Settings > Displays > Graphics card)."
+            else
+                echo "Reims: saved graphics card '$_rg' has no Vulkan manifest here -- using Reims' own choice."
+            fi
+        fi
+    fi
+
     # --- Audio (opt-in) ---------------------------------------------------------
     # Off by default. macOS drives a USB Audio Class device with its own built-in
     # AppleUSBAudio driver (no kext, unlike the intel-hda + AppleALC route), so

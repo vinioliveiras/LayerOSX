@@ -1075,6 +1075,18 @@ allow-list and anything not coming from the guest.)
   Reims' host window ... using the QEMU/SDL display" and OpenCore is shown
   (not a black screen).
 
+### 5.4o. Resolution, refresh rate, Reims' GPU (Settings › Displays)
+
+- Screens › Resolution lists the monitor's modes ("(native)" marked),
+  Refresh rate the rates of the selected resolution ("Highest — N Hz" first).
+- Pick a lower rate (e.g. 60 Hz) → Restart Mac → `xrandr` shows it active;
+  rebooting keeps it (force-max-refresh doesn't bump it back).
+- Back to Automatic / Highest → max rate again after Restart Mac.
+- Graphics card lists the GPUs with a Vulkan driver (NVIDIA + AMD on the
+  ASUS); pick one → Restart Mac → `~/mac-vm.log` says "Reims: Vulkan limited
+  to /usr/share/vulkan/icd.d/..." and the cmdline starts with
+  `VK_DRIVER_FILES=...`. Automatic → no such line.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

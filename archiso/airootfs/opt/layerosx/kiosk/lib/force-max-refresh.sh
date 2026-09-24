@@ -26,8 +26,18 @@ command -v xrandr >/dev/null 2>&1 || exit 0
 
 apply_once() {
     python3 - <<'PYEOF'
+import json
 import re
 import subprocess
+
+# Screens with a resolution / refresh rate fixed in LayerOSX Settings >
+# Displays (lib/displays.py, /var/lib/layerosx/display-modes) are the user's
+# choice -- never "correct" them back to the maximum rate.
+try:
+    with open("/var/lib/layerosx/display-modes") as f:
+        FIXED = {k for k, v in json.load(f).items() if isinstance(v, dict) and (v.get("size") or v.get("rate"))}
+except (OSError, ValueError, AttributeError):
+    FIXED = set()
 
 try:
     out = subprocess.run(
@@ -40,7 +50,7 @@ output = None
 for line in out.splitlines():
     m = re.match(r"^(\S+) connected", line)
     if m:
-        output = m.group(1)
+        output = None if m.group(1) in FIXED else m.group(1)
         continue
     if output is None:
         continue

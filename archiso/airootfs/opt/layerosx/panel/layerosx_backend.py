@@ -30,7 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
 HEX4 = re.compile(r"^[0-9a-f]{4}$")
@@ -59,6 +59,18 @@ class Screen:
     primary: bool
     width: int
     height: int
+    rate: float = 0.0            # current refresh rate (Hz)
+    preferred: str = ""          # the monitor's native "WxH"
+    modes: list = field(default_factory=list)   # [{"size": "WxH", "rates": [Hz, ...]}], best first
+
+
+@dataclass
+class ReimsGpu:
+    """A GPU Reims can be pinned to: `id` is its Vulkan ICD manifest's file
+    name (what mac-vm-launch.sh puts in VK_DRIVER_FILES)."""
+    id: str
+    label: str
+    driver: str
 
 
 @dataclass
@@ -407,7 +419,87 @@ class Backend:
         except ValueError:
             data = []
         fields = Screen.__dataclass_fields__
-        return [Screen(**{k: d.get(k) for k in fields}) for d in data if d.get("connected")]
+        return [Screen(**{k: d[k] for k in fields if k in d}) for d in data if d.get("connected")]
+
+    def mac_screen(self, screens: Optional[List[Screen]] = None) -> Optional[Screen]:
+        """The screen the Mac is (or will be) shown on: the chosen one when
+        connected, else the primary, else the first."""
+        screens = self.screens() if screens is None else screens
+        t = self.screen_target()
+        return next((x for x in screens if x.name == t), None) or \
+            next((x for x in screens if x.primary), None) or (screens[0] if screens else None)
+
+    def _modes_state(self) -> dict:
+        try:
+            data = json.loads(_read(os.path.join(self.state_dir, "display-modes")) or "{}")
+        except ValueError:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def screen_mode(self, name: str) -> Tuple[Optional[str], Optional[float]]:
+        """Saved (size, rate) for a screen; None = automatic."""
+        m = self._modes_state().get(name) or {}
+        return m.get("size") or None, m.get("rate") or None
+
+    def set_screen_mode(self, name: str, size: Optional[str], rate: Optional[float]) -> Tuple[bool, str]:
+        """Fix a screen's resolution (None = its native one) and refresh rate
+        (None = the highest for that resolution); both None = automatic."""
+        sc = next((x for x in self.screens() if x.name == name), None)
+        if sc is None:
+            return False, f"screen {name!r} isn't connected"
+        if size or rate:
+            mode = next((m for m in sc.modes if m["size"] == (size or sc.preferred)), None)
+            if mode is None:
+                return False, f"{size} isn't a resolution of {sc.label}"
+            if rate and not any(abs(r - rate) < 0.5 for r in mode["rates"]):
+                return False, f"{rate:g} Hz isn't available at {mode['size']}"
+        data = self._modes_state()
+        if size or rate:
+            data[name] = {"size": size, "rate": rate}
+        else:
+            data.pop(name, None)
+        return self._write_state("display-modes", json.dumps(data) if data else None)
+
+    # Reims' GPU: Vulkan ICD manifests -> the GPUs lspci shows.
+    ICD_VENDORS = (("nvidia", "NVIDIA", "NVIDIA driver"), ("nouveau", "NVIDIA", "NVK (Mesa)"),
+                   ("radeon", "AMD", "RADV (Mesa)"), ("amd_", "AMD", "AMDVLK"),
+                   ("intel", "Intel", "ANV (Mesa)"))
+
+    def reims_gpus(self) -> List[ReimsGpu]:
+        dirs = os.environ.get("LAYEROSX_VK_ICD_DIRS", "/usr/share/vulkan/icd.d:/etc/vulkan/icd.d").split(":")
+        rc, out = self._run(["lspci", "-mm"], changes=False, timeout=10)
+        gpus = []
+        for line in out.splitlines() if rc == 0 else []:
+            f = re.findall(r'"([^"]*)"', line)
+            if len(f) >= 3 and ("VGA" in f[0] or "3D" in f[0] or "Display" in f[0]):
+                gpus.append(_gpu_name(f[1], f[2]))
+        found, seen = [], set()
+        for d in dirs:
+            try:
+                names = sorted(os.listdir(d))
+            except OSError:
+                continue
+            for fn in names:
+                if not fn.endswith(".json") or fn in seen:
+                    continue
+                vendor = next(((b, drv) for key, b, drv in self.ICD_VENDORS if fn.lower().startswith(key)), None)
+                if not vendor:
+                    continue                      # software rasterisers, layers, ...
+                gpu = next((g for g in gpus if g.startswith(vendor[0])), None)
+                if gpu:
+                    seen.add(fn)
+                    found.append(ReimsGpu(fn, gpu, vendor[1]))
+        return found
+
+    def reims_gpu(self) -> str:
+        return _read(os.path.join(self.state_dir, "reims-gpu")) or "auto"
+
+    def set_reims_gpu(self, gpu_id: str) -> Tuple[bool, str]:
+        if gpu_id in ("auto", "", None):
+            return self._write_state("reims-gpu", None)
+        if gpu_id not in [g.id for g in self.reims_gpus()]:
+            return False, f"no such graphics card {gpu_id!r}"
+        return self._write_state("reims-gpu", gpu_id)
 
     def screen_target(self) -> str:
         t = _read(os.path.join(self.state_dir, "display-target"))

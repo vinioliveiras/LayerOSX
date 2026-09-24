@@ -470,6 +470,7 @@ class Settings(Adw.ApplicationWindow):
             g.add(row)
             self.gfx_checks[key] = chk
         page.add(g)
+        page.add(self._reims_gpu_group())
         self._sync_displays()
         return self._pane("Displays", page)
 
@@ -487,6 +488,14 @@ class Settings(Adw.ApplicationWindow):
         self.others_row.add_prefix(Gtk.Image.new_from_icon_name("view-dual-symbolic"))
         self.others_row.connect("notify::selected", self._on_others)
         g.add(self.others_row)
+        self.res_row = Adw.ComboRow(title="Resolution")
+        self.res_row.add_prefix(Gtk.Image.new_from_icon_name("view-fullscreen-symbolic"))
+        self.res_row.connect("notify::selected", self._on_mode)
+        g.add(self.res_row)
+        self.rate_row = Adw.ComboRow(title="Refresh rate")
+        self.rate_row.add_prefix(Gtk.Image.new_from_icon_name("preferences-system-time-symbolic"))
+        self.rate_row.connect("notify::selected", self._on_mode)
+        g.add(self.rate_row)
         self._sync_screens()
         return g
 
@@ -519,9 +528,96 @@ class Settings(Adw.ApplicationWindow):
                               self._others_values.index(others))
             self.others_row.set_sensitive(target != "auto")
             self.others_row.set_visible(len(screens) > 1 or target != "auto")
+            self._sync_modes(screens)
         finally:
             self._updating = False
         return False
+
+    def _sync_modes(self, screens):
+        """Resolution / refresh rate of the Mac's screen (the chosen one, or
+        the primary on Automatic). Called with _updating set."""
+        sc = self.b.mac_screen(screens)
+        self._mode_screen = sc
+        for row in (self.res_row, self.rate_row):
+            row.set_visible(bool(sc and sc.modes))
+        if not sc or not sc.modes:
+            return
+        size, rate = self.b.screen_mode(sc.name)
+        pretty = lambda sz: sz.replace("x", " × ")
+        self._res_values = [None] + [m["size"] for m in sc.modes]
+        self._set_choices(self.res_row,
+                          [f"Automatic — {pretty(sc.preferred)}"] +
+                          [pretty(m["size"]) + (" (native)" if m["size"] == sc.preferred else "") for m in sc.modes],
+                          self._res_values.index(size) if size in self._res_values else 0)
+        self.res_row.set_subtitle(sc.label if len(screens) > 1 else "")
+        eff = size or sc.preferred
+        rates = next((m["rates"] for m in sc.modes if m["size"] == eff), [])
+        hz = lambda r: f"{r:.0f} Hz" if abs(r - round(r)) < 0.05 else f"{r:.2f} Hz"
+        self._rate_values = [None] + rates
+        pick = 0
+        if rate:
+            pick = next((i for i, r in enumerate(self._rate_values) if r and abs(r - rate) < 0.5), 0)
+        self._set_choices(self.rate_row,
+                          [f"Highest — {hz(rates[0])}" if rates else "Highest"] + [hz(r) for r in rates], pick)
+
+    def _on_mode(self, row, _pspec):
+        if self._updating or not getattr(self, "_mode_screen", None):
+            return
+        ri, ti = self.res_row.get_selected(), self.rate_row.get_selected()
+        if ri >= len(self._res_values) or ti >= len(self._rate_values):
+            return
+        size = self._res_values[ri]
+        rate = self._rate_values[ti] if row is self.rate_row else None   # new resolution -> highest rate
+        ok, msg = self.b.set_screen_mode(self._mode_screen.name, size, rate)
+        what = (f"{size.replace('x', ' × ')}" if size else "Resolution: Automatic") + \
+               (f" at {rate:g} Hz" if rate else "")
+        self._resource_changed_screens(ok, msg, what)
+
+    # ------------------------------------------------------- Reims GPU
+    def _reims_gpu_group(self):
+        g = Adw.PreferencesGroup(
+            title="Graphics card",
+            description="Which GPU draws the Mac when Graphics is Reims. Automatic lets Reims choose "
+                        "(it prefers a dedicated GPU). Applies when the Mac restarts.")
+        self.gpu_row = Adw.ComboRow(title="Draw with")
+        self.gpu_row.add_prefix(Gtk.Image.new_from_icon_name("video-display-symbolic"))
+        self.gpu_row.connect("notify::selected", self._on_reims_gpu)
+        g.add(self.gpu_row)
+        self._reims_gpu_list = self.b.reims_gpus()
+        g.set_visible(bool(self._reims_gpu_list))
+        self._sync_reims_gpu()
+        return g
+
+    def _sync_reims_gpu(self):
+        gpus, cur = self._reims_gpu_list, self.b.reims_gpu()
+        self._updating = True
+        try:
+            self._gpu_values = ["auto"] + [x.id for x in gpus]
+            labels = ["Automatic"] + [x.label for x in gpus]
+            if cur not in self._gpu_values:
+                self._gpu_values.append(cur)
+                labels.append(f"{cur} (not found)")
+            self._set_choices(self.gpu_row, labels, self._gpu_values.index(cur))
+            g = next((x for x in gpus if x.id == cur), None)
+            self.gpu_row.set_subtitle(f"{g.driver} · {g.id}" if g else "")
+        finally:
+            self._updating = False
+        return False
+
+    def _on_reims_gpu(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._gpu_values):
+            return
+        v = self._gpu_values[i]
+        ok, msg = self.b.set_reims_gpu(v)
+        self.after_action(ok, msg, ("Reims: Automatic GPU" if v == "auto"
+                                    else f"Reims will draw with {row.get_selected_item().get_string()}")
+                          + " — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        GLib.idle_add(self._sync_reims_gpu)
 
     def _on_screen(self, row, _pspec):
         if self._updating:

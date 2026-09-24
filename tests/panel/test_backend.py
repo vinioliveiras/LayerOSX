@@ -391,7 +391,8 @@ XRANDR = ("Screen 0: minimum 320 x 200, current 4480 x 1600, maximum 16384 x 163
           "   2560x1600    165.00*+  60.00  \n"
           "HDMI-1-0 connected 1920x1080+2560+0 (normal left inverted right) 527mm x 296mm\n"
           "\tEDID: \n" + _edid("LG ULTRAGEAR") +
-          "   1920x1080    144.00*+  60.00  \n"
+          "   1920x1080    144.00*+  60.00    59.94  \n"
+          "   1280x720      60.00  \n"
           "DP-1 disconnected (normal left inverted right x axis y axis)\n")
 
 
@@ -456,6 +457,62 @@ class TestScreens(FakeMachine):
         calls = self.calls()
         self.assertIn("xrandr --output HDMI-1-0 --auto --primary --pos 0x0 --output eDP-1 --off", calls)
         self.assertTrue(any(c.startswith("xdotool mousemove") for c in calls))
+
+
+class TestModesAndGpu(TestScreens):
+    def test_modes_listed(self):
+        sc = {x.name: x for x in lb.Backend().screens()}
+        h = sc["HDMI-1-0"]
+        self.assertEqual((h.preferred, h.rate), ("1920x1080", 144.0))
+        self.assertEqual(h.modes, [{"size": "1920x1080", "rates": [144.0, 60.0, 59.94]},
+                                   {"size": "1280x720", "rates": [60.0]}])
+        self.assertEqual(sc["eDP-1"].modes[0], {"size": "2560x1600", "rates": [165.0, 60.0]})
+
+    def test_set_mode_validates_and_saves(self):
+        b = lb.Backend()
+        self.assertTrue(b.set_screen_mode("HDMI-1-0", "1920x1080", 60.0)[0])
+        self.assertEqual(lb.Backend().screen_mode("HDMI-1-0"), ("1920x1080", 60.0))
+        self.assertFalse(b.set_screen_mode("HDMI-1-0", "3840x2160", None)[0])
+        self.assertFalse(b.set_screen_mode("HDMI-1-0", "1280x720", 144.0)[0])
+        self.assertFalse(b.set_screen_mode("DP-1", "1920x1080", None)[0])
+        self.assertTrue(b.set_screen_mode("HDMI-1-0", None, None)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "display-modes")))
+
+    def test_plan_with_modes(self):
+        outs = self.d.query()
+        # Automatic layout + a fixed rate on the (active) laptop panel
+        self.assertEqual(self.d.plan(outs, "", "off", {"eDP-1": {"size": None, "rate": 60.0}}),
+                         ["--output", "eDP-1", "--mode", "2560x1600", "--rate", "60.00"])
+        # already at that mode -> nothing
+        self.assertEqual(self.d.plan(outs, "", "off", {"HDMI-1-0": {"size": "1920x1080", "rate": None}}), [])
+        # chosen screen + fixed mode: --auto replaced by the mode, others off
+        self.assertEqual(self.d.plan(outs, "HDMI-1-0", "off", {"HDMI-1-0": {"size": "1280x720", "rate": None},
+                                                                 "eDP-1": {"size": None, "rate": 60.0}}),
+                         ["--output", "HDMI-1-0", "--primary", "--pos", "0x0", "--mode", "1280x720",
+                          "--rate", "60.00", "--output", "eDP-1", "--off"])
+        # a mode the screen doesn't have is ignored
+        self.assertEqual(self.d.plan(outs, "", "off", {"HDMI-1-0": {"size": "800x600", "rate": None}}), [])
+
+    def test_reims_gpus_from_icds(self):
+        icd = os.path.join(self.tmp, "icd.d")
+        for fn in ("nvidia_icd.json", "radeon_icd.x86_64.json", "lvp_icd.x86_64.json", "intel_icd.x86_64.json"):
+            write(os.path.join(icd, fn), "{}")
+        os.environ["LAYEROSX_VK_ICD_DIRS"] = icd
+        try:
+            b = lb.Backend()
+            gpus = b.reims_gpus()
+            # llvmpipe skipped; Intel skipped (no Intel GPU in lspci)
+            self.assertEqual([(g.id, g.label, g.driver) for g in gpus],
+                             [("nvidia_icd.json", "NVIDIA GeForce RTX 4060 Max-Q / Mobile", "NVIDIA driver"),
+                              ("radeon_icd.x86_64.json", "AMD Radeon 680M", "RADV (Mesa)")])
+            self.assertEqual(b.reims_gpu(), "auto")
+            self.assertTrue(b.set_reims_gpu("radeon_icd.x86_64.json")[0])
+            self.assertEqual(lb.Backend().reims_gpu(), "radeon_icd.x86_64.json")
+            self.assertFalse(b.set_reims_gpu("intel_icd.x86_64.json")[0])
+            self.assertTrue(b.set_reims_gpu("auto")[0])
+            self.assertFalse(os.path.exists(os.path.join(self.state, "reims-gpu")))
+        finally:
+            os.environ.pop("LAYEROSX_VK_ICD_DIRS", None)
 
 
 class TestTheme(FakeMachine):

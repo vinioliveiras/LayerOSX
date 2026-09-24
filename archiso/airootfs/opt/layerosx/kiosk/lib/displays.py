@@ -8,10 +8,15 @@ one shows it and what the others do. The choice lives in the state dir:
   display-target   xrandr output name (e.g. HDMI-1-0), absent/"auto" = leave
                    Xorg's own layout alone (the pre-existing behaviour)
   display-others   "off" (default) or "mirror" (same picture as the Mac's screen)
+  display-modes    JSON {output: {"size": "WxH" | null, "rate": Hz | null}} --
+                   a fixed resolution / refresh rate per screen (null size =
+                   the screen's preferred resolution, null rate = the highest
+                   that resolution supports). Absent = automatic.
 
 Commands:
   list    JSON list of outputs: name, label, builtin, connected, active,
-          primary, width, height, x, y (label = EDID monitor name when there
+          primary, width, height, x, y, rate (current Hz), preferred ("WxH"),
+          modes ([{size, rates}] best first) (label = EDID monitor name when there
           is one, else "Built-in display" / "HDMI" / "DisplayPort" ...)
   apply   put the Mac's screen at 0,0 as primary and turn off / mirror the
           others; if the saved screen isn't connected, turn every connected
@@ -59,6 +64,11 @@ def _edid_name(hexdump):
     return ""
 
 
+def _pixels(size):
+    w, _, h = size.partition("x")
+    return int(w) * int(h) if w.isdigit() and h.isdigit() else 0
+
+
 def query():
     """Parse `xrandr --query --prop` into a list of output dicts."""
     if not shutil.which("xrandr"):
@@ -75,11 +85,31 @@ def query():
             cur = {"name": m.group(1), "connected": m.group(2) == "connected",
                    "primary": bool(m.group(3)), "active": m.group(4) is not None,
                    "width": int(m.group(4) or 0), "height": int(m.group(5) or 0),
-                   "x": int(m.group(6) or 0), "y": int(m.group(7) or 0), "monitor": ""}
+                   "x": int(m.group(6) or 0), "y": int(m.group(7) or 0), "monitor": "",
+                   "rate": 0.0, "preferred": "", "modes": []}
             outs.append(cur)
             edid = None
             continue
         if cur is None:
+            continue
+        mm = re.match(r"^\s+(\d+)x(\d+)\s+(\d.*)$", line)
+        if mm:
+            if edid is not None:          # mode lines end the EDID block
+                cur["monitor"] = _edid_name(edid)
+                edid = None
+            size = f"{mm.group(1)}x{mm.group(2)}"
+            rates = []
+            for r, flags in re.findall(r"(\d+\.\d+)([*+ ]*)", mm.group(3)):
+                rates.append(float(r))
+                if "*" in flags:
+                    cur["rate"] = float(r)
+                if "+" in flags:
+                    cur["preferred"] = size
+            m_old = next((m for m in cur["modes"] if m["size"] == size), None)
+            if m_old:
+                m_old["rates"] = sorted(set(m_old["rates"] + rates), reverse=True)
+            else:
+                cur["modes"].append({"size": size, "rates": sorted(set(rates), reverse=True)})
             continue
         if re.match(r"^\s+EDID:\s*$", line):
             edid = ""
@@ -94,6 +124,9 @@ def query():
     if cur is not None and edid:
         cur["monitor"] = _edid_name(edid)
     for o in outs:
+        o["modes"].sort(key=lambda m: -_pixels(m["size"]))
+        if not o["preferred"] and o["modes"]:
+            o["preferred"] = o["modes"][0]["size"]
         o["builtin"] = bool(BUILTIN.match(o["name"]))
         kind = "Built-in display" if o["builtin"] else next(
             (label for pre, label in KINDS if o["name"].upper().startswith(pre.upper())), o["name"])
@@ -109,36 +142,79 @@ def settings():
     return ("" if target in ("", "auto") else target), others
 
 
-def plan(outs, target, others):
+def saved_modes():
+    try:
+        data = json.loads(_read("display-modes") or "{}")
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def wanted_mode(o, choice):
+    """(size, rate) a saved choice resolves to on output `o`, or None when the
+    choice is automatic or doesn't fit this screen (unplugged monitor swapped
+    for another one on the same port, ...)."""
+    if not isinstance(choice, dict) or (not choice.get("size") and not choice.get("rate")):
+        return None
+    size = choice.get("size") or o.get("preferred")
+    mode = next((m for m in o.get("modes", []) if m["size"] == size), None)
+    if not mode or not mode["rates"]:
+        return None
+    rate = choice.get("rate")
+    if not isinstance(rate, (int, float)) or not any(abs(r - rate) < 0.5 for r in mode["rates"]):
+        rate = mode["rates"][0]
+    else:
+        rate = min(mode["rates"], key=lambda r: abs(r - rate))
+    return size, rate
+
+
+def plan(outs, target, others, modes=None):
     """xrandr arguments that realise the choice, or [] when nothing to do."""
+    modes = modes or {}
     connected = [o for o in outs if o["connected"]]
-    if not target or not connected:
+    if not connected:
         return []
-    t = next((o for o in connected if o["name"] == target), None)
-    if t is None:
+    per = {}                      # output -> its xrandr options, target first
+    t = next((o for o in connected if o["name"] == target), None) if target else None
+    if target and t is None:
         # Saved screen is unplugged: light up every connected screen again,
         # unless they already all are.
-        if all(o["active"] for o in connected):
-            return []
-        return ["--auto"]
-    ok = t["active"] and t["primary"] and (t["x"], t["y"]) == (0, 0)
-    for o in outs:
-        if o is t:
+        if not all(o["active"] for o in connected):
+            return ["--auto"]
+    if t is not None:
+        ok = t["active"] and t["primary"] and (t["x"], t["y"]) == (0, 0)
+        for o in outs:
+            if o is t:
+                continue
+            if others == "off" or not o["connected"]:
+                ok = ok and not o["active"]
+            else:
+                ok = ok and o["active"] and (o["x"], o["y"]) == (0, 0)
+        if not ok:
+            per[t["name"]] = ["--auto", "--primary", "--pos", "0x0"]
+            for o in outs:
+                if o is t:
+                    continue
+                if others == "mirror" and o["connected"]:
+                    per[o["name"]] = ["--auto", "--same-as", t["name"]]
+                elif o["active"] or o["connected"]:
+                    per[o["name"]] = ["--off"]
+    # Fixed resolution / refresh rate (Settings > Displays > Screens).
+    for o in connected:
+        want = wanted_mode(o, modes.get(o["name"]))
+        if not want:
             continue
-        if others == "off" or not o["connected"]:
-            ok = ok and not o["active"]
-        else:
-            ok = ok and o["active"] and (o["x"], o["y"]) == (0, 0)
-    if ok:
-        return []
-    args = ["--output", t["name"], "--auto", "--primary", "--pos", "0x0"]
-    for o in outs:
-        if o is t:
-            continue
-        if others == "mirror" and o["connected"]:
-            args += ["--output", o["name"], "--auto", "--same-as", t["name"]]
-        elif o["active"] or o["connected"]:
-            args += ["--output", o["name"], "--off"]
+        if per.get(o["name"]) == ["--off"] or (o["name"] not in per and not o["active"]):
+            continue                                  # screen is (being) turned off
+        size, rate = want
+        mode_args = ["--mode", size, "--rate", f"{rate:.2f}"]
+        if o["name"] in per:
+            per[o["name"]] = [a for a in per[o["name"]] if a != "--auto"] + mode_args
+        elif not (o["active"] and f'{o["width"]}x{o["height"]}' == size and abs(o["rate"] - rate) < 0.5):
+            per[o["name"]] = mode_args
+    args = []
+    for name, opts in per.items():
+        args += ["--output", name] + opts
     return args
 
 
@@ -168,7 +244,7 @@ def follow(outs, target):
 def apply(quiet=False):
     target, others = settings()
     outs = query()
-    args = plan(outs, target, others)
+    args = plan(outs, target, others, saved_modes())
     if args:
         if not quiet:
             print("displays: xrandr " + " ".join(args))
@@ -176,12 +252,13 @@ def apply(quiet=False):
         time.sleep(1)
         outs = query()
         # --auto picks each screen's preferred mode; bring the refresh rate
-        # back up the way .xinitrc does.
+        # back up the way .xinitrc does (it leaves screens with a fixed
+        # mode in display-modes alone).
         fmr = os.path.join(os.path.dirname(os.path.abspath(__file__)), "force-max-refresh.sh")
         if os.path.exists(fmr):
             subprocess.Popen(["bash", fmr], stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
-    if target:
+    if target or args:
         follow(outs, target)
     return args
 

@@ -2984,7 +2984,7 @@ and does nothing.
 |---|---|
 | Wi-Fi | Wi-Fi on/off (confirms before cutting the Mac off), connection status, current network, other networks with lock/signal icons and **Connect**, **Other…** for hidden networks |
 | Battery | Level + state, and what the low-battery guard does (20/10% warnings, safe shutdown at 5%, last resort at 3%) |
-| Displays | Brightness slider; **Screens** (which monitor shows the Mac, and whether the others turn off or mirror it); Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations |
+| Displays | Brightness slider; **Screens** (which monitor shows the Mac, whether the others turn off or mirror it, and that screen's resolution + refresh rate); Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations; **Graphics card** (which GPU Reims draws with) |
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
 | Mac | Running/stopped, "Show startup log" switch, **Resources** (Processor, "Keep 2 threads for Linux", Memory — Automatic or a fixed value), **Restart Mac…** (the black-screen rescue) |
@@ -3378,4 +3378,40 @@ Fix:
   QEMU build and the window on hardware are still to be confirmed.
 - Needs a QEMU rebuild: `cd archiso && ./prepare-qemu-macos.sh`, then
   `./rebuild.sh`.
+
+## Resolution, refresh rate and Reims' GPU in Settings
+
+**Resolution / refresh rate** (Settings › Displays › Screens, for the Mac's
+screen — the chosen one, or the primary on Automatic):
+
+- Before: Xorg picked each monitor's preferred (EDID) resolution and
+  `force-max-refresh.sh` raised it to the highest refresh rate that
+  resolution supports. That's still what "Automatic" / "Highest" do.
+- Now a resolution and/or refresh rate can be fixed per screen:
+  `/var/lib/layerosx/display-modes` (JSON `{output: {"size": "WxH"|null,
+  "rate": Hz|null}}`). `displays.py apply` sets it with `xrandr --mode --rate`
+  before each launch (no-op when already set; ignored if that monitor doesn't
+  offer the mode), and `force-max-refresh.sh` leaves those screens alone.
+  Picking a new resolution resets the rate to that resolution's highest.
+- This is the physical monitor's mode (Linux side). The Mac's own
+  resolution/scaling is still chosen inside macOS (System Settings ›
+  Displays); the Reims window fills whatever the monitor runs at.
+
+**Graphics card for Reims** (Settings › Displays › Graphics card):
+
+- Reims chooses its Vulkan device itself: devices that clear its capability
+  floor, ranked discrete > integrated > virtual > other > CPU, first
+  enumerated on a tie — no override of its own.
+- LayerOSX narrows what it can see instead: `/var/lib/layerosx/reims-gpu`
+  holds a Vulkan ICD manifest name (`nvidia_icd.json`,
+  `radeon_icd.x86_64.json`, ...), and the launcher sets `VK_DRIVER_FILES` /
+  `VK_ICD_FILENAMES` to it for the QEMU process only. The panel lists each
+  manifest whose vendor has a GPU in `lspci` (software rasterisers skipped),
+  named like About does ("NVIDIA GeForce RTX 4060 …", "AMD Radeon 680M").
+  Automatic = Reims' own choice. Meant for hybrid laptops whose screen hangs
+  off the integrated GPU.
+- Verified: 41 backend tests (modes parsed from `xrandr --query --prop`,
+  mode validation, the xrandr plan with fixed modes, ICD → GPU mapping and
+  validation); the panel under Xvfb (lists, saving, rates following the
+  resolution). Not yet on hardware.
 
