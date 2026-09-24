@@ -240,16 +240,31 @@ devices.
 
 ## TODO
 
+**Priority**
+
+- **YouTube video doesn't play** (Safari, Reims). The Mac has no hardware
+  video decoder: check which codec YouTube serves (VP9/AV1 vs H.264), whether
+  the video layer (2-plane `420f` IOSurfaces seen in the Reims log) is drawn,
+  and compare with VMware graphics to split "decode" from "Reims display".
+- **Audio stutters.** usb-audio on ALSA `plughw`, no sound server. Try larger
+  QEMU ALSA buffers (`out.buffer-length`, `out.period-length`,
+  `timer-period`), check CPU load while it stutters, and whether it matches
+  the frame-rate drops.
+
+**Next**
+
 - **Bluetooth audio through Linux** — bluez + PipeWire in the kiosk, QEMU's
   audio on the `pipewire` backend when a Bluetooth sink is chosen, a Bluetooth
   section in Settings (scan, pair, connect, battery) and the volume slider on
   the PipeWire sink. Watch A2DP latency, reconnect after reboot, the mic
   (HFP) later. Today: a Broadcom (BCM20702) USB dongle goes to the Mac with
   automatic USB and pairs in macOS.
-- **Reims frame rate** — Reims advertises 120 Hz; measure with `macfps` /
-  Settings › Displays › Performance, with Window effects on and off, then
-  fix what the numbers point at (picom not unredirecting the Mac, CPU cores,
-  shader translation warm-up).
+- **Reims frame rate** — first measurement (DEVLOG, "Frame rate: first
+  numbers"): ~55 fps while animating, 0 on a still screen (normal), ~30 in
+  the first minute. Reims' host side isn't the limit (drain ~15% busy, the
+  window never waits on a present, FIFO present on 144/180 Hz screens). Next:
+  retest with Detailed logs off, Window effects on vs off, Performance power
+  mode, NVIDIA vs AMD; then look at the guest side (vCPUs, VBL pacing).
 - **Reboot from the terminal hangs** — the launcher should exit when the
   system is stopping and stop QEMU cleanly through QMP.
 - **Installer and first-run wizard in GTK** — one window like Settings (steps,

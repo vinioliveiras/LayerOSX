@@ -3866,3 +3866,25 @@ a VM. Now Settings › Battery › **Power mode** sets it:
 - Tests: the real script against a fake cpufreq/platform_profile/power_supply
   tree through the backend (57 tests). Not yet on hardware.
 
+## Frame rate: first numbers (ASUS TUF A15, Ventura, Reims)
+
+From `/tmp/reims-vgpu-fail.log` of a ~10-minute session (the
+`host_window_loop` census, per 10 s): **~52–57 fps while macOS animates**
+(moving windows, scrolling), **0–2 fps on a still screen** — macOS simply
+doesn't redraw an unchanged screen, so the low `macfps --once` number taken
+while idle (1.9) means nothing — and **~30 fps in the first minute** after
+login (where the earlier "~30 Hz" impression came from). Reims' own side is
+not the bottleneck in those active stretches: its drain thread was busy ~15%
+of the time (median), the window never had to wait for a free swapchain
+image (`host_window_cadence busy=0`), and presents were FIFO on 144/180 Hz
+screens. Most of the drain time is spent waiting for the guest
+(`irq_wait_us` ~240 ms/s). So the limit is on the macOS side of the frame:
+guest CPU work, VBL pacing, or translation. Conditions of this run: Detailed
+logs ON (serial kernel debug, `-d guest_errors,unimp`), iMac19,1, 8 vCPUs,
+55 GB, two monitors, power mode Performance, Window effects off at the end
+(when it was toggled isn't recorded). Next run: Detailed logs off, effects
+on vs off noted with times, NVIDIA vs AMD.
+
+Also reported, now top of the TODO: YouTube video doesn't play in Safari, and
+audio stutters a little.
+
