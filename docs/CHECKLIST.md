@@ -1176,6 +1176,16 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.4x. macOS Restart comes back
+
+- In macOS: Apple menu > Restart (Reims and VMware). Within ~20 s the
+  OpenCore picker / Apple logo appears again; the computer does not reboot.
+- `mac-vm.log`: `QMP: SHUTDOWN reason=guest-reset`, then "macOS asked to
+  Restart". If it also says "QEMU still running 15s after the VM stopped",
+  QEMU's teardown hung and was killed: report it with the log.
+- If the screen stays frozen and there is no SHUTDOWN line, macOS hung
+  before resetting: collect logs (Ctrl+Alt+T, `macdiag`).
+
 ### 5.4w. Reinstall keeping the Mac
 
 - Boot the new ISO, in GParted do NOT format the LayerOSX partition (the ESP

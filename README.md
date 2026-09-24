@@ -3695,3 +3695,15 @@ accident, mixed with the old system's files. Now it's a real option:
   partition tree (Mac kept, old files gone, ESP untouched). Not yet run by
   the real installer.
 
+## macOS Restart no longer freezes on the last frame
+
+With `-no-reboot`, Apple menu > Restart makes QEMU exit and the launcher
+starts the Mac again. The launcher used to `wait` for QEMU with no limit, so if
+QEMU's teardown hung after the SHUTDOWN event (the Reims window stays on the
+last frame), the Mac never came back. Now QEMU gets `QEMU_EXIT_GRACE` (15 s)
+after the VM stops, then SIGTERM, then SIGKILL 5 s later, and the log says
+which one happened ("QEMU still running 15s after the VM stopped…", or "QEMU
+took Ns to exit"). This does not help if macOS itself hangs before it resets
+(no `QMP: SHUTDOWN reason=guest-reset` line in `mac-vm.log`); that case needs
+its own logs.
+

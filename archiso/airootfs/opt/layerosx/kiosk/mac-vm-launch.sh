@@ -53,6 +53,7 @@ else
     VERBOSE_DEFAULT=off; AUDIO_DEFAULT=on;  GFX_DEFAULT=reims
 fi
 MIN_UPTIME_FOR_REAL_REBOOT=180
+QEMU_EXIT_GRACE=15                                  # s QEMU gets to exit after its SHUTDOWN event
 LOG="$HOME/mac-vm.log"
 SERIAL_LOG="$HOME/mac-vm-serial.log"
 QEMU_D_LOG="$HOME/mac-vm-qemu.log"   # QEMU -D log: always (Reims messages); + -d guest_errors,unimp with "Detailed logs"
@@ -808,6 +809,26 @@ while true; do
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done
 
     ACTION=$(python3 "$KIOSK_DIR/qmp-watch.py" "$QMP_SOCK")
+    # QEMU normally exits within a couple of seconds of its SHUTDOWN event
+    # (-no-reboot turns a macOS Restart into an exit). If its teardown hangs
+    # (seen as a frozen last frame after Apple menu > Restart), the plain
+    # `wait` below would block forever and the Mac never comes back. Give it
+    # $QEMU_EXIT_GRACE s, then SIGTERM, then SIGKILL, and say so in the log.
+    _waited=0
+    while kill -0 "$QEMU_PID" 2>/dev/null && [ "$_waited" -lt "$QEMU_EXIT_GRACE" ]; do
+        sleep 1; _waited=$((_waited + 1))
+    done
+    if kill -0 "$QEMU_PID" 2>/dev/null; then
+        echo "QEMU still running ${QEMU_EXIT_GRACE}s after the VM stopped (action: ${ACTION}) -- sending SIGTERM."
+        kill -TERM "$QEMU_PID" 2>/dev/null
+        for _ in 1 2 3 4 5; do kill -0 "$QEMU_PID" 2>/dev/null || break; sleep 1; done
+        if kill -0 "$QEMU_PID" 2>/dev/null; then
+            echo "QEMU ignored SIGTERM -- sending SIGKILL."
+            kill -KILL "$QEMU_PID" 2>/dev/null
+        fi
+    elif [ "$_waited" -gt 2 ]; then
+        echo "QEMU took ${_waited}s to exit after the VM stopped."
+    fi
     wait "$QEMU_PID" 2>/dev/null
     QEMU_RC=$?
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
