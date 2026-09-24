@@ -2289,8 +2289,10 @@ untouched base image, still byte-for-byte the sha256-pinned download.
 Two AMD specifics that must line up:
 - **Core count.** Four of the 25 patches force `cpuid_cores_per_package` to a
   constant, and it *must* equal the guest's `-smp` core count or XNU panics on
-  the mismatch. `patch-opencore-amd.sh` bakes in 4, and the launcher pins the
-  AMD guest to exactly 4 cores (Intel keeps the largest-power-of-two-≤8 rule).
+  the mismatch. `patch-opencore-amd.sh` bakes in the count (arg 4), `build.sh`
+  makes three families (`OpenCore-amd2*` = 2, `OpenCore-amd*` = 4,
+  `OpenCore-amd8*` = 8) and the launcher always runs the AMD guest with one of
+  those counts, picking the image to match (Intel takes any power of two ≤ 8).
   Change one, change the other.
 - **`ProvideCurrentCpuInfo=True`**, which AMD_Vanilla's own sample config sets,
   is enabled in the AMD images.
@@ -2984,13 +2986,13 @@ and does nothing.
 | Displays | Brightness slider; Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations |
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
-| Mac | Running/stopped, "Show startup log" switch, **Restart Mac…** (the black-screen rescue) |
+| Mac | Running/stopped, "Show startup log" switch, **Resources** (Processor, "Keep 2 threads for Linux", Memory — Automatic or a fixed value), **Restart Mac…** (the black-screen rescue) |
 | General | Restart / Shut Down the computer, **Save diagnostics…** (asks which drive), Terminal |
 | Terminal | Open the maintenance terminal (password per `LAYEROSX_TERMINAL`), useful commands; hidden when the build has no terminal |
 | About | "About This Mac"-style: LayerOSX version/build date/mode; **This Computer** (model, processor + threads, memory, graphics, storage, Linux kernel — read live from DMI, /proc, lspci, lsblk); **The Mac** (macOS version + build, the CPU model/cores, RAM and graphics the VM was given); **Credits** (creator) and **Built With** (the open-source projects LayerOSX builds on); shortcuts |
 
 A banner ("Restart the Mac to apply your changes" + Restart Mac) appears after
-changing graphics, sound or the startup log while the Mac runs. Status refreshes
+changing graphics, sound, the startup log or Resources while the Mac runs. Status refreshes
 every 5 s; scans and restarts run in worker threads; dialogs are in-window
 (`Adw.AlertDialog`).
 
@@ -3203,3 +3205,39 @@ so the libadwaita traffic lights can't be put in it); it gets the rounded
 corners from picom and centering like every `LayerOSX*`-titled window only
 when its title matches. The real fix is the planned GTK4 installer (TODO),
 which keeps GParted only behind "Advanced…".
+
+## Resources: automatic, then adjustable in Settings
+
+The Mac's CPU and memory are detected automatically, and the user can adjust
+them in **LayerOSX Settings › Mac › Resources**; changes apply on the next
+Restart Mac (the launcher re-reads them before every launch, in
+`pick_resources()`), no kiosk restart needed.
+
+- **Automatic processor rule:** hosts with ≤ 4 threads give the Mac all of
+  them (a dual-core laptop gets 2 cores, not 1); bigger hosts keep 2 threads
+  for Linux + QEMU + Reims' host threads. Then the largest power of two, capped
+  at 8 (Reims' SMP cap). Examples: 2 → 2, 4 → 4, 6/8 → 4, 12/16+ → 8.
+- **"Keep 2 threads for Linux"** switch (`/var/lib/layerosx/cpu-reserve`,
+  `off` = give the Mac every thread): an 8-thread host then gets 8 instead of
+  4. It only matters on hosts with > 4 threads and when Processor is
+  Automatic, so it's greyed out otherwise.
+- **Processor** (`/var/lib/layerosx/cpu-cores`): Automatic, or a fixed 1/2/4/8
+  — only values that are powers of two, ≤ the host's threads, and (on AMD)
+  have a matching OpenCore image are offered; anything else in the file is
+  ignored by the launcher.
+- **AMD:** the core count is baked into the OpenCore image, so `build.sh` now
+  also makes `OpenCore-amd2(-verbose).qcow2` (2 cores) next to the 4- and
+  8-core families. The launcher picks the largest family ≤ the wanted count
+  whose image exists (1 core → 2; nothing found → 4).
+- **Memory** (`/var/lib/layerosx/ram-mb`): Automatic (host − 12%, at least
+  4 GB for Linux) or a fixed size in GB, up to the host's RAM − 2 GB.
+- The rule lives in two places that must agree: `pick_resources()` in
+  `mac-vm-launch.sh` and `Backend.auto_cores()/auto_ram_mb()/resources()` in
+  `panel/layerosx_backend.py` (`layerosx_backend.py resources` prints it as
+  JSON).
+- Verified: the launcher's selection simulated for Intel/AMD hosts with
+  1–32 threads, with and without overrides and with a missing amd2 image;
+  backend tests for the rule, overrides, the reserve switch, dual core and the
+  AMD image check (29 total); UI checked under Xvfb (choices, saving, back to
+  Automatic).
+

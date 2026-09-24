@@ -924,14 +924,16 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
 
 - After a build, confirm all four OpenCore images exist under
   `archiso/airootfs/opt/layerosx/opencore/`: `OpenCore.qcow2` (base),
-  `OpenCore-verbose.qcow2`, `OpenCore-amd.qcow2`, `OpenCore-amd-verbose.qcow2`.
+  `OpenCore-verbose.qcow2`, `OpenCore-amd.qcow2`, `OpenCore-amd-verbose.qcow2`,
+  plus the 8- and 2-core AMD families (`OpenCore-amd8*`, `OpenCore-amd2*`).
   If the AMD ones are missing, `qemu-img`/`mtools` were absent at build time
   (see section 1) — an AMD host cannot boot macOS without them.
 - On the AMD machine, the launch profile line printed at start should read
   `cpu=Haswell-noTSX (AuthenticAMD host) smp=8 ...` on a host with >= 10
   threads (the AMD test laptop has 16) and `OpenCore image:
-  OpenCore-amd8*.qcow2`; `smp=4` + `OpenCore-amd*.qcow2` on smaller hosts. The
-  AMD images bake `cpuid_cores_per_package` (4 or 8) and a mismatch with -smp
+  OpenCore-amd8*.qcow2`; `smp=4` + `OpenCore-amd*.qcow2` on 6-8 thread hosts,
+  `smp=2` + `OpenCore-amd2*.qcow2` on dual-core ones. The
+  AMD images bake `cpuid_cores_per_package` (2, 4 or 8) and a mismatch with -smp
   panics XNU, so smp and the image family must always agree.
 - Expected result of the fix: the recovery no longer freezes at
   `HANDOFF TO XNU` — it proceeds into the macOS Base System / installer. That
@@ -1004,6 +1006,21 @@ allow-list and anything not coming from the guest.)
   extra space. Launching again does not grow it again.
 - Fresh install: the wizard creates the disk at (free space − 20 GB).
 - Override RAM: `echo 32768 > /var/lib/layerosx/ram-mb` + relaunch.
+
+### 5.4j. Settings › Mac › Resources
+
+- The group shows "This computer: N threads, N GB memory"; Processor reads
+  "Automatic — 8 cores" on the 16-thread laptop, Memory "Automatic — 54 GB".
+- Processor → 4 cores: toast + restart banner; Restart Mac → `maclog launch`
+  shows `smp=4` (and `OpenCore-amd*` on AMD); About › The Mac shows 4 cores.
+  Back to Automatic → 8 again after Restart Mac.
+- Memory → 16 GB: after Restart Mac, About › The Mac shows 16 GB.
+- "Keep 2 threads for Linux" is greyed out while Processor is fixed. On an
+  8-thread host, Automatic gives 4 cores; switching it off gives 8.
+- AMD: only 2/4/8 are offered (and only those whose OpenCore image exists).
+- Dual-core host (or a VM with 2 vCPUs): Automatic gives the Mac 2 cores.
+- Bad values in the state files (`echo 3 > /var/lib/layerosx/cpu-cores`) are
+  ignored by the launcher (Automatic is used).
 
 ### 5.4h. Reims host window + kiosk windows
 

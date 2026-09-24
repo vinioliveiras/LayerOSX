@@ -171,6 +171,9 @@ OCDIR=airootfs/opt/layerosx/opencore
 # Reims' own SMP cap).
 ./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd8.qcow2" amd-vanilla-patches.plist 8
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd8.qcow2" "$OCDIR/OpenCore-amd8-verbose.qcow2"
+# ...and baked to 2, so dual-core AMD hosts get exactly their 2 cores.
+./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd2.qcow2" amd-vanilla-patches.plist 2
+./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd2.qcow2" "$OCDIR/OpenCore-amd2-verbose.qcow2"
 
 # mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
 # when profiledef.sh/pacman.conf/packages.x86_64 changed — it can

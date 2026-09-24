@@ -601,6 +601,7 @@ class Settings(Adw.ApplicationWindow):
         self.verbose_row.connect("notify::active", self._on_switch, "verbose", "Startup log")
         s.add(self.verbose_row)
         page.add(s)
+        page.add(self._resources_group())
         r = Adw.PreferencesGroup(title="Restart")
         rr = Adw.ActionRow(title="Restart the Mac",
                            subtitle="Use this if macOS is stuck or the screen is black. Otherwise use Apple menu › Restart.")
@@ -611,6 +612,101 @@ class Settings(Adw.ApplicationWindow):
         page.add(r)
         self._sync_switches()
         return self._pane("Mac", page)
+
+    # ---------------------------------------------------------- Resources
+    def _resources_group(self):
+        res = self.b.resources()
+        host_gb = round(res.host_ram_mb / 1024)
+        g = Adw.PreferencesGroup(
+            title="Resources",
+            description=f"This computer: {res.threads} threads, {host_gb} GB memory. "
+                        "Automatic leaves some for Linux. Applies when the Mac restarts.")
+        self.cpu_row = Adw.ComboRow(title="Processor")
+        self.cpu_row.add_prefix(Gtk.Image.new_from_icon_name("system-run-symbolic"))
+        self.cpu_row.connect("notify::selected", self._on_cores)
+        g.add(self.cpu_row)
+        self.reserve_row = Adw.SwitchRow(
+            title="Keep 2 threads for Linux",
+            subtitle="Automatic leaves 2 threads for Linux, QEMU and the graphics on machines with more than 4. "
+                     "Turn off to give the Mac every thread.")
+        self.reserve_row.connect("notify::active", self._on_reserve)
+        g.add(self.reserve_row)
+        self.ram_row = Adw.ComboRow(title="Memory")
+        self.ram_row.add_prefix(Gtk.Image.new_from_icon_name("drive-harddisk-solidstate-symbolic"))
+        self.ram_row.connect("notify::selected", self._on_ram)
+        g.add(self.ram_row)
+        self._sync_resources()
+        return g
+
+    @staticmethod
+    def _set_choices(row, labels, index):
+        """Swap a ComboRow's labels/selection only when they differ -- replacing
+        the model from inside its own notify::selected handler hangs GTK."""
+        m = row.get_model()
+        cur = [m.get_string(i) for i in range(m.get_n_items())] if m else None
+        if cur != labels:
+            row.set_model(Gtk.StringList.new(labels))
+        if row.get_selected() != index:
+            row.set_selected(index)
+
+    def _sync_resources(self):
+        res = self.b.resources()
+        self._updating = True
+        try:
+            n = lambda c: "1 core" if c == 1 else f"{c} cores"
+            self._cpu_values = [0] + res.cores_choices
+            self._set_choices(self.cpu_row,
+                              [f"Automatic — {n(res.cores_auto)}"] + [n(c) for c in res.cores_choices],
+                              self._cpu_values.index(res.cores_choice) if res.cores_choice in self._cpu_values else 0)
+            sub = []
+            if res.amd:
+                sub.append("AMD: 2, 4 or 8 cores (the OpenCore image must match)")
+            if res.cores_choice and res.cores != res.cores_choice:
+                sub.append(f"will use {n(res.cores)}")
+            self.cpu_row.set_subtitle(" · ".join(sub))
+            self.reserve_row.set_active(res.reserve)
+            self.reserve_row.set_sensitive(res.threads > 4 and not res.cores_choice)
+            gb = lambda mb: f"{mb / 1024:g} GB"
+            self._ram_values = [0] + res.ram_choices_mb
+            self._set_choices(self.ram_row,
+                              [f"Automatic — {gb(res.ram_auto_mb)}"] + [gb(m) for m in res.ram_choices_mb],
+                              self._ram_values.index(res.ram_choice_mb) if res.ram_choice_mb in self._ram_values else 0)
+        finally:
+            self._updating = False
+        return False
+
+    def _resource_changed(self, ok, msg, what):
+        self.after_action(ok, msg, f"{what} — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        GLib.idle_add(self._sync_resources)   # not from inside the row's own handler
+
+    def _on_cores(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._cpu_values):
+            return
+        v = self._cpu_values[i]
+        ok, msg = self.b.set_cores(v or "auto")
+        self._resource_changed(ok, msg, f"Processor: {v} cores" if v else "Processor: Automatic")
+
+    def _on_reserve(self, row, _pspec):
+        if self._updating:
+            return
+        on = row.get_active()
+        ok, msg = self.b.set_cpu_reserve(on)
+        self._resource_changed(ok, msg, "Keeping 2 threads for Linux" if on else "The Mac gets every thread")
+
+    def _on_ram(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._ram_values):
+            return
+        v = self._ram_values[i]
+        ok, msg = self.b.set_ram(v or "auto")
+        self._resource_changed(ok, msg, f"Memory: {v / 1024:g} GB" if v else "Memory: Automatic")
 
     # -------------------------------------------------------------- General
     def _page_general(self):

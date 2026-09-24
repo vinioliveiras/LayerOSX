@@ -52,17 +52,6 @@ if [ "$BUILD_MODE" = debug ]; then
 else
     VERBOSE_DEFAULT=off; AUDIO_DEFAULT=on;  GFX_DEFAULT=reims
 fi
-# --- RAM: give the Mac nearly all of it ---------------------------------------
-# Everything except a reserve for Linux + QEMU + Reims' host-side Vulkan buffers:
-# 12% of the host's RAM, at least 4 GB (a 64 GB laptop -> ~54 GB for macOS).
-# The memfd backing (share=on, needed by Reims) is only touched as the guest
-# uses it. Override: echo <MB> > /var/lib/layerosx/ram-mb.
-_host_mb="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 8192)"
-_reserve_mb=$(( _host_mb * 12 / 100 )); [ "$_reserve_mb" -lt 4096 ] && _reserve_mb=4096
-VM_RAM_MB=$(( (_host_mb - _reserve_mb) / 1024 * 1024 ))
-[ "$VM_RAM_MB" -lt 4096 ] && VM_RAM_MB=4096
-_ram_override="$(cat "$STATE_DIR/ram-mb" 2>/dev/null || true)"
-case "$_ram_override" in ''|*[!0-9]*) : ;; *) [ "$_ram_override" -ge 2048 ] && VM_RAM_MB=$_ram_override ;; esac
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
 SERIAL_LOG="$HOME/mac-vm-serial.log"
@@ -303,32 +292,69 @@ else
     CPU_FLAGS+=",+ssse3,+sse4.2,+popcnt,+avx,+avx2,+aes,+xsave,+xsaveopt,check"
 fi
 
-# --- SMP: a power of two, at most 8 ----------------------------------------
-# macOS is picky about CPU topology (odd core counts misbehave; dockur maps 6
-# to 3 sockets x 2 cores, etc.), and Reims' own script caps the guest at 8
-# vCPUs with reims-vgpu-pci. Simplest topology that satisfies both: the
-# largest power of two <= min(8, host cores - 2), on one socket.
-TOTAL_CORES="$(nproc)"
-VM_CORES=$((TOTAL_CORES - 2))
-[ "$VM_CORES" -gt 8 ] && VM_CORES=8
-[ "$VM_CORES" -lt 1 ] && VM_CORES=1
-_p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
-VM_CORES=$_p
+# --- Resources (RAM + vCPUs) -------------------------------------------------
+# Picked by pick_resources(), called before the first launch AND at the top of
+# every loop pass, so a change made in LayerOSX Settings > Mac > Resources takes
+# effect on "Restart Mac" without restarting the kiosk session.
+pick_resources() {
+    # --- RAM: give the Mac nearly all of it ---------------------------------------
+    # Everything except a reserve for Linux + QEMU + Reims' host-side Vulkan buffers:
+    # 12% of the host's RAM, at least 4 GB (a 64 GB laptop -> ~54 GB for macOS).
+    # The memfd backing (share=on, needed by Reims) is only touched as the guest
+    # uses it. Override (LayerOSX Settings > Mac > Resources, or by hand):
+    # echo <MB> > /var/lib/layerosx/ram-mb. Keep in sync with Backend.auto_ram_mb().
+    _host_mb="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 8192)"
+    _reserve_mb=$(( _host_mb * 12 / 100 )); [ "$_reserve_mb" -lt 4096 ] && _reserve_mb=4096
+    VM_RAM_MB=$(( (_host_mb - _reserve_mb) / 1024 * 1024 ))
+    [ "$VM_RAM_MB" -lt 4096 ] && VM_RAM_MB=4096
+    _ram_override="$(cat "$STATE_DIR/ram-mb" 2>/dev/null || true)"
+    case "$_ram_override" in ''|*[!0-9]*) : ;; *) [ "$_ram_override" -ge 2048 ] && VM_RAM_MB=$_ram_override ;; esac
+    # --- SMP: a power of two, at most 8 ----------------------------------------
+    # macOS is picky about CPU topology (odd core counts misbehave; dockur maps 6
+    # to 3 sockets x 2 cores, etc.), and Reims caps the guest at 8 vCPUs with
+    # reims-vgpu-pci (upstream boot-x86.sh: the paravirt GPU kext is sensitive to
+    # higher SMP). So: the largest power of two <= min(8, N), one socket, where
+    # N = all host threads on small machines (<= 4 threads: the kiosk's Linux is
+    # minimal and a dual-core Mac must not be left with 1 core) and threads - 2 on
+    # bigger ones (room for Linux + QEMU + Reims' host threads).
+    # The user can pick a fixed count in LayerOSX Settings > Mac > Resources
+    # ($STATE_DIR/cpu-cores); it's honoured when valid (power of two, <= 8, <= host
+    # threads, and -- on AMD -- an OpenCore image exists for it), else ignored.
+    # Keep this rule in sync with Backend.auto_cores() (panel/layerosx_backend.py).
+    TOTAL_CORES="$(nproc)"
+    # The "reserve 2 threads" part can be switched off in Settings > Mac > Resources
+    # ($STATE_DIR/cpu-reserve = off): then Automatic hands the Mac every thread.
+    case "$(cat "$STATE_DIR/cpu-reserve" 2>/dev/null)" in off|0|no|false) _reserve_cpu=0 ;; *) _reserve_cpu=1 ;; esac
+    if [ "$TOTAL_CORES" -le 4 ] || [ "$_reserve_cpu" = 0 ]; then VM_CORES=$TOTAL_CORES; else VM_CORES=$((TOTAL_CORES - 2)); fi
+    [ "$VM_CORES" -gt 8 ] && VM_CORES=8
+    [ "$VM_CORES" -lt 1 ] && VM_CORES=1
+    _p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
+    VM_CORES=$_p
+    _cores_override="$(cat "$STATE_DIR/cpu-cores" 2>/dev/null || true)"
+    case "$_cores_override" in
+        1|2|4|8) [ "$_cores_override" -le "$TOTAL_CORES" ] && VM_CORES=$_cores_override ;;
+    esac
 
-# --- AMD core-count pin -----------------------------------------------------
-# The AMD OpenCore images bake cpuid_cores_per_package (patch-opencore-amd.sh)
-# and XNU panics if that constant doesn't match the guest's -smp cores. build.sh
-# makes two families: OpenCore-amd* (4 cores) and OpenCore-amd8* (8 cores). Use
-# 8 when the power-of-two rule above allows it (hosts with >= 10 threads) and
-# the image exists, else 4. Intel keeps the computed value.
-AMD_OC="amd"
-if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
-    if [ "$VM_CORES" -ge 8 ] && [ -s "$OPENCORE_DIR/OpenCore-amd8.qcow2" ]; then
-        VM_CORES=8; AMD_OC="amd8"
-    else
-        VM_CORES=4; AMD_OC="amd"
+    # --- AMD core-count pin -----------------------------------------------------
+    # The AMD OpenCore images bake cpuid_cores_per_package (patch-opencore-amd.sh)
+    # and XNU panics if that constant doesn't match the guest's -smp cores. build.sh
+    # makes three families: OpenCore-amd2* (2 cores), OpenCore-amd* (4) and
+    # OpenCore-amd8* (8). Pick the family for VM_CORES; if its image is missing, the
+    # largest smaller one that exists (then 4 as the last resort). 1 core -> 2.
+    AMD_OC="amd"
+    if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
+        [ "$VM_CORES" -lt 2 ] && VM_CORES=2
+        _picked=""
+        for _c in 8 4 2; do
+            [ "$_c" -le "$VM_CORES" ] || continue
+            case "$_c" in 8) _f=amd8 ;; 4) _f=amd ;; 2) _f=amd2 ;; esac
+            if [ -s "$OPENCORE_DIR/OpenCore-${_f}.qcow2" ]; then VM_CORES=$_c; AMD_OC=$_f; _picked=1; break; fi
+        done
+        [ -n "$_picked" ] || { VM_CORES=4; AMD_OC=amd; }
     fi
-fi
+
+}
+pick_resources
 
 # Re-read the user toggle files (gpu/verbose/audio) and (re)compute the
 # OpenCore image + device args from them. Called at the top of EVERY loop
@@ -356,10 +382,6 @@ configure_toggles() {
         OPENCORE_IMG="$_oc_norm"
     else
         OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"   # last-ditch fallback to the base
-    fi
-    if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ] && [ -s "$OPENCORE_DIR/OpenCore-amd.qcow2" ]; then
-        # the 8-core family is missing its image: drop to the 4-core one
-        VM_CORES=4; OPENCORE_IMG="$OPENCORE_DIR/OpenCore-amd.qcow2"
     fi
     if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ]; then
         echo "WARNING: AMD host but no OpenCore-amd image found -- macOS will likely hang at boot." >&2
@@ -547,6 +569,7 @@ grow_vm_disk
 RETRIES=0
 while true; do
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
+    pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
     # Critical-battery shutdown in progress (lib/battery-watch.sh stopped the
     # VM on purpose): power the host off instead of relaunching.
     if [ -e "$BATTERY_POWEROFF_FLAG" ]; then

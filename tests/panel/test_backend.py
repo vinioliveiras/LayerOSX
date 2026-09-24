@@ -132,7 +132,8 @@ class FakeMachine(unittest.TestCase):
             "LAYEROSX_HOST_ACTION_FILE": os.path.join(t, "host-action"),
             "LAYEROSX_USB_SYSFS": self.usb, "LAYEROSX_POWER_SUPPLY": self.ps,
             "LAYEROSX_DRY_RUN": "0", "LAYEROSX_DMI": os.path.join(t, "dmi"),
-            "LAYEROSX_PROC": os.path.join(t, "proc"), "LAYEROSX_VM_PROFILE": os.path.join(t, "vm-profile"), "PATH": self.bin + os.pathsep + os.environ["PATH"],
+            "LAYEROSX_PROC": os.path.join(t, "proc"), "LAYEROSX_NPROC": "16",
+            "LAYEROSX_OPENCORE_DIR": os.path.join(t, "opencore"), "LAYEROSX_VM_PROFILE": os.path.join(t, "vm-profile"), "PATH": self.bin + os.pathsep + os.environ["PATH"],
         }
         self._old = {k: os.environ.get(k) for k in env}
         os.environ.update(env)
@@ -311,6 +312,65 @@ class TestBrightnessScript(FakeMachine):
         self.assertEqual(self.saved(), "5")
         self.assertEqual(self.sh("set", "abc"), "")
         self.assertEqual(self.saved(), "5")
+
+
+class TestResources(FakeMachine):
+    def test_auto_rule(self):
+        b = lb.Backend()
+        # <= 4 threads: all of them; more: threads - 2; power of two; cap 8
+        self.assertEqual([b.auto_cores(n) for n in (1, 2, 3, 4, 6, 8, 12, 16, 64)],
+                         [1, 2, 2, 4, 4, 4, 8, 8, 8])
+        self.assertEqual([b.auto_cores(n, reserve=False) for n in (6, 8, 16)], [4, 8, 8])
+        self.assertEqual(b.auto_ram_mb(65218560 // 1024), 55296)   # 64 GB laptop -> 54 GB
+        self.assertEqual(b.auto_ram_mb(8032), 4096)
+
+    def test_defaults_and_overrides(self):
+        b = lb.Backend()
+        r = b.resources()
+        self.assertEqual((r.threads, r.cores_auto, r.cores, r.cores_choice, r.reserve), (16, 8, 8, 0, True))
+        self.assertEqual(r.cores_choices, [1, 2, 4, 8])
+        self.assertEqual(r.ram_mb, r.ram_auto_mb)
+        self.assertEqual(max(r.ram_choices_mb), 48 * 1024)      # host 62 GB - 2 GB for Linux
+        self.assertTrue(b.set_cores(4)[0])
+        self.assertEqual(lb.Backend().resources().cores, 4)
+        self.assertFalse(b.set_cores(16)[0])
+        self.assertFalse(b.set_cores(3)[0])
+        self.assertTrue(b.set_cores("auto")[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "cpu-cores")))
+        self.assertTrue(b.set_ram(16384)[0])
+        self.assertEqual(lb.Backend().resources().ram_mb, 16384)
+        self.assertFalse(b.set_ram(1024)[0])
+        self.assertFalse(b.set_ram(10 ** 7)[0])
+        self.assertTrue(b.set_ram("auto")[0])
+        self.assertEqual(lb.Backend().resources().ram_choice_mb, 0)
+
+    def test_reserve_toggle(self):
+        os.environ["LAYEROSX_NPROC"] = "8"
+        b = lb.Backend()
+        self.assertEqual(b.resources().cores_auto, 4)
+        self.assertTrue(b.set_cpu_reserve(False)[0])
+        self.assertEqual(lb.Backend().resources().cores_auto, 8)
+        self.assertTrue(b.set_cpu_reserve(True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "cpu-reserve")))
+
+    def test_dual_core_uses_both(self):
+        os.environ["LAYEROSX_NPROC"] = "2"
+        r = lb.Backend().resources()
+        self.assertEqual((r.cores_auto, r.cores_choices), (2, [1, 2]))
+
+    def test_amd_needs_matching_image(self):
+        write(os.path.join(self.tmp, "proc", "cpuinfo"), "vendor_id\t: AuthenticAMD\n")
+        oc = os.path.join(self.tmp, "opencore")
+        write(os.path.join(oc, "OpenCore-amd.qcow2"), "x")
+        write(os.path.join(oc, "OpenCore-amd2.qcow2"), "x")
+        b = lb.Backend()
+        r = b.resources()
+        self.assertTrue(r.amd)
+        self.assertEqual(r.cores_choices, [2, 4])     # no amd8 image -> 8 not offered
+        self.assertEqual((r.cores_auto, r.cores), (4, 4))
+        self.assertFalse(b.set_cores(8)[0])
+        write(os.path.join(oc, "OpenCore-amd8.qcow2"), "x")
+        self.assertEqual(lb.Backend().resources().cores_auto, 8)
 
 
 class TestTheme(FakeMachine):

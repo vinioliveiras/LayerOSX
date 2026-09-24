@@ -49,6 +49,25 @@ def _read(path: str) -> str:
 
 
 @dataclass
+class Resources:
+    """What the Mac gets (Settings > Mac > Resources). cores/ram_mb are what the
+    next launch will use; *_auto what Automatic resolves to; *_choice the saved
+    pick (0 = Automatic); *_choices the fixed values offered."""
+    threads: int
+    host_ram_mb: int
+    amd: bool
+    reserve: bool
+    cores_auto: int
+    cores_choice: int
+    cores_choices: List[int]
+    cores: int
+    ram_auto_mb: int
+    ram_choice_mb: int
+    ram_choices_mb: List[int]
+    ram_mb: int
+
+
+@dataclass
 class WifiNetwork:
     ssid: str
     signal: int
@@ -176,6 +195,7 @@ class Backend:
         self.proc = _env("LAYEROSX_PROC", "/proc")
         self.dmi = _env("LAYEROSX_DMI", "/sys/class/dmi/id")
         self.vm_profile = _env("LAYEROSX_VM_PROFILE", "/tmp/layerosx-vm-profile")
+        self.opencore_dir = _env("LAYEROSX_OPENCORE_DIR", "/opt/layerosx/opencore")
         self.dry_run = _env("LAYEROSX_DRY_RUN", "0") == "1"
         self.dry_log: List[str] = []
 
@@ -238,6 +258,129 @@ class Backend:
         cmd = {"gfx": "gpu"}.get(name, name)
         rc, out = self._run([os.path.join(self.bin, cmd), value])
         return rc == 0, out.strip()
+
+    # ------------------------------------------------------------ resources
+    # Mirrors pick_resources() in mac-vm-launch.sh -- keep the two in sync.
+    # State files: cpu-cores (1/2/4/8, absent = Automatic), cpu-reserve
+    # (off = Automatic uses every thread), ram-mb (MB, absent = Automatic).
+    AMD_FAMILIES = {8: "amd8", 4: "amd", 2: "amd2"}
+
+    def _threads(self) -> int:
+        env = os.environ.get("LAYEROSX_NPROC", "")
+        if env.isdigit() and int(env) > 0:
+            return int(env)
+        try:
+            return len(os.sched_getaffinity(0))
+        except (AttributeError, OSError):
+            return os.cpu_count() or 1
+
+    def _host_ram_mb(self) -> int:
+        for line in (_read(os.path.join(self.proc, "meminfo")) or "").splitlines():
+            if line.startswith("MemTotal:"):
+                try:
+                    return int(line.split()[1]) // 1024
+                except (IndexError, ValueError):
+                    break
+        return 8192
+
+    def _is_amd(self) -> bool:
+        return "AuthenticAMD" in (_read(os.path.join(self.proc, "cpuinfo")) or "")
+
+    def _amd_image(self, cores: int) -> bool:
+        fam = self.AMD_FAMILIES.get(cores)
+        img = os.path.join(self.opencore_dir, f"OpenCore-{fam}.qcow2") if fam else ""
+        return bool(fam) and os.path.isfile(img) and os.path.getsize(img) > 0
+
+    def cpu_reserve(self) -> bool:
+        return _read(os.path.join(self.state_dir, "cpu-reserve")).lower() not in ("off", "0", "no", "false")
+
+    def auto_cores(self, threads: int, reserve: bool = True) -> int:
+        n = threads if (threads <= 4 or not reserve) else threads - 2
+        n = max(1, min(8, n))
+        p = 1
+        while p * 2 <= n:
+            p *= 2
+        return p
+
+    def _amd_pin(self, cores: int) -> int:
+        """AMD: the core count must match a baked OpenCore image (8/4/2)."""
+        cores = max(2, cores)
+        for c in (8, 4, 2):
+            if c <= cores and self._amd_image(c):
+                return c
+        return 4
+
+    @staticmethod
+    def auto_ram_mb(host_mb: int) -> int:
+        reserve = max(4096, host_mb * 12 // 100)
+        return max(4096, (host_mb - reserve) // 1024 * 1024)
+
+    def resources(self) -> Resources:
+        threads, host_mb, amd = self._threads(), self._host_ram_mb(), self._is_amd()
+        reserve = self.cpu_reserve()
+        choices = [c for c in (1, 2, 4, 8) if c <= threads]
+        if amd:
+            choices = [c for c in choices if self._amd_image(c)]
+        auto = self.auto_cores(threads, reserve)
+        raw = _read(os.path.join(self.state_dir, "cpu-cores"))
+        choice = int(raw) if raw in ("1", "2", "4", "8") and int(raw) <= threads else 0
+        cores = choice or auto
+        if amd:
+            auto, cores = self._amd_pin(auto), self._amd_pin(cores)
+        ram_auto = self.auto_ram_mb(host_mb)
+        top_gb = max(2, (host_mb - 2048) // 1024)          # leave Linux >= 2 GB
+        ram_choices = [gb * 1024 for gb in (2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256)
+                       if gb <= top_gb]
+        rraw = _read(os.path.join(self.state_dir, "ram-mb"))
+        ram_choice = int(rraw) if rraw.isdigit() and int(rraw) >= 2048 else 0
+        if ram_choice and ram_choice not in ram_choices:
+            ram_choices = sorted(ram_choices + [ram_choice])
+        return Resources(threads, host_mb, amd, reserve, auto, choice, choices, cores,
+                         ram_auto, ram_choice, ram_choices, ram_choice or ram_auto)
+
+    def _write_state(self, name: str, value: Optional[str]) -> Tuple[bool, str]:
+        path = os.path.join(self.state_dir, name)
+        if self.dry_run:
+            self.dry_log.append(f"{name} -> {value if value is not None else 'auto'}")
+            return True, ""
+        try:
+            os.makedirs(self.state_dir, exist_ok=True)
+            if value is None:
+                if os.path.exists(path):
+                    os.remove(path)
+            else:
+                with open(path, "w") as f:
+                    f.write(value + "\n")
+            return True, ""
+        except OSError as e:
+            return False, str(e)
+
+    def set_cores(self, value) -> Tuple[bool, str]:
+        """'auto'/0 or one of resources().cores_choices."""
+        if value in ("auto", 0, "0", None):
+            return self._write_state("cpu-cores", None)
+        try:
+            n = int(value)
+        except (TypeError, ValueError):
+            return False, f"invalid core count {value!r}"
+        if n not in self.resources().cores_choices:
+            return False, f"{n} cores isn't available on this machine"
+        return self._write_state("cpu-cores", str(n))
+
+    def set_cpu_reserve(self, on: bool) -> Tuple[bool, str]:
+        return self._write_state("cpu-reserve", None if on else "off")
+
+    def set_ram(self, value) -> Tuple[bool, str]:
+        """'auto'/0 or a size in MB (>= 2048, leaving Linux at least 2 GB)."""
+        if value in ("auto", 0, "0", None):
+            return self._write_state("ram-mb", None)
+        try:
+            mb = int(value)
+        except (TypeError, ValueError):
+            return False, f"invalid memory size {value!r}"
+        if mb < 2048 or mb > self._host_ram_mb() - 2048:
+            return False, f"{mb} MB is out of range for this machine"
+        return self._write_state("ram-mb", str(mb))
 
     # ------------------------------------------------------------ appearance
     def panel_theme(self) -> str:
@@ -705,12 +848,14 @@ def main(argv: List[str]) -> int:
         print(json.dumps([asdict(n) for n in b.wifi_scan()], indent=2))
     elif what == "about":
         print(json.dumps(asdict(b.about()), indent=2))
+    elif what == "resources":
+        print(json.dumps(asdict(b.resources()), indent=2))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources]", file=sys.stderr)
         return 2
     return 0
 
