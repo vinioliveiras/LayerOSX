@@ -48,7 +48,7 @@ MODE_FILE="/etc/layerosx/mode"                   # baked at build time (build.sh
 BUILD_MODE="$(cat "$MODE_FILE" 2>/dev/null || echo release)"
 case "$BUILD_MODE" in debug) : ;; *) BUILD_MODE=release ;; esac
 if [ "$BUILD_MODE" = debug ]; then
-    VERBOSE_DEFAULT=on;  AUDIO_DEFAULT=off; GFX_DEFAULT=vmware
+    VERBOSE_DEFAULT=on;  AUDIO_DEFAULT=on;  GFX_DEFAULT=vmware   # sound on in every mode
 else
     VERBOSE_DEFAULT=off; AUDIO_DEFAULT=on;  GFX_DEFAULT=reims
 fi

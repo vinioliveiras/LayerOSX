@@ -816,6 +816,16 @@ class Settings(Adw.ApplicationWindow):
     # ------------------------------------------------------------------ USB
     def _page_usb(self):
         page = Adw.PreferencesPage()
+        auto_g = Adw.PreferencesGroup()
+        self.usb_auto_row = Adw.SwitchRow(
+            title="Give new devices to the Mac",
+            subtitle="Anything plugged into a USB port goes to the Mac. Built-in devices, "
+                     "keyboards and mice stay on this computer; a device you switch off stays off.")
+        self.usb_auto_row.add_prefix(Gtk.Image.new_from_icon_name("media-removable-symbolic"))
+        self.usb_auto_row.set_active(self.b.usb_auto())
+        self.usb_auto_row.connect("notify::active", self._on_usb_auto)
+        auto_g.add(self.usb_auto_row)
+        page.add(auto_g)
         self.usb_group = Adw.PreferencesGroup(
             title="Devices",
             description="Switch a device on to give it to the Mac. The star gives it to the Mac "
@@ -825,6 +835,14 @@ class Settings(Adw.ApplicationWindow):
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Refresh")
         refresh.connect("clicked", lambda *_: self._load_usb())
         return self._pane("USB Devices", page, refresh)
+
+    def _on_usb_auto(self, row, _pspec):
+        on = row.get_active()
+        ok, msg = self.b.set_usb_auto(on)
+        self.after_action(ok, msg, "New USB devices go to the Mac" if on else "New USB devices stay on this computer")
+        if ok and on:
+            # Give what's already plugged in right away, then show it.
+            run_async(self.b.usb_auto_once, lambda _r: self._load_usb())
 
     def _load_usb(self):
         if "usb" in self.pages:

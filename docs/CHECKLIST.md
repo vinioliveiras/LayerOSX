@@ -1176,6 +1176,20 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.4z. Sound and USB on by default (new install)
+
+- Fresh install, no Settings touched: Settings › Sound "Sound from the Mac"
+  is on; the Mac has sound.
+- Settings › USB Devices: "Give new devices to the Mac" is on. Plug in a
+  pendrive / phone: within ~3 s it shows up in macOS (and its switch is on).
+  The built-in webcam, the keyboard and the touchpad stay on Linux.
+- Switch the pendrive off: it returns to Linux and is NOT given back while
+  it stays plugged in, nor after re-plugging or restarting the Mac. Switch it
+  on: automatic again.
+- Turn "Give new devices to the Mac" off: a newly plugged device stays on
+  Linux. On again: what's plugged in goes to the Mac right away.
+- `~/usb-auto.log` lists each "gave vvvv:pppp to the Mac".
+
 ### 5.4y. Sound
 
 - Settings › Sound: "Sound from the Mac" on; Output lists the speakers

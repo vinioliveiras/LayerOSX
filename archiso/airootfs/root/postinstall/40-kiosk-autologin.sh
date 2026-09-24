@@ -49,6 +49,8 @@ fi
 # Re-apply the Mac's screen choice when monitors are plugged/unplugged (and
 # light every screen back up if the chosen one goes away). lib/displays.py.
 python3 /opt/layerosx/kiosk/lib/displays.py watch >/dev/null 2>&1 &
+# Automatic USB: give devices plugged into a port to the Mac (Settings > USB).
+python3 /opt/layerosx/panel/layerosx_backend.py usb-auto-watch >>"$HOME/usb-auto.log" 2>&1 &
 # Last brightness the user chose (keys or LayerOSX Settings), across reboots.
 /opt/layerosx/kiosk/lib/brightness.sh restore &
 # Laptop battery guard (warnings + clean macOS shutdown at critical); exits

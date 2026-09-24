@@ -25,6 +25,7 @@ set -uo pipefail
 CTL_SOCK="/tmp/macvm-ctl.sock"
 QMP_CMD="/opt/layerosx/kiosk/lib/qmp-cmd.py"
 USB_FILE="/var/lib/layerosx/usb-passthrough"   # lines: "vvvv:pppp  name"
+KEEP_FILE="/var/lib/layerosx/usb-keep-on-linux" # devices automatic USB must leave on Linux
 SYSFS_USB="${USB_SYSFS_ROOT:-/sys/bus/usb/devices}"  # test override
 
 _rd() { cat "$1" 2>/dev/null | tr -d '\n'; }
@@ -77,6 +78,17 @@ usb_forget() {
     grep -vi "^$1:$2\b" "$USB_FILE" > "$tmp"; cat "$tmp" > "$USB_FILE"; rm -f "$tmp"
 }
 
+# Automatic USB (layerosx_backend.py usb-auto-watch) skips what's listed here.
+usb_keep_on_linux() {
+    local vp="$1:$2" tmp
+    grep -qix "$vp" "$KEEP_FILE" 2>/dev/null || printf '%s\n' "$vp" >> "$KEEP_FILE"
+}
+usb_unkeep() {
+    [ -f "$KEEP_FILE" ] || return 0
+    local tmp; tmp="$(mktemp)"
+    grep -vix "$1:$2" "$KEEP_FILE" > "$tmp"; cat "$tmp" > "$KEEP_FILE"; rm -f "$tmp"
+}
+
 usb_pick() {
     local T="LayerOSX — USB devices" rows=() att vid pid name rem why state label choice
     if [ ! -S "$CTL_SOCK" ]; then
@@ -103,7 +115,7 @@ usb_pick() {
 
     if printf '%s\n' "$att" | grep -qi "^$vid $pid$"; then
         zenity --question --width=420 --title="$T" --text="Give \"$name\" back to Linux?\n\n(It also stops being given to the Mac automatically.)" 2>/dev/null || return 1
-        usb_detach "$vid" "$pid"; usb_forget "$vid" "$pid"
+        usb_detach "$vid" "$pid"; usb_forget "$vid" "$pid"; usb_keep_on_linux "$vid" "$pid"
         return 0
     fi
     if [ -n "${why:-}" ]; then
@@ -112,6 +124,7 @@ usb_pick() {
     if ! usb_attach "$vid" "$pid"; then
         zenity --error --width=420 --title="$T" --text="Couldn't give \"$name\" to the Mac (see ~/mac-vm.log)." 2>/dev/null; return 1
     fi
+    usb_unkeep "$vid" "$pid"
     if zenity --question --width=440 --title="$T" --ok-label="Always" --cancel-label="Just this time" \
         --text="\"$name\" is now on the Mac.\n\nGive it to the Mac automatically every time (also after a restart or re-plug)?" 2>/dev/null; then
         usb_remember "$vid" "$pid" "$name"

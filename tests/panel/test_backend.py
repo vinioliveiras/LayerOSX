@@ -247,6 +247,34 @@ class TestUsb(FakeMachine):
         self.assertIn("qmp usb-attach 3277 0059", self.calls())
         self.assertIn("qmp usb-detach 3277 0059", self.calls())
 
+    def _phone(self):
+        d = os.path.join(self.usb, "1-4")
+        for k, v in (("idVendor", "18d1"), ("idProduct", "4ee7"), ("manufacturer", "Google"),
+                     ("product", "Pixel"), ("removable", "removable"), ("bDeviceClass", "00")):
+            write(os.path.join(d, k), v + "\n")
+
+    def test_automatic_usb(self):
+        self._phone()
+        b = lb.Backend()
+        self.assertTrue(b.usb_auto())                    # on for a new install
+        self.assertEqual(b.usb_auto_once(), [])          # Mac not running: nothing
+        self.vm_up()
+        # pendrive already on the Mac; keyboard, hub and built-in webcam skipped
+        self.assertEqual(b.usb_auto_once(), ["18d1:4ee7"])
+        self.assertIn("qmp usb-attach 18d1 4ee7", self.calls())
+        # switched back to Linux -> automatic USB leaves it there
+        self.assertTrue(b.usb_give_to_mac("18d1", "4ee7", False)[0])
+        self.assertEqual(b.usb_keep_on_linux(), {"18d1:4ee7"})
+        self.assertEqual(b.usb_auto_once(), [])
+        # switched on again -> forgotten from the keep list
+        self.assertTrue(b.usb_give_to_mac("18d1", "4ee7", True)[0])
+        self.assertEqual(b.usb_keep_on_linux(), set())
+        self.assertTrue(b.set_usb_auto(False)[0])
+        self.assertFalse(lb.Backend().usb_auto())
+        self.assertEqual(lb.Backend().usb_auto_once(), [])
+        self.assertTrue(b.set_usb_auto(True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "usb-auto")))
+
 
 class TestSaveLogs(FakeMachine):
     def test_targets_exclude_system(self):

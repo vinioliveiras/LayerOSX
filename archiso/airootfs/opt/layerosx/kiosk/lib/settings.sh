@@ -3,7 +3,7 @@
 # saved under /var/lib/layerosx, otherwise the build mode's default (the same
 # defaults mac-vm-launch.sh applies; keep the two in sync):
 #   release: gfx=reims  verbose=off audio=on
-#   debug:   gfx=vmware verbose=on  audio=off
+#   debug:   gfx=vmware verbose=on  audio=on   (sound is on in every mode)
 # Sourced by the gpu/verbose/audio/macstatus commands and lib/kiosk-menu.sh, so
 # "show current setting" never disagrees with what the next launch will do.
 LAYEROSX_STATE_DIR="/var/lib/layerosx"
@@ -14,7 +14,7 @@ _mode_default() {  # $1 = gfx|verbose|audio
     case "$LAYEROSX_MODE:$1" in
         debug:gfx) echo vmware ;;   release:gfx) echo reims ;;
         debug:verbose) echo on ;;   release:verbose) echo off ;;
-        debug:audio) echo off ;;    release:audio) echo on ;;
+        debug:audio) echo on ;;    release:audio) echo on ;;
     esac
 }
 

@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional, Tuple
 
@@ -218,7 +219,7 @@ class Backend:
     # Per-mode defaults -- MUST match mac-vm-launch.sh and lib/settings.sh.
     DEFAULTS = {
         "release": {"gfx": "reims", "verbose": "off", "audio": "on"},
-        "debug": {"gfx": "vmware", "verbose": "on", "audio": "off"},
+        "debug": {"gfx": "vmware", "verbose": "on", "audio": "on"},   # sound on in every mode
     }
     GFX_CHOICES = ("reims", "vmware", "std")
 
@@ -908,6 +909,67 @@ class Backend:
                 out.add(vp)
         return out
 
+    # Automatic USB (Settings > USB Devices, on by default): every device
+    # plugged into a port -- not built-in ones (webcam, Bluetooth, fingerprint
+    # reader), not keyboards/mice, not drives mounted on Linux -- goes to the
+    # Mac as soon as it appears (usb-auto-watch, started with the session).
+    # A device the user switches back to Linux is remembered in
+    # usb-keep-on-linux and left alone until they switch it on again.
+    def usb_auto(self) -> bool:
+        return _read(os.path.join(self.state_dir, "usb-auto")) != "off"
+
+    def set_usb_auto(self, on: bool) -> Tuple[bool, str]:
+        return self._write_state("usb-auto", None if on else "off")
+
+    def usb_keep_on_linux(self) -> set:
+        return {w for w in _read(os.path.join(self.state_dir, "usb-keep-on-linux")).lower().split()
+                if re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{4}", w)}
+
+    def _set_keep_on_linux(self, vp: str, keep: bool) -> None:
+        cur = self.usb_keep_on_linux()
+        new = (cur | {vp}) if keep else (cur - {vp})
+        if new != cur:
+            self._write_state("usb-keep-on-linux", "\n".join(sorted(new)) if new else None)
+
+    def usb_auto_candidates(self, devs: List["UsbDevice"]) -> List["UsbDevice"]:
+        keep = self.usb_keep_on_linux()
+        return [d for d in devs if not d.builtin and not d.blocked and not d.on_mac and d.id not in keep]
+
+    def usb_auto_once(self) -> List[str]:
+        """Give every eligible plugged-in device to the Mac; returns the ids given."""
+        if not self.usb_auto() or not self.vm_running():
+            return []
+        given = []
+        for d in self.usb_auto_candidates(self.usb_devices()):
+            rc, _ = self._run([sys.executable, os.path.join(self.lib, "qmp-cmd.py"), self.ctl_sock,
+                               "usb-attach", d.vid, d.pid], timeout=10)
+            if rc == 0:
+                given.append(d.id)
+        return given
+
+    def usb_auto_watch(self, interval: float = 2.0) -> None:
+        """Session-long loop: re-check only when the set of USB devices changes
+        or the Mac (re)starts -- the sysfs listing is cheap, QMP isn't."""
+        last = None
+        while True:
+            try:
+                names = tuple(sorted(os.listdir(self.usb_sysfs)))
+            except OSError:
+                names = ()
+            try:
+                st = os.stat(self.ctl_sock)
+                vm = (st.st_ino, st.st_mtime)
+            except OSError:
+                vm = None
+            key = (names, vm, self.usb_auto())
+            if key != last:
+                if vm is not None:
+                    time.sleep(1)           # let a just-plugged device finish enumerating
+                    for vp in self.usb_auto_once():
+                        print(f"usb-auto: gave {vp} to the Mac", flush=True)
+                last = key
+            time.sleep(interval)
+
     def usb_on_mac(self) -> set:
         if not self.vm_running():
             return set()
@@ -957,6 +1019,10 @@ class Backend:
                              "usb-attach" if on else "usb-detach", vid, pid])
         if rc == 0 and not on:
             self.usb_set_always(vid, pid, False)
+        if rc == 0:
+            # Back to Linux sticks (automatic USB won't take it again); giving
+            # it to the Mac clears that.
+            self._set_keep_on_linux(f"{vid}:{pid}", not on)
         return rc == 0, out.strip()
 
     def usb_set_always(self, vid: str, pid: str, always: bool, name: str = "") -> Tuple[bool, str]:
@@ -1266,6 +1332,8 @@ def main(argv: List[str]) -> int:
         print(json.dumps(None if v is None else {"percent": v[0], "muted": v[1]}))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
+    elif what == "usb-auto-watch":
+        b.usb_auto_watch()
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:

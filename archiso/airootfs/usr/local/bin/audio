@@ -5,7 +5,7 @@
 #
 #   audio            show the current setting
 #   audio on         attach a usb-audio device next launch (sound, if supported)
-#   audio off        no audio device (the default)
+#   audio off        no audio device (sound is on by default)
 #
 # Default is OFF, on purpose: sound is not required to install or run macOS,
 # and this way the audio path can never interfere with a boot that's still

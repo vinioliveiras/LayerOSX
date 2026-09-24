@@ -47,7 +47,7 @@ problem without rebuilding the ISO — settings are plain-text files under
 | `commands [name]` | List every kiosk command (one line + short description each, grouped). `commands <name>` prints the full description + usage of a single command. The discoverable index, so you don't have to remember them. |
 | `gpu <mode>` | Graphics adapter for the next launch. Modes: `vmware` (default, reliable, unaccelerated), `reims` (hardware-accelerated, alpha), `std` (stock VGA — OVMF linear framebuffer; was the "no linesize" A/B test, which turned out to be a CPUID cache panic — see "ROOT CAUSE of \"no linesize\""). |
 | `verbose <on\|off>` | Boot diagnostics. `on` shows XNU's `-v` log (in a **debug**-mode ISO also OpenCore's own logging + serial kernel log); `off` is a clean Apple-logo boot. Default follows the build mode: **off** in release, **on** in debug. |
-| `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). Default follows the build mode: **on** in release, **off** in debug; safe either way — it skips itself if the build has no audio backend. |
+| `audio <on\|off>` | Attach a `usb-audio` device (macOS drives it with AppleUSBAudio, no kext). On by default (every mode, every new install); safe either way — it skips itself if the build has no audio backend. |
 | `relaunch` | Restart just the macOS VM to apply a `gpu`/`verbose`/`audio` change — kills QEMU only (not Xorg), so no reboot and no screen flicker. |
 | `maclog [sub]` | View the guest boot/serial log (`~/mac-vm-serial.log`). No arg = curated view (where it stopped + errors + which OpenCore image booted). Subs: `tail`, `oc`, `patch`, `err`, `launch` (launcher log: OpenCore image + profile + exact cmdline), `qemu` (QEMU `-d guest_errors`, debug builds), `all`, `usb`. For a full shareable bundle of *all* logs + host/config, use `macdiag`. |
 | `macstatus` | One-glance summary of the current gpu / verbose / audio settings and the VM disk state. |
@@ -3744,4 +3744,23 @@ backend for voice 'usb-audio'") and the Mac had no sound.
   volume applies.
 - CLI: `layerosx_backend.py volume [up|down|mute]`. Unit tests drive a fake
   `amixer` (53 tests).
+
+## Sound and USB on by default
+
+- Sound: `audio` defaults to **on** in every mode (the launcher, `settings.sh`
+  and the panel backend agree), so a new install has sound without touching
+  Settings.
+- Automatic USB, **on** by default (Settings › USB Devices › "Give new devices
+  to the Mac"; state file `/var/lib/layerosx/usb-auto`, `off` disables it):
+  `layerosx_backend.py usb-auto-watch`, started with the session, gives every
+  device plugged into a port to the Mac as soon as it appears and whenever the
+  Mac (re)starts. It skips built-in devices (webcam, Bluetooth, fingerprint
+  reader), keyboards/mice, hubs and drives mounted on Linux. It only re-checks
+  when the USB device list changes or the Mac restarts (the sysfs listing is
+  cheap; QMP isn't). Log: `~/usb-auto.log`.
+- Switching a device off (panel switch, or "give back to Linux" in the
+  Ctrl+Alt+U picker) adds it to `usb-keep-on-linux`, so automatic USB leaves
+  it alone; switching it on again removes it. The star ("always") still
+  attaches a device on the QEMU command line, built-in ones included.
+- `macdiag` has a USB section. Tests: 54.
 

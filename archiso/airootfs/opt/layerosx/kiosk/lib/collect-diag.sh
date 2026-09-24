@@ -71,6 +71,11 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
     echo "-- output the Mac uses (Settings > Sound > Output) --"
     python3 /opt/layerosx/panel/layerosx_backend.py audio-device 2>&1 || echo "(none)"
     grep -E '^[0-9:]+ Audio:|audio|ALSA|alsa' "$HOME/mac-vm.log" 2>/dev/null | tail -8
+    _sec "USB (automatic: $(cat "$STATE_DIR/usb-auto" 2>/dev/null || echo on))"
+    python3 /opt/layerosx/panel/layerosx_backend.py usb 2>&1 | head -60
+    echo "-- kept on Linux --"; cat "$STATE_DIR/usb-keep-on-linux" 2>/dev/null || echo "(none)"
+    tail -10 "$HOME/usb-auto.log" 2>/dev/null
+
     _sec "SERIAL LOG — last 40 lines (where it stopped)"
     [ -r "$SERIAL_LOG" ] && tail -40 "$SERIAL_LOG" || echo '(no serial log yet)'
 
