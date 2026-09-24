@@ -27,6 +27,19 @@ RCEOF
 # light/dark from Settings > Appearance). Falls back to the xterm below if GTK or
 # VTE can't start (missing packages, broken GL...). Access control (password
 # policy) happens before this, in lib/maint-terminal.sh.
+# Single instance, whoever opened it (Ctrl+Alt+T via maint-terminal.sh, or
+# Settings > Maintenance > Open Terminal, which starts this directly -- the
+# reason a second terminal could open). The lock fd is inherited by the
+# terminal and held until its window closes; a second open raises the
+# existing window instead (it's hidden behind the fullscreen Mac after a
+# click on the Mac).
+exec 9>"/tmp/layerosx-maint-$(id -u).lock"
+if ! flock -n 9; then
+    /opt/layerosx/kiosk/lib/raise-window.sh 'LayerOSX.*(terminal|Maintenance)' || true
+    rm -f "$RCFILE"
+    exit 0
+fi
+
 TERM_APP=/opt/layerosx/panel/layerosx_terminal.py
 if python3 -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1"); gi.require_version("Vte","3.91"); from gi.repository import Vte' 2>>"$HOME/panel.log"; then
     start=$(date +%s)

@@ -3963,3 +3963,22 @@ ceiling while the Reims side sat mostly idle waiting).
 - Backend `ram_cap_mb()` mirrors it; Resources carries `ram_cap_mb`. Tests: 58.
 - For the test laptop: 44 GB with no budget learned, 45 GB after it.
 
+## One maintenance terminal, whoever opens it
+
+A second terminal could open: Ctrl+Alt+T (`maint-terminal.sh`) held the
+single-instance lock, but Settings › Maintenance › Open Terminal started
+`peek-terminal.sh` directly, without it; and the raise-instead regex
+(`^LayerOSX — (terminal|Maintenance)`) contained an em dash that xdotool
+doesn't reliably match. Now `peek-terminal.sh` — where every path ends — takes
+the lock (`/tmp/layerosx-maint-UID.lock`, inherited by the terminal process
+and held until its window closes) and raises the open window when it can't;
+`maint-terminal.sh` only checks that lock and holds a separate one while its
+password dialog is up (so mashing the chord doesn't stack dialogs). The regex
+is `LayerOSX.*(terminal|Maintenance)`.
+
+Rounded corners: LayerOSX windows draw their rounded corners and shadow
+client-side, which needs a compositor. With Settings › Displays › Window
+effects off (picom stopped) they are square, and GTK decides this when a
+window opens — a window opened while effects were off stays square until
+reopened. Not a bug in itself; noted in the README.
+

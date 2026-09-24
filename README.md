@@ -67,7 +67,7 @@ APFS inside macOS with `sudo diskutil apfs resizeContainer <container> 0`.
 | | |
 |---|---|
 | **Ctrl+Alt+W** | LayerOSX Settings (below). Falls back to a zenity menu if GTK can't start. |
-| **Ctrl+Alt+T** | Maintenance terminal (open, unless a Maintenance password is set). |
+| **Ctrl+Alt+T** | Maintenance terminal (open, unless a Maintenance password is set). One at a time: pressing it again brings the open one back. |
 | **Ctrl+Alt+U** | USB picker: give a device to the Mac or take it back. |
 | Brightness / volume keys | Handled by Linux, work while the Mac has focus. |
 | Apple menu › **Restart** | Restarts the Mac only (the computer stays on). |
@@ -89,7 +89,7 @@ banner.
 |---|---|
 | Wi-Fi | On/off, current network, nearby networks, hidden networks. |
 | Battery | Level, state, what the low-battery guard does; **Power mode** — Automatic (Performance on the charger, Balanced on battery), Performance, Balanced, Power Saver. |
-| Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off). |
+| Displays | Brightness; **Screens** — which monitor shows the Mac, other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off; windows opened while it's off stay square until reopened). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
 | Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Restart the Mac** (the black-screen rescue). |

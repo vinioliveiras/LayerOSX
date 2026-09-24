@@ -1176,6 +1176,15 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5f. One terminal
+
+- Ctrl+Alt+T, click on the Mac (terminal goes behind), Ctrl+Alt+T again:
+  the same terminal comes back, no second one.
+- Settings › Maintenance › Open Terminal while one is open: the open one
+  comes forward. Close it, open again: a new one opens.
+- With a Maintenance password: Ctrl+Alt+T twice quickly → one password
+  dialog.
+
 ### 5.5e. Mac RAM fits Reims' GPU heap
 
 - Settings › Mac › Memory: "Automatic — 44 GB" on the 64 GB laptop (was
