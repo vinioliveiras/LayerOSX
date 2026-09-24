@@ -3478,3 +3478,34 @@ be switched on from LayerOSX Settings when it's needed:
   QEMU leaving 2–3 s later with nothing else in the log — these two lines are
   what tells a window close from a crash.
 
+## Testing the Mac on the build machine (`tools/run-mac-here.sh`)
+
+Rebooting into LayerOSX for every Reims experiment is slow, so
+`tools/run-mac-here.sh` boots the **installed** LayerOSX Mac right on the
+Linux desktop the ISO is built on, with the QEMU/Reims ROM/OpenCore images
+the last build left in `archiso/airootfs/`:
+
+```sh
+tools/run-mac-here.sh                 # Reims, 4 cores, 8 GB, in a window
+tools/run-mac-here.sh --gfx vmware    # plain VMware SVGA (SDL window)
+tools/run-mac-here.sh --gpu nvidia    # Reims on one GPU only (amd, intel)
+tools/run-mac-here.sh --diag          # serial kernel log + QEMU -d + text boot
+tools/run-mac-here.sh --x11 --fullscreen --cores 8 --ram 16
+```
+
+- It finds the LayerOSX partition (already mounted, or the ext4 partition
+  holding `var/lib/layerosx/macos.qcow2`, mounted **read-only** with sudo;
+  `--part /dev/...` to skip the search). The Mac's disk and OpenCore run with
+  `snapshot=on` and the NVRAM is a scratch copy, so a test run never changes
+  the installed Mac.
+- Same command line as the kiosk launcher (CPU model/flags incl. the AMD
+  stepping/feature mirroring, memfd RAM, reims-vgpu-pci behind the
+  pci-bridge with the GOP ROM, AMD OpenCore family matching `--cores`), minus
+  openbox/picom/the relaunch loop — a problem that also shows up here is
+  QEMU/Reims/GPU, one that doesn't is the kiosk.
+- Logs in `test-runs/<timestamp>-<gfx>/` (gitignored): `run.log` (command
+  line, QEMU output, QMP SHUTDOWN/RESET/GUEST_PANICKED events, how QEMU
+  ended), `qemu.log` (QEMU `-D`: Reims' messages), `serial.log`.
+- Needs `/dev/kvm` for the user, OVMF (`edk2-ovmf`), and QEMU's data files
+  in `/usr/share/qemu` (the `qemu-*` packages) besides the build's ROM.
+
