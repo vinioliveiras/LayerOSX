@@ -407,6 +407,32 @@ class Backend:
             return False, f"{mb} MB is out of range for this machine"
         return self._write_state("ram-mb", str(mb))
 
+    # ------------------------------------------------ debug features (toggles)
+    # One ISO for everyone: what the old debug build baked in is switched here.
+    def _flag(self, name: str) -> bool:
+        return _read(os.path.join(self.state_dir, name)).lower() in ("on", "1", "yes", "true")
+
+    def diag_logs(self) -> bool:
+        """Settings > Mac > Detailed logs: serial kernel log + OpenCore log +
+        QEMU guest_errors/unimp (mac-vm-launch.sh boots OpenCore*-diag)."""
+        return self._flag("diag-logs")
+
+    def set_diag_logs(self, on: bool) -> Tuple[bool, str]:
+        return self._write_state("diag-logs", "on" if on else None)
+
+    def text_consoles(self) -> bool:
+        """Settings > General > Text consoles (Ctrl+Alt+F1..F6), as saved --
+        kiosk/lib/vt-lock.sh applies it at the next boot."""
+        return self._flag("vt-switch")
+
+    def text_consoles_now(self) -> bool:
+        """Whether they're unlocked in the running session (no lock file)."""
+        return not os.path.exists(os.environ.get(
+            "LAYEROSX_VTLOCK_FILE", "/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf"))
+
+    def set_text_consoles(self, on: bool) -> Tuple[bool, str]:
+        return self._write_state("vt-switch", "on" if on else None)
+
     # --------------------------------------------------------------- screens
     # Which physical screen shows the Mac: display-target (xrandr output name,
     # absent = Automatic) and display-others (off|mirror). Applied by

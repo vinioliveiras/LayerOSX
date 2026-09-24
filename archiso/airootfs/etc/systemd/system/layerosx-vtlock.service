@@ -1,0 +1,12 @@
+[Unit]
+Description=LayerOSX — lock or unlock text consoles (Settings > General > Text consoles)
+# Must run before X starts: the kiosk's X server is started from tty1's autologin.
+Before=getty@tty1.service display-manager.service
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/layerosx/kiosk/lib/vt-lock.sh
+
+[Install]
+WantedBy=multi-user.target

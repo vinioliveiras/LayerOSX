@@ -55,7 +55,7 @@ fi
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
 SERIAL_LOG="$HOME/mac-vm-serial.log"
-QEMU_D_LOG="$HOME/mac-vm-qemu.log"   # QEMU -d diagnostics (debug builds only)
+QEMU_D_LOG="$HOME/mac-vm-qemu.log"   # QEMU -D log: always (Reims messages); + -d guest_errors,unimp with "Detailed logs"
 
 # Every line gets a timestamp on its way into the log. This log is append-only
 # across every boot (tee -a), so without one there is no telling which of two
@@ -369,15 +369,25 @@ configure_toggles() {
     # ON (handy while bringing macOS up); `verbose off` gives the clean Apple boot.
     VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo "$VERBOSE_DEFAULT")"
     case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
+    # "Detailed logs" (Settings > Mac, $STATE_DIR/diag-logs): the debug-flavour
+    # image (OpenCore*-diag: -v + serial kernel log + OpenCore's own log), and
+    # QEMU's guest_errors/unimp further down. What the old debug build did,
+    # now a toggle on the one ISO. Implies the text boot.
+    case "$(cat "$STATE_DIR/diag-logs" 2>/dev/null)" in on|1|yes|true) DIAG_STATE=on ;; *) DIAG_STATE=off ;; esac
     if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
         _oc_norm="$OPENCORE_DIR/OpenCore-${AMD_OC}.qcow2"
         _oc_verb="$OPENCORE_DIR/OpenCore-${AMD_OC}-verbose.qcow2"
+        _oc_diag="$OPENCORE_DIR/OpenCore-${AMD_OC}-diag.qcow2"
     else
         _oc_norm="$OPENCORE_DIR/OpenCore.qcow2"
         _oc_verb="$OPENCORE_DIR/OpenCore-verbose.qcow2"
+        _oc_diag="$OPENCORE_DIR/OpenCore-diag.qcow2"
     fi
-    if [ "$VERBOSE_STATE" = on ] && [ -s "$_oc_verb" ]; then
-        OPENCORE_IMG="$_oc_verb"
+    if [ "$DIAG_STATE" = on ] && [ -s "$_oc_diag" ]; then
+        OPENCORE_IMG="$_oc_diag"
+        echo "Detailed logs ON: kernel -> ~/mac-vm-serial.log, QEMU diagnostics -> $QEMU_D_LOG."
+    elif [ "$VERBOSE_STATE" = on ] || [ "$DIAG_STATE" = on ]; then
+        [ -s "$_oc_verb" ] && OPENCORE_IMG="$_oc_verb" || OPENCORE_IMG="$_oc_norm"
     elif [ -s "$_oc_norm" ]; then
         OPENCORE_IMG="$_oc_norm"
     else
@@ -736,9 +746,15 @@ while true; do
     # unimplemented instructions -- the FIRST thing to check when the CPU model
     # is masked for an AMD host) and unimp (unimplemented device features),
     # each written to its own file so they don't drown the serial log.
-    if [ "$BUILD_MODE" = debug ]; then
-        : > "$QEMU_D_LOG" 2>/dev/null || true
+    # QEMU's own log file is ALWAYS set (-D): with no -d flags it only gets
+    # what code logs explicitly -- e.g. Reims' "host window unavailable (rc=2);
+    # using QEMU display", the line that explained the black screen -- so it
+    # costs nothing on a normal boot. "Detailed logs" adds guest_errors/unimp.
+    : > "$QEMU_D_LOG" 2>/dev/null || true
+    if [ "$DIAG_STATE" = on ] || [ "$BUILD_MODE" = debug ]; then
         QEMU_ARGS+=(-d guest_errors,unimp -D "$QEMU_D_LOG")
+    else
+        QEMU_ARGS+=(-D "$QEMU_D_LOG")
     fi
 
     # Always record the EXACT command line this boot used, %q-quoted so it can

@@ -1,27 +1,25 @@
 #!/usr/bin/env bash
-# One-shot rebuild helper. Run this in WSL from the repo root:
-#     ./rebuild.sh              # asks for the build mode (release/debug)
-#     ./rebuild.sh release      # non-interactive
-#     ./rebuild.sh debug        # non-interactive
-#     LAYEROSX_MODE=debug ./rebuild.sh
-#     LAYEROSX_TERMINAL=off ./rebuild.sh release   # Ctrl+Alt+T terminal: password|open|off
+# One-shot rebuild helper. Run from the repo root:
+#     ./rebuild.sh
+#     LAYEROSX_TERMINAL=off ./rebuild.sh     # Ctrl+Alt+T terminal: password|open|off
 # It pulls the latest commits, installs any missing build tools
 # (setup-build-host.sh -- archiso, docker, mtools...) and rebuilds the ISO (build.sh handles the rest:
 # it only re-runs the ~30-60 min qemu Docker build when the binary/libs aren't
 # already staged, otherwise just re-derives the OpenCore images + mkarchiso).
 #
-# Build modes (see build.sh / patch-opencore-verbose.sh):
-#   release -- clean build for normal use: verbose off, audio on, Reims on.
-#   debug   -- troubleshooting build: verbose on + serial kernel logging +
-#              DEBUG OpenCore in the verbose image; VMware display, audio off.
+# There is ONE build now. The ISO is set up like the old release build (Reims,
+# sound on, Apple-logo boot, consoles locked, terminal behind a password); the
+# old debug build's features are toggles in LayerOSX Settings:
+#   Mac > Show startup log / Detailed logs, General > Text consoles.
+# `./rebuild.sh debug|release` still works but the word is ignored.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Mode: 1st arg wins, else $LAYEROSX_MODE, else let build.sh prompt.
-MODE="${1:-${LAYEROSX_MODE:-}}"
-case "$MODE" in
-    ""|debug|release) : ;;
-    *) echo "usage: $0 [release|debug]" >&2; exit 2 ;;
+case "${1:-}" in
+    "") : ;;
+    debug|release)
+        echo "note: '$1' is no longer a build mode -- one ISO for all; the debug features are toggles in LayerOSX Settings (Mac > Detailed logs, General > Text consoles)." ;;
+    *) echo "usage: $0" >&2; exit 2 ;;
 esac
 
 echo "==> git pull"
@@ -30,13 +28,7 @@ echo "==> build-host dependencies (setup-build-host.sh)"
 ./setup-build-host.sh
 echo "==> building ISO (archiso/build.sh)"
 cd archiso
-# sudo resets the environment, so pass the mode explicitly (sudo accepts
-# VAR=value before the command). Empty MODE => build.sh prompts interactively.
-# LAYEROSX_TERMINAL (password|open|off) is passed through the same way; empty
-# = build.sh picks the mode's default (debug=open, release=password).
-if [ -n "$MODE" ]; then
-    sudo LAYEROSX_MODE="$MODE" LAYEROSX_TERMINAL="${LAYEROSX_TERMINAL:-}" ./build.sh
-else
-    sudo LAYEROSX_TERMINAL="${LAYEROSX_TERMINAL:-}" ./build.sh
-fi
+# sudo resets the environment: pass LAYEROSX_TERMINAL through explicitly
+# (empty = build.sh's default, password).
+sudo LAYEROSX_TERMINAL="${LAYEROSX_TERMINAL:-}" ./build.sh
 echo "==> done. ISO is in archiso/out/ -- drag it onto your Ventoy drive."

@@ -62,6 +62,10 @@ not something you invoke by hand. State files: `/var/lib/layerosx/{gfx,verbose,a
 
 ## Build modes: `release` vs `debug`
 
+> **Superseded:** there is one build now — see "One build: the debug features
+> are toggles" near the end. `./rebuild.sh` no longer asks for a mode; the
+> debug features are switches in LayerOSX Settings. Kept for the history.
+
 `build.sh` (and `./rebuild.sh`) asks which build you want, or takes it
 non-interactively:
 
@@ -330,9 +334,9 @@ third-party repos or AUR helpers needed. Two ways to get that shell:
 ```sh
 git clone https://github.com/vinioliveiras/LayerOSX.git
 cd LayerOSX
-./rebuild.sh release        # or: ./rebuild.sh debug
-LAYEROSX_TERMINAL=off ./rebuild.sh release   # optional: Ctrl+Alt+T terminal password|open|off
-LAYEROSX_BOOT_COLOR=000000 ./rebuild.sh release  # optional: first-screen colour (default 1c1c1c)
+./rebuild.sh                 # one ISO (debug features are toggles in Settings)
+LAYEROSX_TERMINAL=off ./rebuild.sh   # optional: Ctrl+Alt+T terminal password|open|off
+LAYEROSX_BOOT_COLOR=000000 ./rebuild.sh  # optional: first-screen colour (default 1c1c1c)
 ```
 
 `rebuild.sh` runs `setup-build-host.sh` first, which installs everything the
@@ -2889,7 +2893,7 @@ black-screens), read logs or run `macdiag` without flashing a debug ISO.
   | `password` | asks for the maintenance password, then opens it | `release` |
   | `off` | nothing (fully locked appliance) | — |
 
-  Set it when building: `LAYEROSX_TERMINAL=off ./rebuild.sh release` (or
+  Set it when building: `LAYEROSX_TERMINAL=off ./rebuild.sh` (or
   `LAYEROSX_TERMINAL=... ./build.sh`). `build.sh` bakes it into
   `/etc/layerosx/terminal` (gitignored, like `/etc/layerosx/mode`); an unknown
   value falls back to `password` (fail closed).
@@ -3415,3 +3419,43 @@ screen — the chosen one, or the primary on Automatic):
   validation); the panel under Xvfb (lists, saving, rates following the
   resolution). Not yet on hardware.
 
+
+
+## One build: the debug features are toggles
+
+There used to be two ISOs, release and debug. Now there is one, set up like
+the old release build (Reims, sound on, Apple-logo boot, text consoles
+locked, terminal behind a password), and everything the debug build did can
+be switched on from LayerOSX Settings when it's needed:
+
+| Old debug build | Now |
+|---|---|
+| Text boot (`-v`) | Mac › **Show startup log** (unchanged) |
+| Serial kernel log (`serial=3 debug=0x108 keepsyms=1 msgbuf`), OpenCore's own log, kernel serial patches | Mac › **Detailed logs** → boots `OpenCore*-diag.qcow2` |
+| QEMU `-d guest_errors,unimp` → `~/mac-vm-qemu.log` | Mac › **Detailed logs** |
+| Ctrl+Alt+F1…F6 / Ctrl+Alt+Backspace (no `DontVTSwitch`) | General › **Text consoles** (next boot) |
+| tty2 auto-login as `mac` | tty2 follows the terminal policy |
+| VMware / audio off / verbose on defaults | Same defaults as release; change them in Settings |
+
+- **Build:** `build.sh` no longer asks for a mode (`LAYEROSX_MODE` and
+  `./rebuild.sh debug|release` are accepted and ignored with a note).
+  `patch-opencore-verbose.sh` takes the flavour as `$3`; `build.sh` makes both
+  per family: `OpenCore*-verbose` (release flavour) and `OpenCore*-diag`
+  (debug flavour) — 4 more images, ~70 MB.
+- **Always on now:** QEMU's log file (`-D ~/mac-vm-qemu.log`). With no `-d`
+  flags it only receives what code logs explicitly — e.g. Reims' "host window
+  unavailable" — so it costs nothing on a normal boot but keeps that kind of
+  message on every install.
+- **Text consoles:** `layerosx-vtlock.service` runs `kiosk/lib/vt-lock.sh`
+  as root before X starts: it writes the `DontVTSwitch`/`DontZap` xorg
+  snippet unless `/var/lib/layerosx/vt-switch` is `on`. X reads it only at
+  start, so the switch applies after restarting the computer (the panel says
+  so while the saved choice and the running session differ).
+- **tty2** (`getty@tty2` drop-in → `kiosk/lib/tty2-getty.sh`) follows
+  `/etc/layerosx/terminal`: `open` → auto-login as `mac`, `password` → a
+  login prompt, `off` → no shell. Unlocking consoles from the panel (which
+  needs no password) therefore never opens a password-less shell.
+- `/etc/layerosx/mode` is still written (`release`) so older scripts keep
+  working; About shows "Debug build" only for an old debug ISO.
+- Verified: 43 backend tests (the two toggles, `vt-lock.sh` writing/removing
+  the xorg snippet); the panel under Xvfb. Not yet on hardware.

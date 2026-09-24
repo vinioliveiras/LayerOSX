@@ -32,6 +32,10 @@ This step alone will already show if anything is missing from
 
 ## 1.5. Build mode (release / debug)
 
+> **Superseded:** there is one build now (README: "One build: the debug
+> features are toggles"). `./rebuild.sh` doesn't ask for a mode; check 5.4p
+> instead. The notes below describe the old two-build setup.
+
 - `build.sh` / `./rebuild.sh` prompt for a mode (or take it: `./rebuild.sh
   debug`, or `LAYEROSX_MODE=debug ./build.sh`). Confirm the banner prints the
   mode you chose and that `archiso/airootfs/etc/layerosx/mode` contains it.
@@ -1087,6 +1091,24 @@ allow-list and anything not coming from the guest.)
   to /usr/share/vulkan/icd.d/..." and the cmdline starts with
   `VK_DRIVER_FILES=...`. Automatic → no such line.
 
+### 5.4p. One build, debug toggles
+
+- `./rebuild.sh` builds without asking for a mode; `archiso/airootfs/
+  opt/layerosx/opencore/` has `OpenCore*-diag.qcow2` next to each
+  `-verbose` (12 images with the AMD families).
+- Fresh install boots like the old release: Apple logo, Reims, sound on;
+  Ctrl+Alt+F2 does nothing.
+- Settings › Mac › Detailed logs on → Restart Mac: text boot,
+  `~/mac-vm-serial.log` fills with the kernel log, `~/mac-vm.log` says
+  "Detailed logs ON", the cmdline has `-d guest_errors,unimp` and
+  `OpenCore*-diag`. Off → back to the logo.
+- `~/mac-vm-qemu.log` exists on every boot (even with Detailed logs off).
+- Settings › General › Text consoles on → the row says "after restarting the
+  computer" → restart → Ctrl+Alt+F2 shows a login prompt (terminal policy
+  `password`), Ctrl+Alt+F1 back. Off → restart → locked again.
+- A `LAYEROSX_TERMINAL=open` build: tty2 logs in as mac directly; `off`: tty2
+  shows the "no maintenance console" notice.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"
@@ -1156,7 +1178,7 @@ allow-list and anything not coming from the guest.)
   attempts. Ctrl+Alt+F2 still does nothing.
 - Debug build (`open`): Ctrl+Alt+T opens the terminal with no prompt; F2
   now reaches macOS (brightness-up / app F2).
-- `LAYEROSX_TERMINAL=off ./rebuild.sh release`: build log shows
+- `LAYEROSX_TERMINAL=off ./rebuild.sh`: build log shows
   "Maintenance terminal: off"; Ctrl+Alt+T does nothing. `commands` prints the
   current policy in its footer.
 

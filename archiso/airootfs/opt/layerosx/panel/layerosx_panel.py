@@ -769,11 +769,19 @@ class Settings(Adw.ApplicationWindow):
         self.mac_row.add_suffix(self.mac_dot)
         g.add(self.mac_row)
         page.add(g)
-        s = Adw.PreferencesGroup(title="Startup", description="Applies when the Mac restarts.")
+        s = Adw.PreferencesGroup(title="Startup & logs", description="Applies when the Mac restarts.")
         self.verbose_row = Adw.SwitchRow(title="Show startup log",
                                          subtitle="Text log instead of the logo while macOS starts — useful when something goes wrong")
         self.verbose_row.connect("notify::active", self._on_switch, "verbose", "Startup log")
         s.add(self.verbose_row)
+        self.diag_row = Adw.SwitchRow(
+            title="Detailed logs",
+            subtitle="For troubleshooting: macOS's kernel log (~/mac-vm-serial.log), OpenCore's log and "
+                     "QEMU diagnostics (~/mac-vm-qemu.log). Also shows the startup log. Save them with "
+                     "General › Save diagnostics.")
+        self.diag_row.set_active(self.b.diag_logs())
+        self.diag_row.connect("notify::active", self._on_diag_logs)
+        s.add(self.diag_row)
         page.add(s)
         page.add(self._resources_group())
         r = Adw.PreferencesGroup(title="Restart")
@@ -928,8 +936,39 @@ class Settings(Adw.ApplicationWindow):
             tb.connect("clicked", lambda *_: self.on_terminal())
             t.add_suffix(tb)
             m.add(t)
+        self.vt_row = Adw.SwitchRow(title="Text consoles")
+        self.vt_row.add_prefix(Gtk.Image.new_from_icon_name("input-keyboard-symbolic"))
+        self.vt_row.set_active(self.b.text_consoles())
+        self._vt_subtitle()
+        self.vt_row.connect("notify::active", self._on_text_consoles)
+        m.add(self.vt_row)
         page.add(m)
         return self._pane("General", page)
+
+    def _vt_subtitle(self):
+        base = ("Ctrl+Alt+F1–F6 switch to Linux text consoles (Ctrl+Alt+F2 follows the terminal's "
+                "password). Off keeps the computer locked to the Mac.")
+        pending = self.b.text_consoles() != self.b.text_consoles_now()
+        self.vt_row.set_subtitle(base + (" Takes effect after restarting the computer." if pending else ""))
+
+    def _on_text_consoles(self, row, _pspec):
+        if self._updating:
+            return
+        on = row.get_active()
+        ok, msg = self.b.set_text_consoles(on)
+        self.after_action(ok, msg, ("Text consoles on" if on else "Text consoles off")
+                          + " — after restarting the computer")
+        self._vt_subtitle()
+
+    def _on_diag_logs(self, row, _pspec):
+        if self._updating:
+            return
+        on = row.get_active()
+        ok, msg = self.b.set_diag_logs(on)
+        self.after_action(ok, msg, ("Detailed logs on" if on else "Detailed logs off")
+                          + " — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
 
     # ------------------------------------------------------------- Terminal
     def _page_terminal(self):
@@ -990,9 +1029,10 @@ class Settings(Adw.ApplicationWindow):
         for g in self.about_groups:
             self.about_page.remove(g)
         self.about_groups = []
-        mode = {"release": "Release", "debug": "Debug"}.get(a.mode, a.mode)
+        # One ISO for everyone now; only an old debug build still says so.
+        mode = " · Debug build" if a.mode == "debug" else ""
         self.about_version.set_label(
-            f"Version {a.layerosx_version}" + (f" · built {a.built}" if a.built else "") + f" · {mode}")
+            f"Version {a.layerosx_version}" + (f" · built {a.built}" if a.built else "") + mode)
 
         def group(title, rows, description=None):
             g = Adw.PreferencesGroup(title=title, description=description)

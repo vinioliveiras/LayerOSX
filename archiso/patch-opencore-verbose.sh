@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Produce an OpenCore image with a verbose macOS boot (-v). How much extra
-# diagnostic machinery rides along depends on the BUILD MODE (LAYEROSX_MODE):
+# diagnostic machinery rides along depends on the FLAVOUR ($3, or LAYEROSX_MODE):
 #
 #   release (default) -- the SHIPPING verbose image. boot-args gets only `-v`,
 #     so `verbose on` gives a readable XNU boot log on screen and nothing else.
@@ -14,8 +14,8 @@
 #     image -- see README.md / CLAUDE.md. (No OpenCore BINARY swap: it caused an
 #     "Already started" halt and the kernel log doesn't need it -- see below.)
 #
-# Everything diagnostic is gated on debug mode, so there is nothing to strip out
-# by hand once the boot is fixed: just build in release mode.
+# Everything diagnostic lives only in the debug-flavour image (OpenCore*-diag),
+# which the launcher boots only while "Detailed logs" is on.
 #
 # Keeping all of this ONLY in the verbose image (never the base) is deliberate:
 # `verbose off` is always a silent Apple-logo boot regardless of mode.
@@ -29,9 +29,12 @@ cd "$(dirname "$0")"
 IN="${1:-airootfs/opt/layerosx/opencore/OpenCore.qcow2}"
 OUT="${2:-$IN}"
 
-# Build mode: anything other than "debug" is treated as "release" (the clean
-# default), so a typo can never accidentally ship the diagnostic image.
-MODE="${LAYEROSX_MODE:-release}"
+# Flavour: $3 (release|debug), else LAYEROSX_MODE, else release. build.sh now
+# always makes BOTH per image family -- OpenCore*-verbose (release flavour, the
+# "Show startup log" toggle) and OpenCore*-diag (debug flavour, the "Detailed
+# logs" toggle in LayerOSX Settings > Mac). Anything other than "debug" is
+# treated as "release", so a typo can never produce the diagnostic image.
+MODE="${3:-${LAYEROSX_MODE:-release}}"
 case "$MODE" in
     debug) : ;;
     release) : ;;

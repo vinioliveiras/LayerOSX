@@ -515,6 +515,51 @@ class TestModesAndGpu(TestScreens):
             os.environ.pop("LAYEROSX_VK_ICD_DIRS", None)
 
 
+class TestDebugToggles(FakeMachine):
+    def test_detailed_logs_and_text_consoles(self):
+        lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")
+        write(lock, "locked")
+        os.environ["LAYEROSX_VTLOCK_FILE"] = lock
+        try:
+            b = lb.Backend()
+            self.assertFalse(b.diag_logs())
+            self.assertTrue(b.set_diag_logs(True)[0])
+            self.assertTrue(lb.Backend().diag_logs())
+            self.assertTrue(b.set_diag_logs(False)[0])
+            self.assertFalse(os.path.exists(os.path.join(self.state, "diag-logs")))
+            # consoles: saved choice vs what the running session has
+            self.assertEqual((b.text_consoles(), b.text_consoles_now()), (False, False))
+            self.assertTrue(b.set_text_consoles(True)[0])
+            self.assertEqual((lb.Backend().text_consoles(), b.text_consoles_now()), (True, False))
+            os.remove(lock)                                    # what vt-lock.sh does at boot
+            self.assertTrue(b.text_consoles_now())
+            self.assertTrue(b.set_text_consoles(False)[0])
+            self.assertFalse(os.path.exists(os.path.join(self.state, "vt-switch")))
+        finally:
+            os.environ.pop("LAYEROSX_VTLOCK_FILE", None)
+
+
+class TestVtLockScript(FakeMachine):
+    SCRIPT = os.path.join(os.path.dirname(os.path.dirname(HERE)), "archiso", "airootfs",
+                          "opt", "layerosx", "kiosk", "lib", "vt-lock.sh")
+
+    def test_writes_or_removes_the_xorg_lock(self):
+        import subprocess
+        conf = os.path.join(self.tmp, "x", "10-layerosx-kiosk-lock.conf")
+        with open(self.SCRIPT) as f:
+            body = f.read().replace("/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf", conf)
+        script = os.path.join(self.tmp, "vt-lock.sh")
+        write(script, body)
+        run = lambda: subprocess.run(["bash", script], capture_output=True, text=True,
+                                     env=dict(os.environ, LAYEROSX_STATE_DIR=self.state)).stdout
+        self.assertIn("locked", run())
+        with open(conf) as f:
+            self.assertIn('Option "DontVTSwitch" "on"', f.read())
+        write(os.path.join(self.state, "vt-switch"), "on\n")
+        self.assertIn("ENABLED", run())
+        self.assertFalse(os.path.exists(conf))
+
+
 class TestTheme(FakeMachine):
     def test_theme_default_save_env(self):
         os.environ.pop("LAYEROSX_PANEL_THEME", None)
