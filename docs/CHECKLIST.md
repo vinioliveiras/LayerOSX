@@ -1184,7 +1184,7 @@ allow-list and anything not coming from the guest.)
 - First run → "Download from Apple" with no internet → "Set up Wi-Fi" opens
   LayerOSX Settings on Wi-Fi (signal icons); connect, close it → the wizard
   continues. Same with `wifi pick` in the terminal.
-- Zenity fallback (e.g. `LAYEROSX_NO_GTK` test or the zenity kiosk menu):
+- Zenity fallback (the zenity kiosk menu, used when GTK4 can't start):
   Signal column shows ▂▄▆█-style bars.
 
 ### 5.5f. One terminal
