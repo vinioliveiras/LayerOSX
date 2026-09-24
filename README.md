@@ -3142,3 +3142,27 @@ had no sound card for ALSA. The launcher now skips audio (with a warning) when
   across sessions (application rules are now re-generated each session, so an
   updated rule replaces the old one), picom config accepted by picom v10, and
   an xterm rendered centered with rounded corners under openbox + picom.
+
+## LayerOSX Terminal: the same macOS-style frame as Settings
+
+The maintenance terminal (Ctrl+Alt+T, and Settings › Terminal) was a plain
+xterm with openbox's titlebar. It's now **LayerOSX Terminal**
+(`opt/layerosx/panel/layerosx_terminal.py`): a GTK4/libadwaita window around a
+VTE terminal (`vte4`, GNOME's terminal widget) with the same frame as LayerOSX
+Settings — traffic lights (here green zooms), client-side rounded corners and
+shadow (shown with the picom compositor), macOS-Terminal-like light/dark
+palettes following Settings › Appearance, Monospace 11, 10 000 lines of
+scrollback. The shell is the same as before (`logs`, `serial`, `commands`, the
+recent log on open) and the window closes when the shell exits. Shortcuts:
+Ctrl+Shift+C/V copy/paste, Ctrl+plus/minus/0 zoom, Ctrl+Shift+W close.
+
+- The frame is shared: `panel/layerosx_style.py` holds the traffic-light CSS,
+  `traffic_lights()`, `install_css()` (above USER priority) and
+  `apply_theme()`; LayerOSX Settings now imports it too.
+- `kiosk/lib/peek-terminal.sh` opens it and falls back to the old xterm if
+  GTK/VTE can't start (or the app dies at start-up). The window title is still
+  "LayerOSX — terminal", so openbox centers it and Ctrl+Alt+T brings it back.
+- Package: `vte4`. Preview on a desktop: `tools/preview-terminal.sh` (a real
+  shell on that machine). Verified by rendering light and dark under openbox +
+  picom (centered, rounded, typed into it); the panel's UI smoke test still
+  passes after moving the shared style out.

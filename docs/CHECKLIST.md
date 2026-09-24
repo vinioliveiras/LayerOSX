@@ -1001,6 +1001,10 @@ allow-list and anything not coming from the guest.)
   sound card" and there are no ALSA DAC errors.
 - Open Settings, click the VM (it hides behind), press Ctrl+Alt+W again → the
   same window comes back to the front. Same for the terminal (Ctrl+Alt+T).
+- Ctrl+Alt+T opens **LayerOSX Terminal** (traffic lights, rounded, theme from
+  Settings › Appearance), not an xterm; `commands`, `logs`, copy/paste
+  (Ctrl+Shift+C/V) work; `exit` closes it. If an xterm appears instead,
+  `~/panel.log` says why (GTK/VTE didn't start).
 - Settings, terminal and dialogs open centered; the terminal has rounded
   corners; the VM's smoothness is unchanged with picom running
   (`echo off > /var/lib/layerosx/compositor` to compare).

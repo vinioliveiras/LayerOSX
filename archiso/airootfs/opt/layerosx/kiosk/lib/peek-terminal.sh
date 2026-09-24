@@ -23,6 +23,18 @@ echo
 echo "Type 'logs' to follow it live, or 'serial' for the guest's own firmware/kernel console (OpenCore + XNU boot log). Ctrl-C stops watching, back to this prompt. Any other command works too."
 RCEOF
 
+# LayerOSX Terminal (GTK4 + VTE, same macOS-style frame as LayerOSX Settings,
+# light/dark from Settings > Appearance). Falls back to the xterm below if GTK or
+# VTE can't start (missing packages, broken GL...). Access control (password
+# policy) happens before this, in lib/maint-terminal.sh.
+TERM_APP=/opt/layerosx/panel/layerosx_terminal.py
+if python3 -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1"); gi.require_version("Vte","3.91"); from gi.repository import Vte' 2>>"$HOME/panel.log"; then
+    start=$(date +%s)
+    python3 "$TERM_APP" "$LOG" 2>>"$HOME/panel.log" && { rm -f "$RCFILE"; exit 0; }
+    # A crash right at start-up -> fall through to xterm; a normal close -> done.
+    [ $(( $(date +%s) - start )) -ge 3 ] && { rm -f "$RCFILE"; exit 0; }
+fi
+
 # allowTitleOps false: keep the "LayerOSX — terminal" title whatever the shell
 # does, so Ctrl+Alt+T can find it again (lib/raise-window.sh) and openbox keeps
 # centering it (title rule "LayerOSX*").
