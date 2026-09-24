@@ -117,7 +117,10 @@ OC="$OCDIR/$OCBASE.qcow2"
 [ "$DIAG" = 1 ] && [ -s "$OCDIR/$OCBASE-diag.qcow2" ] && OC="$OCDIR/$OCBASE-diag.qcow2"
 [ -s "$OC" ] || die "no OpenCore image $OC -- run a build first."
 
-ENV=(LD_LIBRARY_PATH="$LIBS")
+# Only the bundled libraries this system lacks (same helper as the kiosk):
+# the whole bundle shadows the host's libdrm/libelf/... and breaks RADV.
+LIBDIR="$("$AIR/opt/layerosx/kiosk/lib/qemu-libdir.sh" "$LIBS" "$QEMU")"
+ENV=(LD_LIBRARY_PATH="${LIBDIR:-$LIBS}")
 ARGS=(-name macOS-test -nodefaults -enable-kvm -no-reboot -rtc base=utc
       -L "$AIR/usr/share/qemu" -L /usr/share/qemu
       -qmp "unix:$RUN/qmp.sock,server,nowait"
@@ -169,7 +172,16 @@ QPID=$!
 for _ in $(seq 1 50); do [ -S "$RUN/qmp.sock" ] && break; sleep 0.2; done
 python3 - "$RUN/qmp.sock" >>"$RUN/run.log" 2>&1 <<'PY' &
 import json, socket, sys
-s = socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); f = s.makefile("rwb")
+import time
+s = socket.socket(socket.AF_UNIX)
+for _ in range(50):
+    try:
+        s.connect(sys.argv[1]); break
+    except OSError:
+        time.sleep(0.2)
+else:
+    sys.exit(0)                      # QEMU never opened QMP (died at start)
+f = s.makefile("rwb")
 f.readline(); f.write(b'{"execute":"qmp_capabilities"}\n'); f.flush()
 for line in f:
     m = json.loads(line)

@@ -122,7 +122,12 @@ fatal() {
 # sees it.
 QEMU_LD_LIBRARY_PATH=""
 if [ -d /opt/layerosx/lib ] && [ -n "$(ls -A /opt/layerosx/lib 2>/dev/null)" ]; then
-    QEMU_LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    # Only the bundled libraries the system lacks (lib/qemu-libdir.sh): the
+    # whole bundle shadowed the host's libdrm/libelf/libxcb/... and broke the
+    # AMD Vulkan driver (RADV) Reims needs.
+    # (its one-line summary goes to stderr = this log)
+    QEMU_LD_LIBRARY_PATH="$("$KIOSK_DIR/lib/qemu-libdir.sh" /opt/layerosx/lib "$QEMU_BIN")"
+    QEMU_LD_LIBRARY_PATH="${QEMU_LD_LIBRARY_PATH:-/opt/layerosx/lib}${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 fi
 sudo mkdir -p "$STATE_DIR"
 sudo chown "$(id -u):$(id -g)" "$STATE_DIR"

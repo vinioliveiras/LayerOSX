@@ -1118,6 +1118,15 @@ allow-list and anything not coming from the guest.)
   a "QMP: SHUTDOWN reason=..." (or "connection closed without a SHUTDOWN
   event") line before "relaunching".
 
+### 5.4r. QEMU uses the system's libraries (Reims on AMD)
+
+- `~/mac-vm.log` at each launch: "qemu-libdir: N of 106 bundled libraries
+  used (the rest from the system)" (N small), not "using the whole bundle".
+- Settings › Displays › Graphics card = AMD Radeon → Restart Mac: Reims
+  opens (no `Unable_to_find_a_Vulkan_driver` in the log).
+- On the build machine: `tools/run-mac-here.sh --gpu amd` boots like
+  `--gpu nvidia`.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

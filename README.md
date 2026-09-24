@@ -3509,3 +3509,31 @@ tools/run-mac-here.sh --x11 --fullscreen --cores 8 --ram 16
 - Needs `/dev/kvm` for the user, OVMF (`edk2-ovmf`), and QEMU's data files
   in `/usr/share/qemu` (the `qemu-*` packages) besides the build's ROM.
 
+## Reims on AMD: the bundled libraries hid the host's Vulkan driver
+
+Found with `tools/run-mac-here.sh` on the build machine: with `--gpu nvidia`
+Reims booted macOS all the way to loginwindow (zero-copy present), but with
+`--gpu amd` it stopped at once:
+
+    reims-vgpu-window: engine present unavailable (... vk_init_create_instance
+    vk_result=Unable_to_find_a_Vulkan_driver)
+
+The RADV manifest was right; the driver itself couldn't load.
+`prepare-qemu-macos.sh` bundles every library the Debian-built QEMU links
+(~106 in `/opt/layerosx/lib`) and QEMU ran with `LD_LIBRARY_PATH` on all of
+them — so Debian's libdrm, libdrm_amdgpu, libelf, libexpat, libzstd, libxcb,
+libX11, libwayland, libgbm, ... shadowed the host's newer ones for everything
+QEMU loads, including Arch's Mesa Vulkan driver. NVIDIA's self-contained
+driver didn't care.
+
+`kiosk/lib/qemu-libdir.sh` now builds QEMU's library path: only the bundled
+libraries the system doesn't have (by soname, `ldconfig -p`), linked into a
+private directory. Then `ldd` checks QEMU against it; a system library that's
+too old (`version ... not found`) gets its bundled copy back, one at a time,
+and only if that still doesn't resolve (e.g. an older glibc, which can't be
+bundled) does it fall back to the whole bundle. Used by `mac-vm-launch.sh`
+(its summary line lands in `~/mac-vm.log`) and `tools/run-mac-here.sh`.
+
+Also from those runs: `run-mac-here.sh`'s QMP watcher now waits for the
+socket instead of failing when QEMU hasn't opened it yet.
+
