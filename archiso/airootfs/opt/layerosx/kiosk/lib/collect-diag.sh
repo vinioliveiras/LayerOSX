@@ -65,6 +65,12 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
         printf '%s=%s  ' "$t" "$(cat "$STATE_DIR/$t" 2>/dev/null || echo default)"
     done; echo
 
+    _sec "SOUND"
+    cat /proc/asound/cards 2>/dev/null || echo "(no /proc/asound/cards)"
+    aplay -l 2>&1 | head -20
+    echo "-- output the Mac uses (Settings > Sound > Output) --"
+    python3 /opt/layerosx/panel/layerosx_backend.py audio-device 2>&1 || echo "(none)"
+    grep -E '^[0-9:]+ Audio:|audio|ALSA|alsa' "$HOME/mac-vm.log" 2>/dev/null | tail -8
     _sec "SERIAL LOG — last 40 lines (where it stopped)"
     [ -r "$SERIAL_LOG" ] && tail -40 "$SERIAL_LOG" || echo '(no serial log yet)'
 

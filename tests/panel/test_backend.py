@@ -515,6 +515,46 @@ class TestModesAndGpu(TestScreens):
             os.environ.pop("LAYEROSX_VK_ICD_DIRS", None)
 
 
+class TestAudioOutputs(FakeMachine):
+    def _asound(self):
+        a = os.path.join(self.tmp, "proc", "asound")
+        write(os.path.join(a, "cards"),
+              " 0 [Generic        ]: HDA-Intel - HD-Audio Generic\n"
+              "                      HD-Audio Generic at 0xd0ac8000 irq 91\n"
+              " 1 [Generic_1      ]: HDA-Intel - HD-Audio Generic\n"
+              "                      HD-Audio Generic at 0xd0ac0000 irq 92\n")
+        write(os.path.join(a, "card0", "id"), "Generic\n")
+        write(os.path.join(a, "card1", "id"), "Generic_1\n")
+        write(os.path.join(a, "card0", "pcm3p", "info"), "card: 0\ndevice: 3\nid: HDMI 0\nname: HDMI 0\n")
+        write(os.path.join(a, "card1", "pcm0p", "info"), "card: 1\ndevice: 0\nid: ALC256 Analog\nname: ALC256 Analog\n")
+        write(os.path.join(a, "card1", "pcm0c", "info"), "card: 1\ndevice: 0\nid: ALC256 Analog\n")
+
+    def test_hdmi_card_zero_is_not_the_default(self):
+        self._asound()
+        b = lb.Backend()
+        outs = b.audio_outputs()
+        # capture PCMs ignored; speakers first even though HDMI is card 0
+        self.assertEqual([(o.id, o.hdmi, o.alsa) for o in outs],
+                         [("Generic_1:0", False, "plughw:CARD=Generic_1,DEV=0"),
+                          ("Generic:3", True, "plughw:CARD=Generic,DEV=3")])
+        self.assertEqual(b.audio_output(), "auto")
+        self.assertEqual(b.audio_output_now().id, "Generic_1:0")
+        self.assertTrue(b.set_audio_output("Generic:3")[0])
+        self.assertEqual(lb.Backend().audio_output_now().alsa, "plughw:CARD=Generic,DEV=3")
+        self.assertFalse(b.set_audio_output("Nope:0")[0])
+        self.assertTrue(b.set_audio_output("auto")[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "audio-output")))
+
+    def test_saved_output_gone_falls_back(self):
+        self._asound()
+        write(os.path.join(self.state, "audio-output"), "USB:0\n")
+        self.assertEqual(lb.Backend().audio_output_now().id, "Generic_1:0")
+
+    def test_no_sound_card(self):
+        self.assertEqual(lb.Backend().audio_outputs(), [])
+        self.assertIsNone(lb.Backend().audio_output_now())
+
+
 class TestDebugToggles(FakeMachine):
     def test_detailed_logs_and_text_consoles(self):
         lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")

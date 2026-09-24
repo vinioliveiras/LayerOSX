@@ -3707,3 +3707,26 @@ took Ns to exit"). This does not help if macOS itself hangs before it resets
 (no `QMP: SHUTDOWN reason=guest-reset` line in `mac-vm.log`); that case needs
 its own logs.
 
+## Sound: the right ALSA device, unmuted, chosen in Settings
+
+The kiosk runs no sound server, so QEMU's usb-audio talks to ALSA directly.
+It used ALSA's `default`, which is card 0 device 0 — and on AMD laptops
+(e.g. Ryzen 7735HS) card 0 is the GPU's HDMI card, whose PCMs start at
+device 3. `default` failed ("unable to open slave", "Could not create a
+backend for voice 'usb-audio'") and the Mac had no sound.
+
+- `layerosx_backend.py audio-outputs` lists playback devices from
+  `/proc/asound` (card id + device, HDMI/DP detected by name);
+  `audio-device` prints the one to use: Settings › Sound › Output if it's
+  still there, else the first non-HDMI device (speakers / headphone jack).
+- The launcher passes it as `-audiodev alsa,out.dev=plughw:CARD=<id>,,DEV=<n>`
+  and unmutes that card's Master / Speaker / Headphone / PCM at 100% (a fresh
+  kiosk never restored ALSA state, so codecs start muted); macOS's volume
+  slider sets the loudness.
+- Settings › Sound › Output: Automatic, or any listed device (HDMI screens
+  included). Applies when the Mac restarts.
+- The `mac` user is in the `audio` group; `macdiag` has a SOUND section
+  (cards, `aplay -l`, chosen output, the launcher's audio lines).
+- Tested: parsing with a Ryzen-like `/proc/asound` (HDMI on card 0, analog on
+  card 1) in the unit tests. Not yet heard on hardware.
+

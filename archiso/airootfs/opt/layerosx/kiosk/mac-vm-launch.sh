@@ -610,9 +610,37 @@ configure_toggles() {
             echo "         Check that the laptop's audio driver loaded (sof-firmware / snd_pci_acp*); boot is unaffected." >&2
             _snd_backend=""
         fi
+        # Which ALSA device: never plain `default` -- that's card 0 device 0,
+        # and on AMD laptops card 0 is the GPU's HDMI card whose PCMs start at
+        # device 3, so it fails ("unable to open slave", no sound). The backend
+        # picks Settings > Sound > Output, else the first non-HDMI device.
+        _snd_dev=""
+        if [ "$_snd_backend" = alsa ]; then
+            _snd_pick="$(python3 /opt/layerosx/panel/layerosx_backend.py audio-device 2>/dev/null || true)"
+            if [ -n "$_snd_pick" ]; then
+                _snd_dev="${_snd_pick%% *}"; _snd_rest="${_snd_pick#* }"
+                _snd_card="${_snd_rest%% *}"; _snd_label="${_snd_rest#* }"
+                # A bare kiosk never ran `alsactl restore`: HDA codecs come up
+                # muted / at 0. Unmute the playback path of that card at full
+                # level -- macOS's own volume slider then sets the loudness
+                # (QEMU applies the usb-audio volume to the stream).
+                for _ctl in Master Speaker Headphone PCM "Auto-Mute Mode"; do
+                    case "$_ctl" in
+                        "Auto-Mute Mode") amixer -q -c "$_snd_card" sset "$_ctl" Enabled >/dev/null 2>&1 || true ;;
+                        *) amixer -q -c "$_snd_card" sset "$_ctl" 100% unmute >/dev/null 2>&1 || true ;;
+                    esac
+                done
+            fi
+        fi
         if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
-            AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
-            echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+            if [ -n "$_snd_dev" ]; then
+                # QEMU option values escape a comma as ",,".
+                AUDIO_ARGS=(-audiodev "alsa,id=snd0,out.dev=${_snd_dev//,/,,}" -device usb-audio,audiodev=snd0,bus=xhci.0)
+                echo "Audio: usb-audio on ALSA ${_snd_dev} (${_snd_label}); turn off with 'audio off'."
+            else
+                AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
+                echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+            fi
         else
             echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
             echo "         The custom qemu-macos build needs an audio backend compiled in; see README's audio note. Boot is unaffected." >&2

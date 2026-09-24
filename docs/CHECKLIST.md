@@ -1176,6 +1176,18 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.4y. Sound
+
+- Settings › Sound: "Sound from the Mac" on; Output lists the speakers
+  (first) and any HDMI outputs; Automatic's subtitle names the speakers.
+- Restart the Mac: `mac-vm.log` says "Audio: usb-audio on ALSA
+  plughw:CARD=…" and no "Could not initialize DAC" / "unable to open slave".
+- macOS: System Settings › Sound shows the USB output; a sound plays through
+  the laptop speakers; the volume slider changes it; headphones plugged in
+  take over.
+- Pick an HDMI output with a screen that has speakers: sound moves there
+  after the Mac restarts.
+
 ### 5.4x. macOS Restart comes back
 
 - In macOS: Apple menu > Restart (Reims and VMware). Within ~20 s the

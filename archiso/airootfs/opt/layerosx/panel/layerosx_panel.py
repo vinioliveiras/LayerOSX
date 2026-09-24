@@ -693,8 +693,54 @@ class Settings(Adw.ApplicationWindow):
         self.audio_row.connect("notify::active", self._on_switch, "audio", "Sound")
         g.add(self.audio_row)
         page.add(g)
+        page.add(self._audio_output_group())
         self._sync_switches()
         return self._pane("Sound", page)
+
+    def _audio_output_group(self):
+        g = Adw.PreferencesGroup(
+            title="Output",
+            description="Where the Mac's sound plays. Automatic uses the speakers / headphone jack, "
+                        "never an HDMI screen. Applies when the Mac restarts.")
+        self.audio_out_row = Adw.ComboRow(title="Play through")
+        self.audio_out_row.add_prefix(Gtk.Image.new_from_icon_name("audio-speakers-symbolic"))
+        self.audio_out_row.connect("notify::selected", self._on_audio_output)
+        g.add(self.audio_out_row)
+        self._audio_out_list = self.b.audio_outputs()
+        g.set_visible(bool(self._audio_out_list))
+        self._sync_audio_output()
+        return g
+
+    def _sync_audio_output(self):
+        outs, cur = self._audio_out_list, self.b.audio_output()
+        self._updating = True
+        try:
+            self._audio_out_values = ["auto"] + [o.id for o in outs]
+            labels = ["Automatic"] + [o.label for o in outs]
+            if cur not in self._audio_out_values:
+                self._audio_out_values.append(cur)
+                labels.append(f"{cur} (not found)")
+            self._set_choices(self.audio_out_row, labels, self._audio_out_values.index(cur))
+            now = self.b.audio_output_now()
+            self.audio_out_row.set_subtitle(f"Now: {now.label}" if cur == "auto" and now else "")
+        finally:
+            self._updating = False
+        return False
+
+    def _on_audio_output(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._audio_out_values):
+            return
+        v = self._audio_out_values[i]
+        ok, msg = self.b.set_audio_output(v)
+        self.after_action(ok, msg, ("Sound: Automatic output" if v == "auto"
+                                    else f"Sound will play through {row.get_selected_item().get_string()}")
+                          + " — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        GLib.idle_add(self._sync_audio_output)
 
     # ------------------------------------------------------------------ USB
     def _page_usb(self):

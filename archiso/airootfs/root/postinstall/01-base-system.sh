@@ -38,9 +38,11 @@ hwclock --systohc --utc 2>/dev/null || true
 # with `passwd mac`, this is just so the machine boots on its own.
 MAC_USER="mac"
 if ! id "$MAC_USER" &>/dev/null; then
-    useradd -m -G wheel,kvm,video,render -s /bin/bash "$MAC_USER"
+    useradd -m -G wheel,kvm,video,render,audio -s /bin/bash "$MAC_USER"
     echo "${MAC_USER}:mac" | chpasswd
 fi
+# audio: QEMU's ALSA backend and amixer open /dev/snd directly (no sound server).
+usermod -aG audio "$MAC_USER" || true
 echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/10-wheel-nopasswd
 chmod 440 /etc/sudoers.d/10-wheel-nopasswd
 

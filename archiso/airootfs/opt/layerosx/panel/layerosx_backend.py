@@ -76,6 +76,19 @@ class ReimsGpu:
 
 
 @dataclass
+class AudioOut:
+    """A sound output the Mac's usb-audio can play through: one ALSA playback
+    device. `id` is "<card id>:<device>" (stable across boots, unlike the
+    card number); `alsa` is what mac-vm-launch.sh hands QEMU."""
+    id: str
+    label: str
+    hdmi: bool
+    card: int
+    device: int
+    alsa: str
+
+
+@dataclass
 class Resources:
     """What the Mac gets (Settings > Mac > Resources). cores/ram_mb are what the
     next launch will use; *_auto what Automatic resolves to; *_choice the saved
@@ -599,6 +612,62 @@ class Backend:
             return False, f"no such graphics card {gpu_id!r}"
         return self._write_state("reims-gpu", gpu_id)
 
+    # Sound output: ALSA playback devices from /proc/asound. The kiosk runs no
+    # sound server, so QEMU talks to ALSA directly -- and ALSA's `default` is
+    # card 0 device 0, which on AMD laptops is the GPU's HDMI card: HDMI PCMs
+    # start at device 3, so `default` fails with "unable to open slave" /
+    # ENOENT and the Mac gets no sound (seen on the Ryzen 7735HS).
+    _HDMI_RE = re.compile(r"HDMI|DisplayPort|\bDP\b", re.I)
+
+    def audio_outputs(self) -> List[AudioOut]:
+        root = os.path.join(self.proc, "asound")
+        cards = {}
+        for line in _read(os.path.join(root, "cards")).splitlines():
+            m = re.match(r"\s*(\d+)\s+\[([^\]]*)\]:\s*(?:\S+\s+-\s+)?(.*)", line)
+            if m:
+                cards[int(m.group(1))] = (m.group(2).strip(), m.group(3).strip())
+        outs = []
+        for n in sorted(cards):
+            cid = _read(os.path.join(root, f"card{n}", "id")) or cards[n][0]
+            try:
+                entries = sorted(os.listdir(os.path.join(root, f"card{n}")))
+            except OSError:
+                continue
+            for e in entries:
+                m = re.fullmatch(r"pcm(\d+)p", e)
+                if not m:
+                    continue
+                info = {}
+                for line in _read(os.path.join(root, f"card{n}", e, "info")).splitlines():
+                    k, _, v = line.partition(":")
+                    info[k.strip()] = v.strip()
+                dev = int(m.group(1))
+                pname = info.get("name") or info.get("id") or f"device {dev}"
+                hdmi = bool(self._HDMI_RE.search(pname + " " + info.get("id", "")))
+                label = f"{'HDMI / DisplayPort' if hdmi else 'Speakers / headphones'} — {cards[n][1]} ({pname})"
+                outs.append(AudioOut(f"{cid}:{dev}", label, hdmi, n, dev,
+                                     f"plughw:CARD={cid},DEV={dev}"))
+        # Built-in speakers/headphone jack first: that's what "Automatic" plays through.
+        outs.sort(key=lambda o: (o.hdmi, o.card, o.device))
+        return outs
+
+    def audio_output(self) -> str:
+        return _read(os.path.join(self.state_dir, "audio-output")) or "auto"
+
+    def set_audio_output(self, out_id: str) -> Tuple[bool, str]:
+        if out_id in ("auto", "", None):
+            return self._write_state("audio-output", None)
+        if out_id not in [o.id for o in self.audio_outputs()]:
+            return False, f"no such sound output {out_id!r}"
+        return self._write_state("audio-output", out_id)
+
+    def audio_output_now(self) -> Optional[AudioOut]:
+        """The output the Mac will use: the saved one if it's still there,
+        else the first non-HDMI device, else whatever exists."""
+        outs = self.audio_outputs()
+        cur = self.audio_output()
+        return next((o for o in outs if o.id == cur), None) or (outs[0] if outs else None)
+
     def screen_target(self) -> str:
         t = _read(os.path.join(self.state_dir, "display-target"))
         return t if t and t != "auto" else "auto"
@@ -1099,12 +1168,21 @@ def main(argv: List[str]) -> int:
         return 0 if b.check_maint_password(sys.stdin.readline().rstrip("\n")) else 1
     elif what == "resources":
         print(json.dumps(asdict(b.resources()), indent=2))
+    elif what == "audio-outputs":
+        print(json.dumps([asdict(o) for o in b.audio_outputs()], indent=2))
+    elif what == "audio-device":
+        # For mac-vm-launch.sh: "<alsa device> <card number> <label>", or
+        # nothing (exit 1) when the host has no playback device.
+        o = b.audio_output_now()
+        if not o:
+            return 1
+        print(f"{o.alsa} {o.card} {o.label}")
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|check-maint-password]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|audio-outputs|audio-device|check-maint-password]", file=sys.stderr)
         return 2
     return 0
 
