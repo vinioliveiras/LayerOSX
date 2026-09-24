@@ -174,6 +174,10 @@ Installed system: tty1 autologin → startx → .xinitrc
   laptop's ACPI platform profile (fan/power limits) per Settings › Battery ›
   Power mode — at boot (`layerosx-power-mode.service`), on charger
   plug/unplug (udev) and from the panel (sudo).
+- **Guest RAM pages:** Reims needs the RAM in a shared memfd, which is
+  shmem — 4 KB pages unless shmem transparent huge pages are allowed.
+  `etc/tmpfiles.d/layerosx-hugepages.conf` sets `shmem_enabled=advise`, so
+  QEMU's `MADV_HUGEPAGE` gives the Mac 2 MB pages (and only the Mac).
 - **State:** `/var/lib/layerosx/` — `macos.qcow2`, `OVMF_VARS.fd`,
   `macos-recovery.qcow2`, and one small file per setting (`gfx`, `verbose`,
   `audio`, `audio-output`, `audio-volume`, `power-mode`, `compositor`, `usb-auto`, `usb-passthrough`,
@@ -243,10 +247,12 @@ devices.
 
 **Priority**
 
-- **YouTube video doesn't play** (Safari, Reims). The Mac has no hardware
-  video decoder: check which codec YouTube serves (VP9/AV1 vs H.264), whether
-  the video layer (2-plane `420f` IOSurfaces seen in the Reims log) is drawn,
-  and compare with VMware graphics to split "decode" from "Reims display".
+- **YouTube video lags, and the sound with it** (Safari, Reims). It plays,
+  but the whole Mac stalls — software decoding (the Mac has no hardware video
+  decoder) on top of Reims uploading every video frame. First fix in: 2 MB
+  pages for the guest RAM (shmem THP, below). Next: compare 720p vs 1080p,
+  Chrome vs Safari, Detailed logs off, VMware vs Reims; then Reims' video
+  surface path (2-plane `420f` IOSurfaces).
 - **Audio stutters** — worse while macOS draws a lot (better with Spotify /
   YouTube minimised). First fix in: usb-audio buffer 32 → 128 ms and a 5 ms
   audio timer (`audio-buffer-ms` / `audio-timer-us` state files to

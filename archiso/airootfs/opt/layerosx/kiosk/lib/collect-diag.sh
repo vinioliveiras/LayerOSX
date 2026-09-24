@@ -45,6 +45,10 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
 
     _sec "MEMORY"
     free -h 2>/dev/null || echo '(n/a)'
+    echo "-- huge pages for the Mac's RAM (shmem THP; want [advise] and ShmemHugePages > 0 while the Mac runs) --"
+    grep -H . /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/shmem_enabled \
+        /sys/kernel/mm/transparent_hugepage/hugepages-2048kB/shmem_enabled 2>/dev/null
+    grep -E '^(AnonHugePages|ShmemHugePages|ShmemPmdMapped|Shmem):' /proc/meminfo 2>/dev/null
 
     _sec "QEMU"
     LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

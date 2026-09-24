@@ -830,6 +830,9 @@ while true; do
     # which args produced a given log (and `macdiag` picks this line up).
     { printf 'QEMU cmdline:'; printf ' %q' "${REIMS_ENV[@]}" "$QEMU_BIN" "${QEMU_ARGS[@]}"; printf '\n'; } 2>/dev/null || true
 
+    # Huge pages for the guest RAM (etc/tmpfiles.d/layerosx-hugepages.conf):
+    # log the setting so a slow Mac can be matched against it.
+    echo "Guest RAM pages: shmem THP $(grep -o '\[[a-z_ ]*\]' /sys/kernel/mm/transparent_hugepage/shmem_enabled 2>/dev/null || echo '(unknown)') (want [advise])"
     LAUNCHED_AT=$(date +%s)
     # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an
     # exclusive keyboard grab. Without this, the moment you click into the VM

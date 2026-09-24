@@ -1176,6 +1176,14 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5d. Huge pages for the Mac's RAM / YouTube lag
+
+- `cat /sys/kernel/mm/transparent_hugepage/shmem_enabled` → `… [advise] …`.
+- `mac-vm.log`: "Guest RAM pages: shmem THP [advise]".
+- With the Mac running: `grep ShmemHugePages /proc/meminfo` shows many GB.
+- YouTube in Safari at 1080p and 720p (Detailed logs off): video and sound
+  smoother than before? Same video in Chrome? Note `macfps` while it plays.
+
 ### 5.5c. Sound stutter
 
 - `mac-vm.log`: "Audio: usb-audio on ALSA … buffer 128 ms, timer 5000 us".

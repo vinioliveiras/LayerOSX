@@ -3907,3 +3907,26 @@ Microphone: QEMU's usb-audio has no input side. USB mics/headsets/webcams
 already work through automatic USB passthrough; the built-in mic would need
 an emulated HDA codec plus a macOS HDA driver (TODO).
 
+## 2 MB pages for the Mac's RAM (shmem THP)
+
+YouTube in Safari lags, and the sound stutters along with it: the whole Mac
+stalls, not just the video. One cost we had added ourselves: since Reims, the
+guest RAM is a shared memfd (`memory-backend-memfd,share=on`), and memfd
+memory is shmem — which Linux backs with 4 KB pages unless shmem transparent
+huge pages are enabled, and Arch's default is `never`. Before Reims the RAM
+was anonymous memory, which gets THP by default. QEMU already calls
+`madvise(MADV_HUGEPAGE)` on all guest RAM (`system/physmem.c`,
+`ram_block_add`), so `shmem_enabled=advise` gives exactly the guest RAM 2 MB
+pages: ~500× fewer pages to map for 55 GB, far fewer TLB misses and nested
+page walks — the kind of cost that shows up in memory-heavy work such as
+software video decoding and Reims' per-frame surface copies.
+
+- `etc/tmpfiles.d/layerosx-hugepages.conf`: `shmem_enabled=advise`, and the
+  per-size `hugepages-2048kB/shmem_enabled=inherit` where the kernel has it.
+- The launcher logs "Guest RAM pages: shmem THP [advise]"; `macdiag`'s MEMORY
+  section shows the settings and `ShmemHugePages` (should be tens of GB while
+  the Mac runs).
+- Not measured yet. Try it on the current install without a new ISO:
+  `echo advise | sudo tee /sys/kernel/mm/transparent_hugepage/shmem_enabled`
+  then `relaunch` (the RAM is allocated when QEMU starts).
+
