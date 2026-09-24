@@ -138,6 +138,20 @@ None of these block a working boot; they make it nicer.
 - [x] **Kiosk menu as a native single-window app** — done: LayerOSX Settings
   (GTK4/libadwaita, `opt/layerosx/panel/`). Next: a Bluetooth section, a
   "Displays > Resolution" option, and the in-macOS app mirroring it.
+- **Bluetooth audio through Linux** — Bluetooth headphones/speakers for the
+  Mac without a macOS-compatible dongle: the laptop's own adapter (Realtek /
+  MediaTek, which macOS doesn't drive) stays on Linux. Add `bluez` +
+  `pipewire` / `wireplumber` (+ `pipewire-alsa`) to the ISO and run them in
+  the kiosk session; point QEMU's usb-audio at the `pipewire` backend (or at
+  ALSA's `pipewire` device) whenever a Bluetooth sink is the chosen output, so
+  Settings › Sound › Output lists paired Bluetooth devices next to the
+  speakers and HDMI. Settings needs a Bluetooth section: scan, pair/forget,
+  connect, battery level (bluez D-Bus API in the backend, with tests against
+  a fake bus). Watch: latency (A2DP adds ~150–250 ms on video), the volume
+  slider must drive the PipeWire sink instead of the ALSA mixer, reconnect
+  after a reboot, and the mic (HFP) as a later step. The simple path already
+  works today: a Broadcom (BCM20702) USB dongle goes to the Mac with automatic
+  USB and pairs in macOS.
 - **Update LayerOSX without wiping the Mac** — today the only way to get a new
   ISO's changes onto an installed machine is reinstalling, which erases the
   LayerOSX partition *including* the macOS disk (`/var/lib/layerosx/macos.qcow2`,
