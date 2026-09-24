@@ -21,3 +21,4 @@ archiso/airootfs/opt/layerosx/opencore/*.qcow2
 
 # tools/run-mac-here.sh output
 test-runs/
+archiso/airootfs/etc/layerosx/mac-model

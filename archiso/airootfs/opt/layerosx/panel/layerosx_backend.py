@@ -433,6 +433,31 @@ class Backend:
     def set_text_consoles(self, on: bool) -> Tuple[bool, str]:
         return self._write_state("vt-switch", "on" if on else None)
 
+    # ------------------------------------------------------------ Mac model
+    # SMBIOS model the Mac reports (OpenCore PlatformInfo > SystemProductName).
+    # build.sh bakes the default into the images (/etc/layerosx/mac-model);
+    # another choice is applied by mac-vm-launch.sh via kiosk/lib/oc-model.sh.
+    MAC_MODELS = (
+        ("MacBookPro16,2", "MacBook Pro (13-inch, 2020)"),
+        ("MacBookPro16,1", "MacBook Pro (16-inch, 2019)"),
+        ("iMac20,1", "iMac (27-inch, 2020)"),
+        ("iMac19,1", "iMac (27-inch, 2019)"),
+        ("iMacPro1,1", "iMac Pro (2017)"),
+        ("MacPro7,1", "Mac Pro (2019)"),
+    )
+
+    def mac_model_default(self) -> str:
+        return _read(os.path.join(self.etc_dir, "mac-model")) or "iMac19,1"
+
+    def mac_model(self) -> str:
+        m = _read(os.path.join(self.state_dir, "mac-model"))
+        return m if m in dict(self.MAC_MODELS) else self.mac_model_default()
+
+    def set_mac_model(self, model: str) -> Tuple[bool, str]:
+        if model not in dict(self.MAC_MODELS):
+            return False, f"unknown Mac model {model!r}"
+        return self._write_state("mac-model", None if model == self.mac_model_default() else model)
+
     # --------------------------------------------------------------- screens
     # Which physical screen shows the Mac: display-target (xrandr output name,
     # absent = Automatic) and display-others (off|mirror). Applied by

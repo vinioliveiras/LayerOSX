@@ -1136,6 +1136,19 @@ allow-list and anything not coming from the guest.)
 - In LayerOSX: open the panel (Ctrl+Alt+W) over the Mac and close it — typing
   in macOS still works.
 
+### 5.4t. Mac model
+
+- Build log: "oc-model: SystemProductName iMac19,1 -> MacBookPro16,2";
+  `archiso/airootfs/etc/layerosx/mac-model` says MacBookPro16,2.
+- Fresh install: About This Mac shows MacBook Pro (13-inch, 2020);
+  `~/mac-vm.log` says "Mac model: MacBookPro16,2".
+- Settings › Mac › Model → Mac Pro (2019) → Restart Mac: the log says
+  "Mac model: MacPro7,1 (Settings ...) -> OpenCore-...-MacPro7,1.qcow2", About
+  This Mac shows Mac Pro; the next boot reuses the cached image. Back to the
+  default → no cache used.
+- Before rebuilding: `tools/run-mac-here.sh --gpu nvidia --model
+  MacBookPro16,2` boots to the desktop as a MacBook Pro.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

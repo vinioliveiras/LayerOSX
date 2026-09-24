@@ -135,6 +135,18 @@ OCDIR=airootfs/opt/layerosx/opencore
 # This must run before the derivations so every image -- including the clean
 # Intel base that boots directly -- inherits the fix. Idempotent.
 ./patch-opencore-fixup.sh   "$OCDIR/OpenCore.qcow2"
+# Default Mac model (SMBIOS), baked into the base so every derived image
+# inherits it: the newest Intel MacBook Pro, MacBookPro16,2 (13-inch, 2020).
+# LAYEROSX_MAC_MODEL overrides; Settings > Mac > Model changes it per install
+# at runtime (kiosk/lib/oc-model.sh + mac-vm-launch.sh). /etc/layerosx/mac-model
+# records what the images carry.
+MAC_MODEL="${LAYEROSX_MAC_MODEL:-MacBookPro16,2}"
+if airootfs/opt/layerosx/kiosk/lib/oc-model.sh "$OCDIR/OpenCore.qcow2" "$OCDIR/OpenCore.qcow2" "$MAC_MODEL"; then
+    printf '%s\n' "$MAC_MODEL" > airootfs/etc/layerosx/mac-model
+else
+    echo "build.sh: couldn't set the Mac model -- the images keep their own." >&2
+    rm -f airootfs/etc/layerosx/mac-model
+fi
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-verbose.qcow2"
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore.qcow2" "$OCDIR/OpenCore-diag.qcow2" debug
 ./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd.qcow2"

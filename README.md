@@ -2991,7 +2991,7 @@ and does nothing.
 | Displays | Brightness slider; **Screens** (which monitor shows the Mac, whether the others turn off or mirror it, and that screen's resolution + refresh rate); Graphics adapter (Reims / VMware / Standard VGA) as radio rows with explanations; **Graphics card** (which GPU Reims draws with) |
 | Sound | "Sound from the Mac" switch |
 | USB Devices | Every device with a switch (on the Mac / on the computer) and a star (always give it to the Mac); keyboards, hubs and mounted drives are disabled with the reason |
-| Mac | Running/stopped, "Show startup log" switch, **Resources** (Processor, "Keep 2 threads for Linux", Memory — Automatic or a fixed value), **Restart Mac…** (the black-screen rescue) |
+| Mac | Running/stopped, "Show startup log" / "Detailed logs" switches, **Model** (which Mac it reports as), **Resources** (Processor, "Keep 2 threads for Linux", Memory — Automatic or a fixed value), **Restart Mac…** (the black-screen rescue) |
 | General | Restart / Shut Down the computer, **Save diagnostics…** (asks which drive), Terminal |
 | Terminal | Open the maintenance terminal (password per `LAYEROSX_TERMINAL`), useful commands; hidden when the build has no terminal |
 | About | "About This Mac"-style: LayerOSX version/build date/mode; **This Computer** (model, processor + threads, memory, graphics, storage, Linux kernel — read live from DMI, /proc, lspci, lsblk); **The Mac** (macOS version + build, the CPU model/cores, RAM and graphics the VM was given); **Credits** (creator) and **Built With** (the open-source projects LayerOSX builds on); shortcuts |
@@ -3555,4 +3555,39 @@ Alt+Tab went to the other window and never reached macOS.
   is checked out and its commit verified (the build fails if one stops
   applying). Further Reims fixes go in the same folder.
 - Needs a QEMU rebuild (`cd archiso && ./prepare-qemu-macos.sh`).
+
+## Mac model: MacBook Pro by default, selectable in Settings
+
+The Mac used to report itself as `iMac19,1` (iMac 27-inch, 2019) — whatever
+the OSX-KVM OpenCore image carries. OpenCore's `PlatformInfo` runs with
+`Automatic=true`, so `Generic > SystemProductName` is the only field that
+matters (OpenCore fills board-id, firmware features, ... from its database);
+the placeholder serial/MLB/UUID stay.
+
+- **Default: `MacBookPro16,2`** (MacBook Pro 13-inch, 2020 — the newest Intel
+  MacBook Pro). `build.sh` bakes it into the base image right after the
+  phantom-kext fix, so all 12 images inherit it, and records it in
+  `/etc/layerosx/mac-model`. `LAYEROSX_MAC_MODEL=...` overrides at build time.
+- **Settings › Mac › Model:** MacBook Pro 13" 2020 / 16" 2019, iMac 27" 2020 /
+  2019, iMac Pro, Mac Pro 2019 (`/var/lib/layerosx/mac-model`). For another
+  model than the baked one, `mac-vm-launch.sh` makes a patched copy of the
+  image it's about to boot with `kiosk/lib/oc-model.sh` (qemu-img + mtools →
+  edit `EFI/OC/config.plist` → qcow2), cached in
+  `/var/lib/layerosx/oc-model-cache/` per image+model and remade when the
+  image is newer. Any failure boots the image unchanged. `mtools` is now in
+  `packages.x86_64`.
+- **What changing it does:** macOS sees a different computer — iCloud and
+  Keychain may ask to sign in again; files stay. A laptop model makes macOS
+  expect a battery/lid (no battery is shown; energy settings are the laptop
+  ones). Each model has its own list of supported macOS versions. The Reims
+  paravirtual GPU driver doesn't depend on the model.
+- `tools/run-mac-here.sh --model MacBookPro16,2` tries a model on the build
+  machine without rebuilding.
+- Verified: `oc-model.sh` on the real OpenCore image (`iMac19,1 →
+  MacBookPro16,2`, kexts/folders intact, bad names refused); backend tests
+  (default from `/etc`, choice, validation, back-to-default removes the
+  state file); the panel under Xvfb. Not yet booted on hardware as a
+  MacBook Pro.
+- Also fixed: the "Startup & logs" group had no title (libadwaita titles are
+  markup; the bare `&` broke it) — now "Startup and logs".
 

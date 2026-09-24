@@ -151,3 +151,5 @@ libxcursor
 libxrandr
 libxi
 libxkbcommon-x11
+# Settings > Mac > Model: kiosk/lib/oc-model.sh edits the OpenCore image at runtime
+mtools

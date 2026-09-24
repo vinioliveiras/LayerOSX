@@ -7,6 +7,7 @@
 #   tools/run-mac-here.sh --gfx vmware     # plain VMware SVGA (SDL window)
 #   tools/run-mac-here.sh --gpu nvidia     # Reims on the NVIDIA GPU only (or: amd, intel)
 #   tools/run-mac-here.sh --diag           # text boot + serial kernel log + QEMU -d
+#   tools/run-mac-here.sh --model MacBookPro16,2   # boot as another Mac model (SMBIOS)
 #   tools/run-mac-here.sh --fullscreen --x11 --cores 8 --ram 16
 #   tools/run-mac-here.sh --part /dev/nvme0n1p7   # skip auto-detecting the partition
 #   tools/run-mac-here.sh --print          # show the command, don't run it
@@ -32,11 +33,12 @@ LIBS="$AIR/opt/layerosx/lib"
 ROM="$AIR/usr/share/qemu/reims-vgpu-gop.rom"
 OCDIR="$AIR/opt/layerosx/opencore"
 
-GFX=reims GPU="" DIAG=0 FULL=0 X11=0 CORES=4 RAM=8 PART="" PRINT=0
+GFX=reims GPU="" MODEL="" DIAG=0 FULL=0 X11=0 CORES=4 RAM=8 PART="" PRINT=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --gfx) GFX="$2"; shift ;;
         --gpu) GPU="$2"; shift ;;
+        --model) MODEL="$2"; shift ;;
         --diag) DIAG=1 ;;
         --fullscreen) FULL=1 ;;
         --x11) X11=1 ;;
@@ -116,6 +118,11 @@ fi
 OC="$OCDIR/$OCBASE.qcow2"
 [ "$DIAG" = 1 ] && [ -s "$OCDIR/$OCBASE-diag.qcow2" ] && OC="$OCDIR/$OCBASE-diag.qcow2"
 [ -s "$OC" ] || die "no OpenCore image $OC -- run a build first."
+if [ -n "$MODEL" ]; then
+    "$AIR/opt/layerosx/kiosk/lib/oc-model.sh" "$OC" "$RUN/OpenCore-$MODEL.qcow2" "$MODEL" \
+        || die "couldn't set model $MODEL (needs qemu-img + mtools)"
+    OC="$RUN/OpenCore-$MODEL.qcow2"
+fi
 
 # Only the bundled libraries this system lacks (same helper as the kiosk):
 # the whole bundle shadows the host's libdrm/libelf/... and breaks RADV.
@@ -160,7 +167,7 @@ fi
 [ "$X11" = 1 ] && ENV=(-u WAYLAND_DISPLAY SDL_VIDEODRIVER=x11 "${ENV[@]}")   # winit/SDL fall back to X11 (XWayland)
 
 {
-    echo "run-mac-here $(date -Is) session=${XDG_SESSION_TYPE:-?} gfx=$GFX gpu=${GPU:-auto} diag=$DIAG cores=$CORES ram=${RAM}G"
+    echo "run-mac-here $(date -Is) session=${XDG_SESSION_TYPE:-?} gfx=$GFX gpu=${GPU:-auto} model=${MODEL:-image} diag=$DIAG cores=$CORES ram=${RAM}G"
     echo "OpenCore: $OC   Mac disk: $STATE/macos.qcow2 (snapshot=on)"
     printf 'cmdline:'; printf ' %q' "${ENV[@]}" "$QEMU" "${ARGS[@]}"; printf '\n'
 } | tee "$RUN/run.log"

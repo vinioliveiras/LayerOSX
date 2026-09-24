@@ -413,6 +413,32 @@ configure_toggles() {
         echo "OpenCore image: $(basename "$OPENCORE_IMG")  [verbose=$VERBOSE_STATE]"
     fi
 
+    # --- Mac model (Settings > Mac > Model) --------------------------------------
+    # The SMBIOS model is OpenCore's PlatformInfo > SystemProductName. build.sh
+    # bakes the default into every image (/etc/layerosx/mac-model records which).
+    # Another model picked in the panel ($STATE_DIR/mac-model) gets a patched
+    # copy of the chosen image via lib/oc-model.sh, cached per image+model and
+    # remade when the image is newer (an update). Any failure boots the image as
+    # it is, so a bad choice can never stop the Mac from starting.
+    MAC_MODEL_BAKED="$(cat /etc/layerosx/mac-model 2>/dev/null || echo iMac19,1)"
+    MAC_MODEL="$(cat "$STATE_DIR/mac-model" 2>/dev/null || true)"
+    case "$MAC_MODEL" in ""|*[!A-Za-z0-9,]*) MAC_MODEL="$MAC_MODEL_BAKED" ;; esac
+    if [ "$MAC_MODEL" != "$MAC_MODEL_BAKED" ]; then
+        _cache="$STATE_DIR/oc-model-cache/$(basename "$OPENCORE_IMG" .qcow2)-${MAC_MODEL}.qcow2"
+        if [ ! -s "$_cache" ] || [ "$OPENCORE_IMG" -nt "$_cache" ]; then
+            mkdir -p "$STATE_DIR/oc-model-cache"
+            "$KIOSK_DIR/lib/oc-model.sh" "$OPENCORE_IMG" "$_cache" "$MAC_MODEL" || rm -f "$_cache"
+        fi
+        if [ -s "$_cache" ]; then
+            OPENCORE_IMG="$_cache"
+            echo "Mac model: $MAC_MODEL (Settings; build default $MAC_MODEL_BAKED) -> $(basename "$_cache")"
+        else
+            echo "Mac model: couldn't make a $MAC_MODEL image -- booting as $MAC_MODEL_BAKED."
+        fi
+    else
+        echo "Mac model: $MAC_MODEL"
+    fi
+
     # --- Graphics device --------------------------------------------------------
     # reims-vgpu-pci (hardware-accelerated) is the whole point of this project --
     # but it is alpha software on an alpha driver stack, and Reims' own docs say

@@ -560,6 +560,22 @@ class TestVtLockScript(FakeMachine):
         self.assertFalse(os.path.exists(conf))
 
 
+class TestMacModel(FakeMachine):
+    def test_default_choice_and_validation(self):
+        b = lb.Backend()
+        self.assertEqual((b.mac_model_default(), b.mac_model()), ("iMac19,1", "iMac19,1"))   # old ISO
+        write(os.path.join(self.etc, "mac-model"), "MacBookPro16,2\n")
+        self.assertEqual(lb.Backend().mac_model(), "MacBookPro16,2")
+        self.assertTrue(b.set_mac_model("MacPro7,1")[0])
+        self.assertEqual(lb.Backend().mac_model(), "MacPro7,1")
+        self.assertFalse(b.set_mac_model("MacBookAir9,1")[0])
+        self.assertFalse(b.set_mac_model("x;rm -rf /")[0])
+        self.assertTrue(b.set_mac_model("MacBookPro16,2")[0])            # back to the default
+        self.assertFalse(os.path.exists(os.path.join(self.state, "mac-model")))
+        write(os.path.join(self.state, "mac-model"), "garbage\n")
+        self.assertEqual(lb.Backend().mac_model(), "MacBookPro16,2")
+
+
 class TestTheme(FakeMachine):
     def test_theme_default_save_env(self):
         os.environ.pop("LAYEROSX_PANEL_THEME", None)

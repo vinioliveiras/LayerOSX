@@ -769,7 +769,7 @@ class Settings(Adw.ApplicationWindow):
         self.mac_row.add_suffix(self.mac_dot)
         g.add(self.mac_row)
         page.add(g)
-        s = Adw.PreferencesGroup(title="Startup & logs", description="Applies when the Mac restarts.")
+        s = Adw.PreferencesGroup(title="Startup and logs", description="Applies when the Mac restarts.")
         self.verbose_row = Adw.SwitchRow(title="Show startup log",
                                          subtitle="Text log instead of the logo while macOS starts — useful when something goes wrong")
         self.verbose_row.connect("notify::active", self._on_switch, "verbose", "Startup log")
@@ -783,6 +783,7 @@ class Settings(Adw.ApplicationWindow):
         self.diag_row.connect("notify::active", self._on_diag_logs)
         s.add(self.diag_row)
         page.add(s)
+        page.add(self._model_group())
         page.add(self._resources_group())
         r = Adw.PreferencesGroup(title="Restart")
         rr = Adw.ActionRow(title="Restart the Mac",
@@ -794,6 +795,46 @@ class Settings(Adw.ApplicationWindow):
         page.add(r)
         self._sync_switches()
         return self._pane("Mac", page)
+
+    # ------------------------------------------------------------- Model
+    def _model_group(self):
+        g = Adw.PreferencesGroup(
+            title="Model",
+            description="Which Mac this one reports itself as. Changing it makes macOS see a different "
+                        "computer: iCloud and Keychain may ask you to sign in again. Your files stay. "
+                        "Applies when the Mac restarts.")
+        self.model_row = Adw.ComboRow(title="Mac model")
+        self.model_row.add_prefix(Gtk.Image.new_from_icon_name("computer-symbolic"))
+        self.model_row.connect("notify::selected", self._on_model)
+        g.add(self.model_row)
+        self._sync_model()
+        return g
+
+    def _sync_model(self):
+        default, cur = self.b.mac_model_default(), self.b.mac_model()
+        self._model_values = [m for m, _ in self.b.MAC_MODELS]
+        labels = [label + (" — default" if m == default else "") for m, label in self.b.MAC_MODELS]
+        self._updating = True
+        try:
+            self._set_choices(self.model_row, labels,
+                              self._model_values.index(cur) if cur in self._model_values else 0)
+            self.model_row.set_subtitle(cur)
+        finally:
+            self._updating = False
+        return False
+
+    def _on_model(self, row, _pspec):
+        if self._updating:
+            return
+        i = row.get_selected()
+        if i >= len(self._model_values):
+            return
+        v = self._model_values[i]
+        ok, msg = self.b.set_mac_model(v)
+        self.after_action(ok, msg, f"Mac model: {dict(self.b.MAC_MODELS)[v]} — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        GLib.idle_add(self._sync_model)
 
     # ---------------------------------------------------------- Resources
     def _resources_group(self):
