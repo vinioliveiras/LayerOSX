@@ -78,12 +78,20 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
     [ -r "$SERIAL_LOG" ] && { grep -a 'OCAK' "$SERIAL_LOG" | tail -40 || echo '(none)'; } \
         || echo '(none — needs debug OpenCore / a debug build with verbose on)'
 
+    _sec "REIMS — /tmp/reims-vgpu-fail.log (always-on failure log): translation refusals"
+    if [ -r /tmp/reims-vgpu-fail.log ]; then
+        grep -aE 'refused_by=|_translate |cannot_run|device_lost|engine present' /tmp/reims-vgpu-fail.log \
+            | cut -c1-300 | head -20 || echo '(no refusals)'
+    else
+        echo '(no Reims failure log -- Reims not used this boot)'
+    fi
+
     _sec "QEMU -d guest_errors/unimp (debug builds)"
     [ -r "$QEMU_D_LOG" ] && tail -40 "$QEMU_D_LOG" || echo '(none — release build, or no guest errors)'
 } > "$DIAG" 2>&1
 
 # Raw logs alongside the summary, so nothing is lost to truncation.
-for f in "$SERIAL_LOG" "$LAUNCHLOG" "$QEMU_D_LOG"; do
+for f in "$SERIAL_LOG" "$LAUNCHLOG" "$QEMU_D_LOG" /tmp/reims-vgpu-fail.log; do
     [ -r "$f" ] && cp -f "$f" "$OUT/" 2>/dev/null || true
 done
 

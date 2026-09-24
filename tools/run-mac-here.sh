@@ -24,7 +24,8 @@
 # Everything lands in test-runs/<timestamp>/ (gitignored): run.log (this
 # script + QEMU's stdout/stderr + how QEMU ended + the QMP SHUTDOWN reason),
 # qemu.log (QEMU -D: Reims messages; guest_errors/unimp with --diag),
-# serial.log (firmware/kernel console).
+# serial.log (firmware/kernel console), reims-fail.log (this run's part of
+# Reims' always-on /tmp/reims-vgpu-fail.log: shader translation refusals etc.).
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 AIR="$REPO/archiso/airootfs"
@@ -119,9 +120,10 @@ OC="$OCDIR/$OCBASE.qcow2"
 [ "$DIAG" = 1 ] && [ -s "$OCDIR/$OCBASE-diag.qcow2" ] && OC="$OCDIR/$OCBASE-diag.qcow2"
 [ -s "$OC" ] || die "no OpenCore image $OC -- run a build first."
 if [ -n "$MODEL" ]; then
-    "$AIR/opt/layerosx/kiosk/lib/oc-model.sh" "$OC" "$RUN/OpenCore-$MODEL.qcow2" "$MODEL" \
+    # no commas in the file name: QEMU's -drive file=... would split on them
+    "$AIR/opt/layerosx/kiosk/lib/oc-model.sh" "$OC" "$RUN/OpenCore-${MODEL//,/_}.qcow2" "$MODEL" \
         || die "couldn't set model $MODEL (needs qemu-img + mtools)"
-    OC="$RUN/OpenCore-$MODEL.qcow2"
+    OC="$RUN/OpenCore-${MODEL//,/_}.qcow2"
 fi
 
 # Only the bundled libraries this system lacks (same helper as the kiosk):
@@ -173,6 +175,10 @@ fi
 } | tee "$RUN/run.log"
 [ "$PRINT" = 1 ] && exit 0
 
+# Reims appends its always-on failure log to /tmp/reims-vgpu-fail.log across
+# runs; remember where this run starts so only its part is copied.
+REIMS_FAIL=/tmp/reims-vgpu-fail.log
+REIMS_FAIL_START=$(( $(stat -c %s "$REIMS_FAIL" 2>/dev/null || echo 0) + 1 ))
 echo "==> starting (logs: $RUN). Close the window or Ctrl+C here to stop."
 env "${ENV[@]}" "$QEMU" "${ARGS[@]}" >>"$RUN/run.log" 2>&1 &
 QPID=$!
@@ -202,4 +208,9 @@ wait $QPID; RC=$?
 sleep 0.5
 if [ "$RC" -gt 128 ]; then E="killed by signal $((RC-128))"; else E="exit status $RC"; fi
 echo "QEMU ended: $E after $(( $(date +%s) - START ))s" | tee -a "$RUN/run.log"
+if [ -r "$REIMS_FAIL" ]; then
+    tail -c +"$REIMS_FAIL_START" "$REIMS_FAIL" > "$RUN/reims-fail.log" 2>/dev/null
+    _ref="$(grep -c 'refused_by=' "$RUN/reims-fail.log" 2>/dev/null || echo 0)"
+    echo "Reims failure log: $RUN/reims-fail.log ($_ref draw refusals)" | tee -a "$RUN/run.log"
+fi
 echo "==> logs: $RUN"

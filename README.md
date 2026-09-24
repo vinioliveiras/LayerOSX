@@ -3627,3 +3627,46 @@ CLI exit codes, the panel's terminal skipping the prompt once unlocked) — 47
 total; the panel under Xvfb (open section, lock screen, wrong then right
 password). Not yet on hardware.
 
+## Reims black screen in the kiosk: the ISO had no `llvm-dis`
+
+Hardware, after a full macOS install with Reims: OpenCore and the boot showed,
+macOS reached loginwindow (serial log), but the screen stayed black. Reims'
+always-on failure log, `/tmp/reims-vgpu-fail.log` (never collected before),
+had it:
+
+    linux_m2v_async_done reason=m2v_vertex_translate stage=vertex
+      detail=cannot_run_llvm-dis_(llvm-dis)_[no_verdict]:_No_such_file_or_directory
+    linux_clear_store draws_skipped reason=draws_skipped_after_engine_refusal
+      refused_by=m2v_vertex_translate          (8387 of them)
+
+Reims' shader translator (metal2vulkan) runs `llvm-dis` at runtime to read
+macOS's Metal shaders (AIR is LLVM bitcode) and `spirv-val` to check the
+SPIR-V it emits. The ISO had neither, so every shader failed, every draw was
+skipped and macOS "drew" black. The build machine has `llvm` installed —
+which is why `tools/run-mac-here.sh` worked there.
+
+- `packages.x86_64`: `llvm` (llvm-dis) and `spirv-tools` (spirv-val).
+- Diagnostics: `collect-diag.sh` (Save diagnostics, `macdiag`) now copies
+  `/tmp/reims-vgpu-fail.log` and summarises its refusals;
+  `run-mac-here.sh` saves the run's part as `reims-fail.log` and counts the
+  refusals.
+
+Also from the same session on hardware:
+
+- **macOS Restart no longer reboots the computer.** A guest reset after a
+  normal uptime used to `systemctl reboot` the host ("Apple menu › Restart
+  restarts the machine"); a macOS install restarts 3–4 times, so it looked
+  like a reboot loop. Now it restarts the Mac only (and resets the fast-exit
+  counter); a reset seconds after launch is still treated as a boot failure.
+  Restarting the computer is Settings › General › Restart.
+- **Mac model cache names had commas** (`...-iMac19,1.qcow2`), which QEMU's
+  `-drive file=` splits on — any non-default model failed to start ("Could
+  not open '...-iMac19'"). Cache and `run-mac-here.sh --model` files now use
+  `iMac19_1`.
+- **No desktop portals** in the kiosk: `.xinitrc` exports
+  `GDK_DEBUG=no-portals GTK_USE_PORTAL=0` before openbox, so GTK4 windows
+  stop asking for `xdg-desktop-portal-gnome` (journal spam, slower windows).
+- Ruled out along the way (kept for the record): picom (black with it
+  killed), the Mac model (black as iMac19,1 too), the recovery disk (OpenCore
+  picks Macintosh HD).
+

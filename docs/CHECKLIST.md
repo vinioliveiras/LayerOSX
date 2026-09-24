@@ -1164,6 +1164,18 @@ allow-list and anything not coming from the guest.)
 - `ls -l /var/lib/layerosx/maint-password` → `-rw-------`, contents start
   with `scrypt$`.
 
+### 5.4v. Reims draws macOS (llvm-dis on the ISO)
+
+- `which llvm-dis spirv-val` on the installed system → both found.
+- Reims: after loginwindow the macOS screen appears; `~/mac-vm.log` has
+  "first guest frame presented via engine resident"; `grep -c refused_by=
+  /tmp/reims-vgpu-fail.log` is 0 (or tiny).
+- Save diagnostics bundle contains `reims-vgpu-fail.log`.
+- macOS Apple menu › Restart → only the Mac restarts (the log says
+  "restarting the Mac (not the computer)"), the computer stays up.
+- Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
+- `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
+
 ### 5.4h. Reims host window + kiosk windows
 
 - `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"

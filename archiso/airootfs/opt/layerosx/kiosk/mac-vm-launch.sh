@@ -424,7 +424,8 @@ configure_toggles() {
     MAC_MODEL="$(cat "$STATE_DIR/mac-model" 2>/dev/null || true)"
     case "$MAC_MODEL" in ""|*[!A-Za-z0-9,]*) MAC_MODEL="$MAC_MODEL_BAKED" ;; esac
     if [ "$MAC_MODEL" != "$MAC_MODEL_BAKED" ]; then
-        _cache="$STATE_DIR/oc-model-cache/$(basename "$OPENCORE_IMG" .qcow2)-${MAC_MODEL}.qcow2"
+        # no commas in the file name: QEMU's -drive file=... would split on them
+        _cache="$STATE_DIR/oc-model-cache/$(basename "$OPENCORE_IMG" .qcow2)-${MAC_MODEL//,/_}.qcow2"
         if [ ! -s "$_cache" ] || [ "$OPENCORE_IMG" -nt "$_cache" ]; then
             mkdir -p "$STATE_DIR/oc-model-cache"
             "$KIOSK_DIR/lib/oc-model.sh" "$OPENCORE_IMG" "$_cache" "$MAC_MODEL" || rm -f "$_cache"
@@ -846,9 +847,15 @@ while true; do
             exit 0
             ;;
         host-reboot)
-            echo "macOS asked to Restart — rebooting the physical machine."
-            sudo systemctl reboot
-            exit 0
+            # macOS restarting (Apple menu > Restart, the installer's several
+            # reboots, updates) restarts the MAC, not the computer: rebooting
+            # the host for it turned a macOS install into what looked like a
+            # reboot loop (seen on hardware). Restarting the computer is
+            # Settings > General > Restart. A Restart after a normal uptime
+            # isn't a boot failure: reset the fast-exit counter.
+            echo "macOS asked to Restart — restarting the Mac (not the computer)."
+            RETRIES=0
+            sleep 1
             ;;
         vm-only|*)
             echo "QEMU exited without a clear guest request (action: ${ACTION}, ran ${RAN_FOR}s) — relaunching just the VM."

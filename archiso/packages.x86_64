@@ -89,6 +89,13 @@ curl
 vulkan-icd-loader
 vulkan-tools
 vulkan-headers
+# Reims' shader translator (metal2vulkan) runs these AT RUNTIME: llvm-dis to
+# read macOS's Metal shaders (AIR = LLVM bitcode), spirv-val to check the
+# SPIR-V it emits. Without llvm-dis every shader translation fails
+# ("cannot_run_llvm-dis ... No such file or directory") and macOS draws
+# nothing: black screen after the boot, seen on hardware.
+llvm
+spirv-tools
 
 # build tools for qemus/qemu-macos and dmg2img (compiled at build time
 # by customize_airootfs.sh — none of this stays exposed on the final

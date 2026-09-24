@@ -28,6 +28,12 @@ EOF
 
 cat > "/home/${MAC_USER}/.xinitrc" <<'EOF'
 #!/bin/sh
+# No desktop portals in the kiosk: GTK4 apps (Settings, Terminal, zenity)
+# otherwise ask systemd to start xdg-desktop-portal-gnome, which fails every
+# time ("Failed to start Portal service (GTK/GNOME implementation)" spam in
+# the journal) and can delay the window. Exported first so openbox -- and
+# everything its hotkeys start -- inherits it.
+export GDK_DEBUG=no-portals GTK_USE_PORTAL=0
 # Must run BEFORE `openbox &` -- it edits openbox's config, which is
 # only read at startup (see lib/install-f2-keybind.sh).
 /opt/layerosx/kiosk/lib/install-f2-keybind.sh "$HOME/mac-vm.log"
