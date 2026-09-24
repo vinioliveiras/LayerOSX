@@ -3888,3 +3888,22 @@ on vs off noted with times, NVIDIA vs AMD.
 Also reported, now top of the TODO: YouTube video doesn't play in Safari, and
 audio stutters a little.
 
+## Sound stutter: bigger usb-audio buffer, faster audio timer
+
+Sound stuttered "a little", less with Spotify or YouTube minimised — i.e. it
+gets worse when macOS draws more. QEMU moves audio from the usb-audio device
+to ALSA from its main loop (an audio timer, default every 10 ms), and the
+device's own stream buffer is only 32 packets = 32 ms by default
+(`hw/usb/dev-audio.c`: `32 * USBAUDIO_PACKET_SIZE`, 192 bytes per 1 ms packet
+at 48 kHz 16-bit stereo). When the main loop is late by more than that,
+packets are dropped or ALSA runs dry. Now the launcher passes
+`usb-audio,buffer=<128 ms>` and `timer-period=5000` on the audiodev. The
+bigger buffer only adds delay when the host actually falls behind — in steady
+state the guest writes at real time and the buffer stays nearly empty.
+`/var/lib/layerosx/audio-buffer-ms` (8–500) and `audio-timer-us` override
+both for experiments; the launcher logs the values used.
+
+Microphone: QEMU's usb-audio has no input side. USB mics/headsets/webcams
+already work through automatic USB passthrough; the built-in mic would need
+an emulated HDA codec plus a macOS HDA driver (TODO).
+

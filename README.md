@@ -116,6 +116,7 @@ From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
 | `wifi [status\|pick\|list]` | Host Wi-Fi. |
 | `maclog [tail\|oc\|err\|launch\|qemu\|all]` | Boot / launcher logs. |
 | `macfps [--once]` | The Mac's frame rate on Reims, live. |
+| `echo N > /var/lib/layerosx/audio-buffer-ms` | Sound buffer in ms (default 128; then `relaunch`). |
 | `macdiag [usb]` | Full diagnostics bundle (optionally onto a USB drive). |
 | `macstatus` | Current settings and VM disk state. |
 | `erasevm [-y]` | Delete the Mac (disk, recovery, NVRAM) so the first-run wizard runs again. |
@@ -246,10 +247,16 @@ devices.
   video decoder: check which codec YouTube serves (VP9/AV1 vs H.264), whether
   the video layer (2-plane `420f` IOSurfaces seen in the Reims log) is drawn,
   and compare with VMware graphics to split "decode" from "Reims display".
-- **Audio stutters.** usb-audio on ALSA `plughw`, no sound server. Try larger
-  QEMU ALSA buffers (`out.buffer-length`, `out.period-length`,
-  `timer-period`), check CPU load while it stutters, and whether it matches
-  the frame-rate drops.
+- **Audio stutters** — worse while macOS draws a lot (better with Spotify /
+  YouTube minimised). First fix in: usb-audio buffer 32 → 128 ms and a 5 ms
+  audio timer (`audio-buffer-ms` / `audio-timer-us` state files to
+  experiment). If it still stutters: move the audio off QEMU's busy main
+  loop, or feed PipeWire instead of raw ALSA.
+- **Microphone** — QEMU's usb-audio is output-only. Works today: a USB
+  microphone, headset or webcam goes to the Mac with automatic USB and
+  macOS drives it natively. The laptop's built-in mic (on the host's audio
+  chip) needs an emulated input device: `intel-hda` + `hda-duplex` with a
+  macOS HDA driver (VoodooHDA/AppleALC) in OpenCore — to evaluate.
 
 **Next**
 

@@ -1176,6 +1176,16 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5c. Sound stutter
+
+- `mac-vm.log`: "Audio: usb-audio on ALSA … buffer 128 ms, timer 5000 us".
+- Play Spotify / a YouTube video with the window visible and move windows
+  around: compare the stutter with the previous build.
+- Still stutters: `echo 250 > /var/lib/layerosx/audio-buffer-ms; relaunch`
+  and try again (then 64, to see which way it moves). Report which value
+  sounded best.
+- A USB headset / webcam mic plugged in: appears in macOS Sound › Input.
+
 ### 5.5b. Power mode
 
 - Settings › Battery › Power mode: Automatic by default; the line under it

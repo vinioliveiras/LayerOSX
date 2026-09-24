@@ -625,14 +625,28 @@ configure_toggles() {
                 python3 /opt/layerosx/panel/layerosx_backend.py apply-volume >/dev/null 2>&1 || true
             fi
         fi
+        # Stutter guard. Sound stuttered while macOS drew a lot (less with
+        # Spotify/YouTube minimised): QEMU feeds the host from its main loop,
+        # and when that loop is late the usb-audio device's own buffer --
+        # 32 ms by default -- runs dry or overflows. A bigger buffer only adds
+        # delay if the host falls behind (steady state stays low), and a 5 ms
+        # audio timer (default 10 ms) refills ALSA sooner. Overrides for
+        # experiments: $STATE_DIR/audio-buffer-ms (8-500), audio-timer-us.
+        _abuf_ms="$(cat "$STATE_DIR/audio-buffer-ms" 2>/dev/null)"
+        case "$_abuf_ms" in ''|*[!0-9]*) _abuf_ms=128 ;; esac
+        [ "$_abuf_ms" -lt 8 ] && _abuf_ms=8; [ "$_abuf_ms" -gt 500 ] && _abuf_ms=500
+        _atimer="$(cat "$STATE_DIR/audio-timer-us" 2>/dev/null)"
+        case "$_atimer" in ''|*[!0-9]*) _atimer=5000 ;; esac
+        # usb-audio's buffer is in bytes: 192 per 1 ms packet (48 kHz, 16-bit stereo).
+        _usbaudio="usb-audio,audiodev=snd0,bus=xhci.0,buffer=$((_abuf_ms * 192))"
         if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
             if [ -n "$_snd_dev" ]; then
                 # QEMU option values escape a comma as ",,".
-                AUDIO_ARGS=(-audiodev "alsa,id=snd0,out.dev=${_snd_dev//,/,,}" -device usb-audio,audiodev=snd0,bus=xhci.0)
-                echo "Audio: usb-audio on ALSA ${_snd_dev} (${_snd_label}); turn off with 'audio off'."
+                AUDIO_ARGS=(-audiodev "alsa,id=snd0,timer-period=${_atimer},out.dev=${_snd_dev//,/,,}" -device "$_usbaudio")
+                echo "Audio: usb-audio on ALSA ${_snd_dev} (${_snd_label}), buffer ${_abuf_ms} ms, timer ${_atimer} us; turn off with 'audio off'."
             else
-                AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
-                echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
+                AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0,timer-period=${_atimer}" -device "$_usbaudio")
+                echo "Audio: usb-audio on the ${_snd_backend} backend, buffer ${_abuf_ms} ms (turn off with 'audio off')."
             fi
         else
             echo "WARNING: audio requested but this QEMU build has no usb-audio device and/or no usable audio backend -- skipping audio." >&2
