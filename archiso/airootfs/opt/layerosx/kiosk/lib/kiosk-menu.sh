@@ -27,7 +27,7 @@ HOST_ACTION_FILE="/tmp/layerosx-host-action"
 T="LayerOSX"
 
 exec 9>"/tmp/layerosx-menu-$(id -u).lock"
-flock -n 9 || exit 0
+flock -n 9 || { "$LIB/raise-window.sh" '^LayerOSX' || true; exit 0; }
 
 # Run an action, or in preview mode just show it.
 act() {

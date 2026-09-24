@@ -142,3 +142,5 @@ gtk4
 libadwaita
 adwaita-icon-theme
 librsvg
+xdotool
+picom

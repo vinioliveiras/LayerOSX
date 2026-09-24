@@ -50,6 +50,11 @@ path = Path.home() / ".config/openbox/rc.xml"
 content = path.read_text(encoding="utf-8")
 original = content
 
+# 0) Drop every application rule we added in an earlier session, so an updated
+#    rule replaces the old one instead of being skipped by its marker.
+content = re.sub(r"[ \t]*<application\b[^>]*> <!-- layerosx-[^>]*-->.*?</application>\n?", "", content,
+                 flags=re.DOTALL)
+
 # 1) One desktop only (stock ships 4). Removes the whole "switched onto an
 #    empty desktop, now where's the VM window?" failure class.
 content = re.sub(r"<number>\d+</number>", "<number>1</number>", content, count=1)
@@ -89,6 +94,20 @@ if "layerosx-qemu-focus" not in content and "</applications>" in content:
     app_rule = (
         '  <application class="*QEMU*" title="QEMU*"> <!-- layerosx-qemu-focus -->\n'
         "    <desktop>1</desktop>\n"
+        "    <focus>yes</focus>\n"
+        "    <layer>above</layer>\n"
+        "  </application>\n"
+    )
+    content = content.replace("</applications>", app_rule + "</applications>", 1)
+
+# 5b) Reims' own Vulkan window ("Reims vGPU", see mac-vm-launch.sh): same
+#     treatment as the QEMU/SDL window -- focused, above, one desktop, and no
+#     openbox decorations on the borderless fullscreen window.
+if "layerosx-reims-window" not in content and "</applications>" in content:
+    app_rule = (
+        '  <application title="Reims vGPU"> <!-- layerosx-reims-window -->\n'
+        "    <desktop>1</desktop>\n"
+        "    <decor>no</decor>\n"
         "    <focus>yes</focus>\n"
         "    <layer>above</layer>\n"
         "  </application>\n"
@@ -156,9 +175,9 @@ if "layerosx-brightness" not in content and "</keyboard>" in content:
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
 
-# 8) Keep the picker's dialogs (zenity) and its "Advanced (nmtui)" xterm on
-#    top of the pinned, always-above QEMU window, or they'd open hidden behind
-#    the fullscreen VM.
+# 8) Keep every LayerOSX window (settings panel, terminal, zenity dialogs) on
+#    top of the pinned, always-above VM window and always CENTERED on screen,
+#    or they'd open hidden behind the fullscreen VM / wherever openbox likes.
 if "layerosx-dialogs-above" not in content and "</applications>" in content:
     rules = (
         '  <application class="Zenity"> <!-- layerosx-dialogs-above -->\n'
@@ -168,6 +187,7 @@ if "layerosx-dialogs-above" not in content and "</applications>" in content:
         '  <application title="LayerOSX*"> <!-- layerosx-dialogs-above -->\n'
         "    <focus>yes</focus>\n"
         "    <layer>above</layer>\n"
+        '    <position force="yes"><x>center</x><y>center</y></position>\n'
         "  </application>\n"
     )
     content = content.replace("</applications>", rules + "</applications>", 1)

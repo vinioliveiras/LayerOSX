@@ -33,6 +33,12 @@ cat > "/home/${MAC_USER}/.xinitrc" <<'EOF'
 /opt/layerosx/kiosk/lib/install-f2-keybind.sh "$HOME/mac-vm.log"
 openbox &
 sleep 1
+# Compositor for rounded window corners (see /opt/layerosx/kiosk/picom.conf; it
+# unredirects fullscreen windows, so the VM isn't affected). Off switch:
+# echo off > /var/lib/layerosx/compositor
+if [ "$(cat /var/lib/layerosx/compositor 2>/dev/null)" != off ] && command -v picom >/dev/null 2>&1; then
+    picom -b --config /opt/layerosx/kiosk/picom.conf 2>>"$HOME/picom.log" || true
+fi
 /opt/layerosx/kiosk/lib/force-max-refresh.sh &
 # Last brightness the user chose (keys or LayerOSX Settings), across reboots.
 /opt/layerosx/kiosk/lib/brightness.sh restore &

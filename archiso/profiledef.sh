@@ -64,6 +64,7 @@ file_permissions=(
   ["/opt/layerosx/kiosk/lib/panel.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/save-logs-to.sh"]="0:0:755"
   ["/opt/layerosx/kiosk/lib/brightness.sh"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/raise-window.sh"]="0:0:755"
   ["/opt/layerosx/panel"]="0:0:755"
   ["/opt/layerosx/panel/layerosx_panel.py"]="0:0:755"
   ["/opt/layerosx/panel/layerosx_backend.py"]="0:0:755"

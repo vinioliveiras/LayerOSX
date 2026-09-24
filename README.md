@@ -3091,3 +3091,54 @@ backlight device changes name between boots, or the driver resets it later);
 this runs inside the session, after the drivers are up. Never below 5%.
 Tests: 2 more (set/down save, restore after a firmware reset, 5% floor, bad
 input) against a fake `brightnessctl` — 23 in total.
+
+## Reims showed a black screen: it needs its own host window
+
+Symptom (AMD test machine, debug ISO): with `gpu reims` macOS boots all the way
+(serial shows login/bluetoothd, the Reims EFI GOP comes up at 1920x1080, QEMU
+doesn't crash), but once macOS' AppleParavirtGPU takes over the screen stays
+black with the cursor still moving.
+
+Cause: on x86, Reims presents through **its own Vulkan window** (the
+reims-vgpu staticlib opens it, handles present *and* keyboard/mouse input),
+enabled with `REIMS_VGPU_WINDOW=1`, while QEMU runs `-display none` — that's
+the default of upstream's `vm/boot-x86.sh`. We ran Reims under QEMU's SDL
+window instead; without the host window Reims falls back to pushing CPU
+scanouts through QEMU's console, a legacy path its own code documents as able
+to freeze on the last pre-driver frame.
+
+Fix (`mac-vm-launch.sh`): for `gpu reims` the launcher now sets
+`REIMS_VGPU_WINDOW=1 REIMS_VGPU_FULLSCREEN=1` (borderless fullscreen) and
+`-display none`; vmware/std keep the SDL fullscreen window. The env vars are
+included in the logged `QEMU cmdline:` line. The old path stays available for
+A/B: `echo off > /var/lib/layerosx/reims-window`. openbox gets a rule for the
+"Reims vGPU" window (focused, above, no decorations). Reims prefers the
+discrete GPU (RTX 4060 here). If the window still stays black on a hybrid
+laptop, the next suspect is presenting from the NVIDIA GPU to an X screen
+driven by the AMD iGPU (PRIME) — test with the laptop's MUX in dGPU-only mode.
+
+Also in the same logs: `alsa: Could not initialize DAC ... default` — the host
+had no sound card for ALSA. The launcher now skips audio (with a warning) when
+`/proc/asound/cards` is empty instead of handing macOS a dead device.
+
+## Kiosk windows: bring-back on re-press, centered, rounded corners
+
+- **Hidden, not closed:** clicking the fullscreen VM puts it above an open
+  LayerOSX Settings / terminal window, and the single-instance lock then made
+  the hotkey do nothing (it only reappeared when another window was opened).
+  Pressing Ctrl+Alt+W / Ctrl+Alt+T again now brings the existing window back
+  to the front (`lib/raise-window.sh`, `xdotool windowactivate`); the zenity
+  fallback menu does the same. The terminal's title is locked
+  (`allowTitleOps: false`) so it can always be found.
+- **Centered:** openbox places every window titled `LayerOSX*` (settings,
+  terminal, dialogs) at the center of the screen.
+- **Rounded corners:** a light `picom` compositor (`opt/layerosx/kiosk/picom.conf`:
+  xrender backend, no vsync/shadows/blur, 12 px corners) started from the kiosk
+  `.xinitrc`. `unredir-if-possible` makes any fullscreen window — the macOS VM,
+  SDL or Reims — bypass the compositor, so the VM is unaffected. GTK4 windows
+  (they draw their own corners/shadows) and the VM windows are excluded. Off
+  switch: `echo off > /var/lib/layerosx/compositor` + reboot.
+- Packages: `xdotool picom`. Verified: openbox rules valid and not duplicated
+  across sessions (application rules are now re-generated each session, so an
+  updated rule replaces the old one), picom config accepted by picom v10, and
+  an xterm rendered centered with rounded corners under openbox + picom.

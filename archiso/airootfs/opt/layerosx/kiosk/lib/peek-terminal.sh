@@ -23,7 +23,10 @@ echo
 echo "Type 'logs' to follow it live, or 'serial' for the guest's own firmware/kernel console (OpenCore + XNU boot log). Ctrl-C stops watching, back to this prompt. Any other command works too."
 RCEOF
 
-xterm -fa Monospace -fs 12 -bg black -fg white \
+# allowTitleOps false: keep the "LayerOSX — terminal" title whatever the shell
+# does, so Ctrl+Alt+T can find it again (lib/raise-window.sh) and openbox keeps
+# centering it (title rule "LayerOSX*").
+xterm -fa Monospace -fs 12 -bg black -fg white -xrm 'XTerm*allowTitleOps: false' \
     -T "LayerOSX — terminal (safe to close any time)" \
     -e bash --rcfile "$RCFILE" -i
 

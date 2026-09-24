@@ -989,6 +989,22 @@ allow-list and anything not coming from the guest.)
 - Release build: confirm Ctrl+Alt+W is the ONLY shortcut that does anything
   (F2 / Ctrl+Alt+Fn still do nothing).
 
+### 5.4h. Reims host window + kiosk windows
+
+- `gpu reims` + relaunch: `maclog launch` shows "Reims: host Vulkan window"
+  and the cmdline starts with `REIMS_VGPU_WINDOW=1 REIMS_VGPU_FULLSCREEN=1`
+  and has `-display none`. macOS must appear (not black) after the Apple logo;
+  keyboard and mouse work in the Reims window; Ctrl+Alt+W/T/U still open on
+  top of it. If still black: try the MUX in dGPU-only mode, then
+  `echo off > /var/lib/layerosx/reims-window` for the old path (A/B).
+- With no sound card, `mac-vm.log` says "audio requested but the host has no
+  sound card" and there are no ALSA DAC errors.
+- Open Settings, click the VM (it hides behind), press Ctrl+Alt+W again → the
+  same window comes back to the front. Same for the terminal (Ctrl+Alt+T).
+- Settings, terminal and dialogs open centered; the terminal has rounded
+  corners; the VM's smoothness is unchanged with picom running
+  (`echo off > /var/lib/layerosx/compositor` to compare).
+
 ### 5.4c. Laptop integration (brightness, battery, lid)
 
 - **Brightness memory:** set a low brightness (keys or Settings › Displays),

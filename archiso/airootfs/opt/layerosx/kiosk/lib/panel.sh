@@ -8,6 +8,11 @@ PANEL=/opt/layerosx/panel/layerosx_panel.py
 LIB=/opt/layerosx/kiosk/lib
 LOG="$HOME/panel.log"
 
+# Already open (maybe hidden behind the VM after a click on it)? Bring it back.
+if ! ( flock -n 9 ) 9>"/tmp/layerosx-panel-$(id -u).lock" 2>/dev/null; then
+    "$LIB/raise-window.sh" '^LayerOSX Settings$' && exit 0
+fi
+
 if python3 -c 'import gi; gi.require_version("Gtk","4.0"); gi.require_version("Adw","1"); from gi.repository import Gtk, Adw' 2>>"$LOG"; then
     start=$(date +%s)
     python3 "$PANEL" 2>>"$LOG"

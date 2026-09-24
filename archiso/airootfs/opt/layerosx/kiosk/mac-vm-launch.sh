@@ -428,6 +428,30 @@ configure_toggles() {
         GFX_ARGS=(-vga none -device vmvga)
     fi
 
+    # --- Display frontend ------------------------------------------------------
+    # Reims on x86 presents through its OWN host window: a Vulkan window opened by
+    # the reims-vgpu staticlib (present + keyboard/mouse input), enabled with
+    # REIMS_VGPU_WINDOW=1, while QEMU runs `-display none` and owns no window --
+    # that's upstream's vm/boot-x86.sh default. Without it Reims falls back to
+    # pushing CPU scanouts through QEMU's console, a legacy path that can freeze
+    # on the last pre-driver frame: exactly the black screen (cursor still
+    # moving) seen on the AMD test machine once AppleParavirtGPU took over.
+    # REIMS_VGPU_FULLSCREEN=1 makes that window borderless/fullscreen. The old
+    # SDL path stays one file away for A/B: echo off > $STATE_DIR/reims-window.
+    # vmware/std keep QEMU's SDL fullscreen window.
+    DISPLAY_ARGS=(-display sdl,full-screen=on)
+    REIMS_ENV=()
+    if [ "$GFX" = "reims-vgpu-pci" ]; then
+        case "$(cat "$STATE_DIR/reims-window" 2>/dev/null || echo on)" in
+            off|0|no|false) echo "Reims: host window OFF (legacy QEMU/SDL scanout path, for A/B)." ;;
+            *)
+                DISPLAY_ARGS=(-display none)
+                REIMS_ENV=(REIMS_VGPU_WINDOW=1 REIMS_VGPU_FULLSCREEN=1)
+                echo "Reims: host Vulkan window (REIMS_VGPU_WINDOW=1, fullscreen), QEMU -display none."
+                ;;
+        esac
+    fi
+
     # --- Audio (opt-in) ---------------------------------------------------------
     # Off by default. macOS drives a USB Audio Class device with its own built-in
     # AppleUSBAudio driver (no kext, unlike the intel-hda + AppleALC route), so
@@ -450,6 +474,14 @@ configure_toggles() {
         for _b in alsa pipewire pa sdl oss; do
             if printf '%s\n' "$_qhelp" | grep -qw "$_b"; then _snd_backend="$_b"; break; fi
         done
+        # The host must actually have a sound card: with none, ALSA's `default`
+        # can't open ("Could not initialize DAC ... default"), QEMU logs an error
+        # per voice and macOS gets a dead device. Seen on the AMD test machine.
+        if ! grep -q '^ *[0-9]' /proc/asound/cards 2>/dev/null; then
+            echo "WARNING: audio requested but the host has no sound card (/proc/asound/cards is empty) -- skipping audio." >&2
+            echo "         Check that the laptop's audio driver loaded (sof-firmware / snd_pci_acp*); boot is unaffected." >&2
+            _snd_backend=""
+        fi
         if [ -n "$_snd_backend" ] && [ "${_has_usbaudio:-0}" -ge 1 ]; then
             AUDIO_ARGS=(-audiodev "${_snd_backend},id=snd0" -device usb-audio,audiodev=snd0,bus=xhci.0)
             echo "Audio: usb-audio on the ${_snd_backend} backend (turn off with 'audio off')."
@@ -556,7 +588,7 @@ while true; do
         # captured it, which made every stall a blind blue screen; this is
         # what turns a kernel panic into readable text.
         -serial "file:$SERIAL_LOG"
-        -display sdl,full-screen=on
+        "${DISPLAY_ARGS[@]}"
     )
     QEMU_ARGS+=("${GFX_ARGS[@]}")
     if [ "${#AUDIO_ARGS[@]}" -gt 0 ]; then QEMU_ARGS+=("${AUDIO_ARGS[@]}"); fi
@@ -594,7 +626,7 @@ while true; do
     # Always record the EXACT command line this boot used, %q-quoted so it can
     # be pasted back verbatim -- a future postmortem then never has to guess
     # which args produced a given log (and `macdiag` picks this line up).
-    { printf 'QEMU cmdline:'; printf ' %q' "$QEMU_BIN" "${QEMU_ARGS[@]}"; printf '\n'; } 2>/dev/null || true
+    { printf 'QEMU cmdline:'; printf ' %q' "${REIMS_ENV[@]}" "$QEMU_BIN" "${QEMU_ARGS[@]}"; printf '\n'; } 2>/dev/null || true
 
     LAUNCHED_AT=$(date +%s)
     # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an
@@ -604,7 +636,7 @@ while true; do
     # Ctrl+Alt+F2 VT (which is low-refresh and ghosts on some monitors). With
     # the grab off, Ctrl+Alt+T keeps opening the in-X log terminal while the VM is
     # focused, and macOS still receives every other key through normal focus.
-    SDL_GRAB_KEYBOARD=0 LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
+    env "${REIMS_ENV[@]}" SDL_GRAB_KEYBOARD=0 LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done

@@ -26,7 +26,11 @@ T="LayerOSX — Maintenance"
 
 # One terminal at a time (the chord mashed repeatedly shouldn't stack dialogs).
 exec 9>"/tmp/layerosx-maint-$(id -u).lock"
-flock -n 9 || exit 0
+# Already open? Bring the existing terminal (or its password dialog) forward.
+if ! flock -n 9; then
+    /opt/layerosx/kiosk/lib/raise-window.sh '^LayerOSX — (terminal|Maintenance)' || true
+    exit 0
+fi
 
 # The live ISO's installer session runs as root: it already is the machine's
 # admin (and root has no usable password there), so just open the terminal.
