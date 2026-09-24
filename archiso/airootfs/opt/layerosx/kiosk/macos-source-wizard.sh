@@ -10,7 +10,12 @@ OVMF_VARS="$2"
 # reads this to pick a CPU model the guest will accept (see there).
 MACOS_VERSION_FILE="$(dirname "$VM_DISK")/macos-version"
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
-VM_SIZE_GB="${MAC_VM_SIZE_GB:-128}"
+# The Mac's disk: as big as this partition allows (it's a sparse qcow2 -- it only
+# takes real space as macOS fills it), leaving 20 GB for the recovery/installer
+# image and a safety margin; at least 64 GB. MAC_VM_SIZE_GB overrides.
+_avail_gb="$(df -BG --output=avail "$(dirname "$VM_DISK")" 2>/dev/null | tail -n1 | tr -dc '0-9')"
+_auto_gb=$(( ${_avail_gb:-148} - 20 )); [ "$_auto_gb" -lt 64 ] && _auto_gb=64
+VM_SIZE_GB="${MAC_VM_SIZE_GB:-$_auto_gb}"
 
 # A failed attempt here used to leave the user permanently stuck on a
 # black screen: qemu-img create below makes $VM_DISK before the step

@@ -928,9 +928,11 @@ AMD test machine). `build.sh` now produces a separate AMD OpenCore image and
   If the AMD ones are missing, `qemu-img`/`mtools` were absent at build time
   (see section 1) — an AMD host cannot boot macOS without them.
 - On the AMD machine, the launch profile line printed at start should read
-  `cpu=Haswell-noTSX (AuthenticAMD host) smp=4 ...`: **smp must be 4** on AMD
-  (the AMD image bakes `cpuid_cores_per_package = 4`, and a mismatch panics
-  XNU). If it isn't 4, the core-count pin in `mac-vm-launch.sh` didn't apply.
+  `cpu=Haswell-noTSX (AuthenticAMD host) smp=8 ...` on a host with >= 10
+  threads (the AMD test laptop has 16) and `OpenCore image:
+  OpenCore-amd8*.qcow2`; `smp=4` + `OpenCore-amd*.qcow2` on smaller hosts. The
+  AMD images bake `cpuid_cores_per_package` (4 or 8) and a mismatch with -smp
+  panics XNU, so smp and the image family must always agree.
 - Expected result of the fix: the recovery no longer freezes at
   `HANDOFF TO XNU` — it proceeds into the macOS Base System / installer. That
   handoff is the exact point that used to hang; getting past it is the signal
@@ -988,6 +990,20 @@ allow-list and anything not coming from the guest.)
   `wifi pick` falls back to `nmtui connect`.
 - Release build: confirm Ctrl+Alt+W is the ONLY shortcut that does anything
   (F2 / Ctrl+Alt+Fn still do nothing).
+
+### 5.4i. The Mac uses the machine (RAM, cores, disk)
+
+- `maclog launch` / About › The Mac: ~55 GB RAM on the 64 GB laptop (host RAM
+  minus 12%, min 4 GB reserve), 8 cores, Graphics as chosen.
+- In macOS: About This Mac shows the same memory and 8 cores; Activity
+  Monitor can load all 8.
+- Existing 128 GB Mac disk on a bigger partition: first launch after the
+  update logs "Mac disk grown: 128 GB -> N GB"; About › The Mac shows the new
+  size and the diskutil hint; in macOS `diskutil list`, then
+  `sudo diskutil apfs resizeContainer <container> 0` → Macintosh HD shows the
+  extra space. Launching again does not grow it again.
+- Fresh install: the wizard creates the disk at (free space − 20 GB).
+- Override RAM: `echo 32768 > /var/lib/layerosx/ram-mb` + relaunch.
 
 ### 5.4h. Reims host window + kiosk windows
 

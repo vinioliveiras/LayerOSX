@@ -52,7 +52,17 @@ if [ "$BUILD_MODE" = debug ]; then
 else
     VERBOSE_DEFAULT=off; AUDIO_DEFAULT=on;  GFX_DEFAULT=reims
 fi
-VM_RAM_MB=8192
+# --- RAM: give the Mac nearly all of it ---------------------------------------
+# Everything except a reserve for Linux + QEMU + Reims' host-side Vulkan buffers:
+# 12% of the host's RAM, at least 4 GB (a 64 GB laptop -> ~54 GB for macOS).
+# The memfd backing (share=on, needed by Reims) is only touched as the guest
+# uses it. Override: echo <MB> > /var/lib/layerosx/ram-mb.
+_host_mb="$(awk '/^MemTotal:/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 8192)"
+_reserve_mb=$(( _host_mb * 12 / 100 )); [ "$_reserve_mb" -lt 4096 ] && _reserve_mb=4096
+VM_RAM_MB=$(( (_host_mb - _reserve_mb) / 1024 * 1024 ))
+[ "$VM_RAM_MB" -lt 4096 ] && VM_RAM_MB=4096
+_ram_override="$(cat "$STATE_DIR/ram-mb" 2>/dev/null || true)"
+case "$_ram_override" in ''|*[!0-9]*) : ;; *) [ "$_ram_override" -ge 2048 ] && VM_RAM_MB=$_ram_override ;; esac
 MIN_UPTIME_FOR_REAL_REBOOT=180
 LOG="$HOME/mac-vm.log"
 SERIAL_LOG="$HOME/mac-vm-serial.log"
@@ -306,13 +316,18 @@ _p=1; while [ $((_p * 2)) -le "$VM_CORES" ]; do _p=$((_p * 2)); done
 VM_CORES=$_p
 
 # --- AMD core-count pin -----------------------------------------------------
-# The AMD OpenCore image bakes cpuid_cores_per_package = 4 (see
-# patch-opencore-amd.sh). XNU panics if that baked constant doesn't match the
-# guest's actual -smp core count, so on AMD we pin to exactly 4 regardless of
-# the power-of-two rule above. Intel keeps the computed value. (Change both
-# together if patch-opencore-amd.sh's AMD_CORES ever changes.)
+# The AMD OpenCore images bake cpuid_cores_per_package (patch-opencore-amd.sh)
+# and XNU panics if that constant doesn't match the guest's -smp cores. build.sh
+# makes two families: OpenCore-amd* (4 cores) and OpenCore-amd8* (8 cores). Use
+# 8 when the power-of-two rule above allows it (hosts with >= 10 threads) and
+# the image exists, else 4. Intel keeps the computed value.
+AMD_OC="amd"
 if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
-    VM_CORES=4
+    if [ "$VM_CORES" -ge 8 ] && [ -s "$OPENCORE_DIR/OpenCore-amd8.qcow2" ]; then
+        VM_CORES=8; AMD_OC="amd8"
+    else
+        VM_CORES=4; AMD_OC="amd"
+    fi
 fi
 
 # Re-read the user toggle files (gpu/verbose/audio) and (re)compute the
@@ -329,8 +344,8 @@ configure_toggles() {
     VERBOSE_STATE="$(cat "$VERBOSE_FILE" 2>/dev/null || echo "$VERBOSE_DEFAULT")"
     case "$VERBOSE_STATE" in off|0|no|false|OFF|Off) VERBOSE_STATE=off ;; *) VERBOSE_STATE=on ;; esac
     if [ "$CPU_VENDOR" = "AuthenticAMD" ]; then
-        _oc_norm="$OPENCORE_DIR/OpenCore-amd.qcow2"
-        _oc_verb="$OPENCORE_DIR/OpenCore-amd-verbose.qcow2"
+        _oc_norm="$OPENCORE_DIR/OpenCore-${AMD_OC}.qcow2"
+        _oc_verb="$OPENCORE_DIR/OpenCore-${AMD_OC}-verbose.qcow2"
     else
         _oc_norm="$OPENCORE_DIR/OpenCore.qcow2"
         _oc_verb="$OPENCORE_DIR/OpenCore-verbose.qcow2"
@@ -341,6 +356,10 @@ configure_toggles() {
         OPENCORE_IMG="$_oc_norm"
     else
         OPENCORE_IMG="$OPENCORE_DIR/OpenCore.qcow2"   # last-ditch fallback to the base
+    fi
+    if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ] && [ -s "$OPENCORE_DIR/OpenCore-amd.qcow2" ]; then
+        # the 8-core family is missing its image: drop to the 4-core one
+        VM_CORES=4; OPENCORE_IMG="$OPENCORE_DIR/OpenCore-amd.qcow2"
     fi
     if [ "$CPU_VENDOR" = "AuthenticAMD" ] && [ "$OPENCORE_IMG" = "$OPENCORE_DIR/OpenCore.qcow2" ]; then
         echo "WARNING: AMD host but no OpenCore-amd image found -- macOS will likely hang at boot." >&2
@@ -497,6 +516,33 @@ configure_toggles() {
         "$CPU_MODEL" "$VM_CORES" "$VM_RAM_MB" "$GFX" "${MACOS_SHORTNAME:-}" > /tmp/layerosx-vm-profile 2>/dev/null || true
     echo "Guest firmware/kernel console goes to $SERIAL_LOG (type 'serial' in the Ctrl+Alt+T terminal)."
 }
+
+# --- Disk: let the Mac's disk use the partition ------------------------------
+# macos.qcow2 is sparse: its *virtual* size is what macOS sees. It used to be a
+# fixed 128 GB whatever the partition size. Grow it (never shrink) to what this
+# partition can actually hold -- the space the image already occupies plus the
+# free space, minus a 10 GB safety margin so the host never fills up under a
+# running VM -- when that's at least 10 GB more than now. qcow2 growth is safe
+# with the VM stopped (it is, here). macOS then sees a bigger disk; its APFS
+# container grows with `diskutil apfs resizeContainer <disk> 0` inside macOS
+# (fresh installs erase the whole disk and get it all anyway). Recorded in
+# $STATE_DIR/disk-grown for LayerOSX Settings > About.
+grow_vm_disk() {
+    [ -f "$VM_DISK" ] && command -v qemu-img >/dev/null 2>&1 || return 0
+    local sizes virt actual avail target margin=$((10 * 1024 * 1024 * 1024))
+    sizes="$(qemu-img info --output=json "$VM_DISK" 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["virtual-size"], d.get("actual-size", 0))' 2>/dev/null)" || return 0
+    read -r virt actual <<<"$sizes"
+    avail="$(df -B1 --output=avail "$(dirname "$VM_DISK")" 2>/dev/null | tail -n1 | tr -dc '0-9')"
+    [ -n "$virt" ] && [ -n "$avail" ] || return 0
+    target=$(( (actual + avail - margin) / 1073741824 * 1073741824 ))
+    if [ "$target" -gt $(( virt + margin )) ]; then
+        if qemu-img resize -q "$VM_DISK" "$target" 2>>"$LOG"; then
+            echo "Mac disk grown: $(( virt / 1073741824 )) GB -> $(( target / 1073741824 )) GB (in macOS: diskutil apfs resizeContainer <container> 0)."
+            printf 'from_gb=%s\nto_gb=%s\n' $(( virt / 1073741824 )) $(( target / 1073741824 )) > "$STATE_DIR/disk-grown"
+        fi
+    fi
+}
+grow_vm_disk
 
 RETRIES=0
 while true; do

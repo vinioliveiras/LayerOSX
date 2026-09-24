@@ -3166,3 +3166,40 @@ Ctrl+Shift+C/V copy/paste, Ctrl+plus/minus/0 zoom, Ctrl+Shift+W close.
   shell on that machine). Verified by rendering light and dark under openbox +
   picom (centered, rounded, typed into it); the panel's UI smoke test still
   passes after moving the shared style out.
+
+## The Mac gets (nearly) the whole machine: RAM, cores, disk
+
+The VM was sized for a small host: 8 GB RAM, 4 cores (AMD) and a fixed 128 GB
+disk, whatever the laptop had.
+
+- **RAM:** `mac-vm-launch.sh` now gives macOS the host's RAM minus a reserve
+  for Linux + QEMU + Reims' Vulkan buffers — 12% of the host, at least 4 GB
+  (64 GB laptop → ~55 GB). Override: `/var/lib/layerosx/ram-mb`.
+- **Cores:** still a power of two ≤ min(8, host threads − 2), and 8 is also
+  Reims' own SMP cap (upstream `boot-x86.sh` caps reims-vgpu-pci at 8: the
+  macOS paravirt GPU kext is sensitive to higher SMP). On AMD the core count
+  is baked into the OpenCore image by AMD_Vanilla's
+  `cpuid_cores_per_package` patch and must match `-smp`, which is why AMD was
+  pinned to 4. `build.sh` now also builds `OpenCore-amd8.qcow2` /
+  `OpenCore-amd8-verbose.qcow2` (baked to 8), and the launcher uses them when
+  the host allows 8 cores (falling back to the 4-core family if they're
+  missing). The 16-thread AMD test laptop gets 8.
+- **Disk:** the first-run wizard creates the Mac's (sparse) disk at the
+  partition's free space minus 20 GB (min 64 GB) instead of 128 GB, and the
+  launcher grows an existing, smaller disk (never shrinks) to what the
+  partition can hold — current usage + free space − 10 GB margin, so the host
+  can't fill up under a running VM — when that's ≥ 10 GB more. qcow2 growth
+  runs with the VM stopped. macOS then sees the bigger disk; its APFS
+  container is grown inside macOS with `sudo diskutil apfs resizeContainer
+  <container> 0`. The growth is recorded in `/var/lib/layerosx/disk-grown` and
+  LayerOSX Settings › About › The Mac shows the disk size and that hint.
+- Verified: disk growth with real qcow2 images (grows 5 → 19 GB with 30 GB
+  free, no change on a second run, never grows past free space − margin,
+  `qemu-img check` clean); RAM formula for the 64 GB host; backend tests incl.
+  the About disk fields (25 total).
+
+GParted keeps openbox's frame (it's a GTK3 app with server-side decorations,
+so the libadwaita traffic lights can't be put in it); it gets the rounded
+corners from picom and centering like every `LayerOSX*`-titled window only
+when its title matches. The real fix is the planned GTK4 installer (TODO),
+which keeps GParted only behind "Advanced…".

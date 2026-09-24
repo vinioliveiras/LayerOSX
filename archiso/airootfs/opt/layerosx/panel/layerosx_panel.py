@@ -755,7 +755,12 @@ class Settings(Adw.ApplicationWindow):
             ("Processor", vm_cpu),
             ("Memory", f"{a.vm_ram_gb:g} GB" if a.vm_ram_gb else ""),
             ("Graphics", a.vm_graphics),
-        ], description=None if a.vm_cpu else "Details appear after the Mac has started once.")
+            ("Disk", f"{a.vm_disk_gb} GB" if a.vm_disk_gb else ""),
+        ], description=(None if a.vm_cpu else "Details appear after the Mac has started once.") if not
+           a.vm_disk_grown_from else
+           f"The Mac's disk grew from {a.vm_disk_grown_from} GB to {a.vm_disk_gb} GB. To use the new space, "
+           "open Terminal in macOS and run: sudo diskutil apfs resizeContainer disk0s2 0 "
+           "(check the container name with: diskutil list).")
         cg = Adw.PreferencesGroup(title="Credits")
         who = Adw.ActionRow(title=f"Created by {esc(a.creator)}", subtitle=esc(a.creator_link),
                             subtitle_selectable=True)

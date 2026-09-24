@@ -165,6 +165,12 @@ OCDIR=airootfs/opt/layerosx/opencore
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-verbose.qcow2"
 ./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd.qcow2"
 ./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd.qcow2" "$OCDIR/OpenCore-amd-verbose.qcow2"
+# Same AMD image with cpuid_cores_per_package baked to 8 (the AMD_Vanilla
+# core-count patch must equal the guest's -smp cores). mac-vm-launch.sh uses it
+# on hosts with >= 10 threads, so the Mac gets 8 cores instead of 4 (8 is also
+# Reims' own SMP cap).
+./patch-opencore-amd.sh     "$OCDIR/OpenCore.qcow2"     "$OCDIR/OpenCore-amd8.qcow2" amd-vanilla-patches.plist 8
+./patch-opencore-verbose.sh "$OCDIR/OpenCore-amd8.qcow2" "$OCDIR/OpenCore-amd8-verbose.qcow2"
 
 # mkarchiso reuses $WORKDIR across runs and does NOT reliably notice
 # when profiledef.sh/pacman.conf/packages.x86_64 changed — it can

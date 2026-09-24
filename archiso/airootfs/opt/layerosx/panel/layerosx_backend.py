@@ -129,6 +129,8 @@ class About:
     vm_cores: int
     vm_ram_gb: float
     vm_graphics: str
+    vm_disk_gb: int       # virtual size macOS sees (0 = no disk yet)
+    vm_disk_grown_from: int   # >0 when LayerOSX grew the disk (macOS must grow APFS)
     creator: str
     creator_link: str
     thanks: List[Tuple[str, str]]
@@ -476,9 +478,8 @@ class Backend:
         return int(m.group(1)) if m else None
 
     def set_brightness(self, percent: int) -> Tuple[bool, str]:
-        """Set and remember (lib/brightness.sh saves it for the next boot)."""
         percent = max(5, min(100, int(percent)))   # never fully black
-        rc, out = self._run([os.path.join(self.lib, "brightness.sh"), "set", str(percent)])
+        rc, out = self._run(["brightnessctl", "-q", "-c", "backlight", "set", f"{percent}%"])
         return rc == 0, out.strip()
 
     # ------------------------------------------------------------ maintenance
@@ -604,6 +605,16 @@ class Backend:
         if not short and not dl:
             macos = "Not installed yet"
 
+        disk_gb = 0
+        disk = os.path.join(self.state_dir, "macos.qcow2")
+        if os.path.exists(disk):
+            rc, out = self._run(["qemu-img", "info", "--output=json", disk], changes=False, timeout=10)
+            try:
+                disk_gb = int(json.loads(out)["virtual-size"] / 1073741824) if rc == 0 else 0
+            except (ValueError, KeyError):
+                disk_gb = 0
+        grown = kv(_read(os.path.join(self.state_dir, "disk-grown")))
+
         gfx_names = {"reims-vgpu-pci": "Reims (accelerated)", "reims": "Reims (accelerated)",
                      "vmware-svga": "VMware", "vmware": "VMware", "std-vga": "Standard VGA", "std": "Standard VGA"}
         gfx = prof.get("gfx") or self.setting("gfx")[0]
@@ -613,7 +624,8 @@ class Backend:
             memory_gb=mem, gpus=gpus, storage=storage, kernel=os.uname().release, macos=macos,
             vm_cpu=prof.get("cpu_model", ""), vm_cores=_int(prof.get("cores", "0")),
             vm_ram_gb=round(_int(prof.get("ram_mb", "0")) / 1024, 1),
-            vm_graphics=gfx_names.get(gfx, gfx), creator=CREATOR, creator_link=CREATOR_LINK,
+            vm_graphics=gfx_names.get(gfx, gfx), vm_disk_gb=disk_gb,
+            vm_disk_grown_from=_int(grown.get("from_gb", "0")), creator=CREATOR, creator_link=CREATOR_LINK,
             thanks=list(THANKS))
 
     # ----------------------------------------------------------------- status
