@@ -3930,3 +3930,36 @@ software video decoding and Reims' per-frame surface copies.
   `echo advise | sudo tee /sys/kernel/mm/transparent_hugepage/shmem_enabled`
   then `relaunch` (the RAM is allocated when QEMU starts).
 
+## Reims couldn't map the Mac's RAM: it was too big
+
+Reading the Reims failure log of the same session for anything alarming
+turned up the real cause of the lag:
+
+```
+guest_ram_map reason=guest_ram_map_import_exceeds_heap needed_mb=55311 budget_mb=47645
+```
+
+Reims maps guest RAM into the GPU with `VK_EXT_external_memory_host` so the
+GPU reads guest buffers in place. Every import stays live for the VM's
+lifetime, so the *sum* must fit the roomiest heap an import can be charged
+to; if it doesn't, Reims refuses the whole map on purpose (a partial import
+ends in a lost device) and puts the whole boot on the "copying rails" — every
+buffer the guest hands the GPU is copied. Our "give the Mac nearly all the
+RAM" rule (host − 12% = 54 GB on the 64 GB laptop) was over the 47.6 GB heap,
+so the Mac ran on the copying path the whole time: the 45 + 23
+`*_flush_gpu_declined … import_exceeds_heap` lines in the log are those
+fallbacks. That fits the symptoms (video and sound lagging together, ~55 fps
+ceiling while the Reims side sat mostly idle waiting).
+
+- The launcher caps the automatic RAM on Reims to the reported budget minus
+  1 GB (QEMU's other RAM blocks count too), or to 70% of the host before a
+  budget is known for this GPU choice (NVIDIA's heap here was ~75%). After
+  each run it looks for the refusal in what that run wrote to
+  `/tmp/reims-vgpu-fail.log` and stores `<budget MB> <reims-gpu choice>` in
+  `/var/lib/layerosx/reims-import-budget`, so a GPU with a smaller heap
+  (RADV's GTT) self-corrects after one run.
+- A fixed RAM (Settings) above the cap is kept but warned about, in the log
+  and under Settings › Mac › Memory.
+- Backend `ram_cap_mb()` mirrors it; Resources carries `ram_cap_mb`. Tests: 58.
+- For the test laptop: 44 GB with no budget learned, 45 GB after it.
+

@@ -1100,6 +1100,13 @@ class Settings(Adw.ApplicationWindow):
             self._set_choices(self.ram_row,
                               [f"Automatic — {gb(res.ram_auto_mb)}"] + [gb(m) for m in res.ram_choices_mb],
                               self._ram_values.index(res.ram_choice_mb) if res.ram_choice_mb in self._ram_values else 0)
+            if res.ram_cap_mb and res.ram_mb > res.ram_cap_mb:
+                self.ram_row.set_subtitle(f"Above what Reims can map into the GPU ({gb(res.ram_cap_mb)}): "
+                                          "the Mac will be slower. Choose Automatic.")
+            elif res.ram_cap_mb:
+                self.ram_row.set_subtitle(f"With Reims, at most {gb(res.ram_cap_mb)} — the most its GPU can map")
+            else:
+                self.ram_row.set_subtitle("")
         finally:
             self._updating = False
         return False

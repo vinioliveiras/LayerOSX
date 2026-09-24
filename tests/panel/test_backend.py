@@ -737,6 +737,26 @@ class TestPowerMode(FakeMachine):
                 os.environ.pop(k, None)
 
 
+class TestReimsRamCap(FakeMachine):
+    def test_auto_ram_stays_under_the_gpu_import_heap(self):
+        b = lb.Backend()
+        host = b.resources().host_ram_mb
+        # gfx defaults to reims: without a learned budget, 70% of the host
+        self.assertEqual(b.ram_cap_mb(63641), 44032)
+        write(os.path.join(self.state, "reims-import-budget"), "47645 auto\n")
+        self.assertEqual(lb.Backend().ram_cap_mb(63641), 46080)
+        r = lb.Backend().resources()
+        self.assertLessEqual(r.ram_auto_mb, r.ram_cap_mb)
+        self.assertEqual(r.ram_mb, r.ram_auto_mb)
+        # a budget learned on another GPU choice doesn't apply
+        write(os.path.join(self.state, "reims-gpu"), "nvidia_icd.json\n")
+        self.assertEqual(lb.Backend().ram_cap_mb(63641), 44032)
+        # not on Reims: no cap
+        write(os.path.join(self.state, "gfx"), "vmware\n")
+        self.assertEqual(lb.Backend().ram_cap_mb(63641), 0)
+        self.assertEqual(lb.Backend().resources().ram_auto_mb, lb.Backend.auto_ram_mb(host))
+
+
 class TestDebugToggles(FakeMachine):
     def test_detailed_logs_and_text_consoles(self):
         lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")

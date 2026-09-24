@@ -302,6 +302,37 @@ fi
 # Picked by pick_resources(), called before the first launch AND at the top of
 # every loop pass, so a change made in LayerOSX Settings > Mac > Resources takes
 # effect on "Restart Mac" without restarting the kiosk session.
+REIMS_FAIL_LOG="/tmp/reims-vgpu-fail.log"
+REIMS_BUDGET_FILE="$STATE_DIR/reims-import-budget"   # "<budget MB> <reims-gpu choice>"
+
+# The GPU-import budget Reims reported for the current GPU choice, minus a
+# 1 GB margin (QEMU's other RAM blocks count too), in whole GB -- or 70% of
+# the host when this GPU hasn't reported one yet. Keep in sync with
+# Backend.ram_cap_mb().
+reims_ram_cap_mb() {
+    local host_mb="$1" gpu b g
+    gpu="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)"
+    { read -r b g < "$REIMS_BUDGET_FILE"; } 2>/dev/null || true
+    if [ -n "${b:-}" ] && [ "${g:-}" = "$gpu" ] && [ "$b" -gt 6144 ] 2>/dev/null; then
+        echo $(( (b - 1024) / 1024 * 1024 ))
+    else
+        echo $(( host_mb * 70 / 100 / 1024 * 1024 ))
+    fi
+}
+
+# After a run: if Reims refused to map guest RAM because it didn't fit, keep
+# the budget it reported so the next start sizes the Mac under it.
+learn_reims_budget() {
+    local line b
+    # Only what this run wrote (the log is shared by every run of the boot).
+    line="$(tail -c +"$(( ${REIMS_LOG_OFFSET:-0} + 1 ))" "$REIMS_FAIL_LOG" 2>/dev/null \
+        | grep -ao 'guest_ram_map_import_exceeds_heap needed_mb=[0-9]* budget_mb=[0-9]*' | tail -n 1)"
+    [ -n "$line" ] || return 0
+    b="${line##*budget_mb=}"
+    printf '%s %s\n' "$b" "$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)" > "$REIMS_BUDGET_FILE" 2>/dev/null
+    echo "Reims couldn't map the Mac's RAM into the GPU ($line) -- next start keeps the Mac under $(( (b - 1024) / 1024 * 1024 )) MB."
+}
+
 pick_resources() {
     # --- RAM: give the Mac nearly all of it ---------------------------------------
     # Everything except a reserve for Linux + QEMU + Reims' host-side Vulkan buffers:
@@ -313,8 +344,27 @@ pick_resources() {
     _reserve_mb=$(( _host_mb * 12 / 100 )); [ "$_reserve_mb" -lt 4096 ] && _reserve_mb=4096
     VM_RAM_MB=$(( (_host_mb - _reserve_mb) / 1024 * 1024 ))
     [ "$VM_RAM_MB" -lt 4096 ] && VM_RAM_MB=4096
+    # Reims can only map the Mac's RAM into the GPU (zero-copy) if ALL of it
+    # fits the GPU's largest importable heap; one byte over and it refuses the
+    # whole map and copies every guest buffer instead ("copying rails") --
+    # measured on the 64 GB test laptop: 55 GB guest vs a 47.6 GB heap, and the
+    # Mac, video and sound all lagged. So on Reims the automatic RAM stays under
+    # that heap: the budget Reims reported last time on this GPU
+    # ($REIMS_BUDGET_FILE, learned after each run), else 70% of the host.
+    _gfx_now="$(cat "$GFX_FILE" 2>/dev/null || echo "$GFX_DEFAULT")"
+    RAM_CAP_MB=0
+    if [ "$_gfx_now" = reims ]; then
+        RAM_CAP_MB="$(reims_ram_cap_mb "$_host_mb")"
+        if [ "$VM_RAM_MB" -gt "$RAM_CAP_MB" ]; then
+            echo "RAM: $VM_RAM_MB MB would not fit Reims' GPU import heap -- giving the Mac $RAM_CAP_MB MB."
+            VM_RAM_MB=$RAM_CAP_MB
+        fi
+    fi
     _ram_override="$(cat "$STATE_DIR/ram-mb" 2>/dev/null || true)"
     case "$_ram_override" in ''|*[!0-9]*) : ;; *) [ "$_ram_override" -ge 2048 ] && VM_RAM_MB=$_ram_override ;; esac
+    if [ "$RAM_CAP_MB" -gt 0 ] && [ "$VM_RAM_MB" -gt "$RAM_CAP_MB" ]; then
+        echo "WARNING: the fixed RAM ($VM_RAM_MB MB, Settings > Mac > Resources) is above what Reims can map ($RAM_CAP_MB MB): the Mac will run on Reims' slow copying path. Choose Automatic or <= $RAM_CAP_MB MB." >&2
+    fi
     # --- SMP: a power of two, at most 8 ----------------------------------------
     # macOS is picky about CPU topology (odd core counts misbehave; dockur maps 6
     # to 3 sockets x 2 cores, etc.), and Reims caps the guest at 8 vCPUs with
@@ -833,6 +883,7 @@ while true; do
     # Huge pages for the guest RAM (etc/tmpfiles.d/layerosx-hugepages.conf):
     # log the setting so a slow Mac can be matched against it.
     echo "Guest RAM pages: shmem THP $(grep -o '\[[a-z_ ]*\]' /sys/kernel/mm/transparent_hugepage/shmem_enabled 2>/dev/null || echo '(unknown)') (want [advise])"
+    REIMS_LOG_OFFSET="$(stat -c %s "$REIMS_FAIL_LOG" 2>/dev/null || echo 0)"
     LAUNCHED_AT=$(date +%s)
     # SDL_GRAB_KEYBOARD=0: stop the fullscreen SDL window from taking an
     # exclusive keyboard grab. Without this, the moment you click into the VM
@@ -869,6 +920,7 @@ while true; do
     fi
     wait "$QEMU_PID" 2>/dev/null
     QEMU_RC=$?
+    learn_reims_budget
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
     # How QEMU ended, always logged: >128 = killed by signal (rc-128; 11 =
     # segfault, 6 = abort, 9 = SIGKILL, 15 = SIGTERM). Together with the QMP

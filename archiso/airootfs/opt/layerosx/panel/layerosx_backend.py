@@ -106,6 +106,7 @@ class Resources:
     ram_choice_mb: int
     ram_choices_mb: List[int]
     ram_mb: int
+    ram_cap_mb: int = 0      # Reims: most RAM its GPU import heap holds (0 = no cap)
 
 
 @dataclass
@@ -403,6 +404,19 @@ class Backend:
         reserve = max(4096, host_mb * 12 // 100)
         return max(4096, (host_mb - reserve) // 1024 * 1024)
 
+    def ram_cap_mb(self, host_mb: int) -> int:
+        """On Reims, the most RAM the Mac can have and still be mapped into the
+        GPU (zero-copy): the import budget Reims reported for this GPU choice
+        (learned by mac-vm-launch.sh into reims-import-budget) minus 1 GB, else
+        70% of the host. 0 when graphics isn't Reims. Mirrors the launcher's
+        reims_ram_cap_mb()."""
+        if self.setting("gfx")[0] != "reims":
+            return 0
+        parts = _read(os.path.join(self.state_dir, "reims-import-budget")).split()
+        if len(parts) == 2 and parts[0].isdigit() and int(parts[0]) > 6144 and parts[1] == self.reims_gpu():
+            return (int(parts[0]) - 1024) // 1024 * 1024
+        return host_mb * 70 // 100 // 1024 * 1024
+
     def resources(self) -> Resources:
         threads, host_mb, amd = self._threads(), self._host_ram_mb(), self._is_amd()
         reserve = self.cpu_reserve()
@@ -416,6 +430,9 @@ class Backend:
         if amd:
             auto, cores = self._amd_pin(auto), self._amd_pin(cores)
         ram_auto = self.auto_ram_mb(host_mb)
+        cap = self.ram_cap_mb(host_mb)
+        if cap:
+            ram_auto = min(ram_auto, cap)
         top_gb = max(2, (host_mb - 2048) // 1024)          # leave Linux >= 2 GB
         ram_choices = [gb * 1024 for gb in (2, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256)
                        if gb <= top_gb]
@@ -424,7 +441,7 @@ class Backend:
         if ram_choice and ram_choice not in ram_choices:
             ram_choices = sorted(ram_choices + [ram_choice])
         return Resources(threads, host_mb, amd, reserve, auto, choice, choices, cores,
-                         ram_auto, ram_choice, ram_choices, ram_choice or ram_auto)
+                         ram_auto, ram_choice, ram_choices, ram_choice or ram_auto, cap)
 
     def _write_state(self, name: str, value: Optional[str]) -> Tuple[bool, str]:
         path = os.path.join(self.state_dir, name)

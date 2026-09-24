@@ -1176,6 +1176,20 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5e. Mac RAM fits Reims' GPU heap
+
+- Settings › Mac › Memory: "Automatic — 44 GB" on the 64 GB laptop (was
+  54 GB), subtitle "With Reims, at most … GB".
+- After the first run: no `guest_ram_map_import_exceeds_heap` in
+  `/tmp/reims-vgpu-fail.log`; `grep -c declined /tmp/reims-vgpu-fail.log`
+  ~0 (was 68).
+- YouTube (Safari, 1080p), window dragging, sound: compare with before —
+  this is the main expected improvement. Note `macfps` while moving windows.
+- Fixed Memory 48 GB → subtitle warns; `mac-vm.log` has the WARNING.
+- Switch Graphics card to AMD (RADV): if its heap is smaller, the first run
+  logs "Reims couldn't map the Mac's RAM … next start keeps the Mac under …"
+  and the next start uses that.
+
 ### 5.5d. Huge pages for the Mac's RAM / YouTube lag
 
 - `cat /sys/kernel/mm/transparent_hugepage/shmem_enabled` → `… [advise] …`.

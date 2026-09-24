@@ -100,7 +100,8 @@ banner.
 Defaults on a new install: Reims graphics, Apple-logo boot, sound on,
 power mode Automatic,
 automatic USB, all cores but 2 (max 8, power of two), RAM minus 12%
-(min 4 GB), no Maintenance password.
+(min 4 GB) — on Reims capped to what its GPU can map (below) — no
+Maintenance password.
 
 ## Terminal commands
 
@@ -174,6 +175,12 @@ Installed system: tty1 autologin → startx → .xinitrc
   laptop's ACPI platform profile (fan/power limits) per Settings › Battery ›
   Power mode — at boot (`layerosx-power-mode.service`), on charger
   plug/unplug (udev) and from the panel (sudo).
+- **Guest RAM vs Reims:** Reims maps the Mac's RAM into the GPU (zero-copy)
+  only if all of it fits the GPU's largest importable heap; otherwise it
+  copies every guest buffer, and everything lags. So on Reims the automatic
+  RAM is capped: the budget Reims reported for this GPU choice
+  (`reims-import-budget`, learned after a run that didn't fit) minus 1 GB,
+  else 70% of the host. A fixed RAM above it gets a warning in Settings.
 - **Guest RAM pages:** Reims needs the RAM in a shared memfd, which is
   shmem — 4 KB pages unless shmem transparent huge pages are allowed.
   `etc/tmpfiles.d/layerosx-hugepages.conf` sets `shmem_enabled=advise`, so
