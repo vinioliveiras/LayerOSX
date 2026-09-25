@@ -1,136 +1,91 @@
 #!/usr/bin/env bash
-# Downloads the recovery image directly from Apple's servers
-# (fetch-macOS-v2.py, from the OSX-KVM project — note the "-v2": the
-# older fetch-macOS.py was renamed/replaced upstream) into disk $1.
-# This never redistributes anything from Apple — it just automates the
-# same request a real Mac makes when it boots into network recovery
-# mode, this time onto your own disk.
+# Downloads a macOS recovery image straight from Apple's recovery servers
+# (the request a real Mac makes when it boots into network recovery) and
+# turns it into the Mac's install disk: <disk>-recovery.qcow2 next to $1.
+# Nothing from Apple is ever shipped in the ISO.
 #
-# $2 (optional) is a macOS version shortname (high-sierra, mojave,
-# catalina, big-sur, monterey, ventura, sonoma, sequoia, tahoe) --
-# fetch-macOS-v2.py's own hardcoded product list (see its --shortname/
-# -s option) maps each one to a real board-id, and Apple's actual
-# recovery servers still serve all of them, same as any real Mac of
-# that board-id asking for network recovery. Empty/unset falls back to
-# fetch-macOS-v2.py's own default (RECENT_MAC).
+#   fetch-recovery.sh <vm-disk.qcow2> [shortname]
+#   shortname: high-sierra mojave catalina big-sur monterey ventura sonoma
+#              sequoia tahoe (empty = the newest macOS)
 #
-# Needs unrestricted outbound HTTP to osrecovery.apple.com — this will
-# fail under any kind of network allowlist/proxy (confirmed while
-# testing: both this developer's sandboxed dev environments got a 403
-# from their own egress allowlist, nothing to do with Apple). The
-# actual installed LayerOSX system has normal internet, so this just
-# works there.
+# Which version Apple serves depends on the board-id asked about, the MLB
+# serial and os_type ("default" = roughly what that Mac shipped with,
+# "latest" = the newest it supports). The rule used here: ask, with
+# os_type=latest, for a board whose LAST supported macOS is the one wanted
+# -- Apple then serves that version's final release. Checked against
+# Apple's servers (2026-09-25): two independent boards per version return
+# the same product (big-sur 071-78714, monterey 012-40515, ventura
+# 042-23155, sonoma 062-58679, tahoe 140-93589), while the os_type=default
+# entries fetch-macOS-v2.py's own table used for catalina / big-sur /
+# sonoma / sequoia returned other, older images -- the "downloaded the
+# wrong macOS" bug. High Sierra and Mojave are only reachable through
+# "default" with a period MLB (as in macrecovery's docs).
+#
+# Every download is then CHECKED: the version is read out of the image,
+# and if it isn't the one asked for, the next board is tried. Only when
+# every board disagrees does the first-run wizard get to ask (it reads
+# downloaded-version).
+#
+# Needs plain HTTP to osrecovery.apple.com / oscdn.apple.com.
 set -euo pipefail
 VM_DISK="$1"
 MACOS_SHORTNAME="${2:-}"
+LIB="$(dirname "$(readlink -f "$0")")"
 WORK="/var/lib/layerosx/fetch-work"
+DL_VER_FILE="$(dirname "$VM_DISK")/downloaded-version"
 mkdir -p "$WORK"
 cd "$WORK"
 
-if [ ! -f fetch-macOS-v2.py ]; then
-    curl -fsSLo fetch-macOS-v2.py \
-        https://raw.githubusercontent.com/kholia/OSX-KVM/master/fetch-macOS-v2.py
+# The downloader ships with LayerOSX (lib/fetch-macOS-v2.py, vendored).
+FETCH="$LIB/fetch-macOS-v2.py"
+if [ ! -r "$FETCH" ]; then
+    FETCH="$WORK/fetch-macOS-v2.py"
+    curl -fsSLo "$FETCH" https://raw.githubusercontent.com/kholia/OSX-KVM/master/fetch-macOS-v2.py
 fi
+# Older LayerOSX builds cached their own download of it here, never refreshed.
+[ "$FETCH" = "$LIB/fetch-macOS-v2.py" ] && rm -f "$WORK/fetch-macOS-v2.py"
 
-# Upstream bug, confirmed on real hardware: verify_image()'s per-chunk
-# terminal-width probe (a bare os.get_terminal_size(), no fallback)
-# isn't guarded the same way the download progress bar's own
-# identical call a few lines above it is. The download itself always
-# completed fine here (its call falls back to a width of 80 on
-# OSError), but "Verifying image with chunklist..." crashed
-# immediately afterward with "OSError: [Errno 25] Inappropriate ioctl
-# for device" -- this whole install pipeline redirects stdout through
-# a log file the entire way (never a real tty), which is exactly the
-# condition that call was never guarded against. Patch in the same
-# try/except the download path already uses, idempotent (a second run
-# reusing the cached file is a no-op; silently does nothing if
-# upstream ever restructures this function so the anchor no longer
-# matches, rather than breaking the whole script over a cosmetic
-# progress counter).
-python3 - <<'PYEOF'
-import pathlib
+Z=00000000000000000
+# board-id  MLB  os_type -- one line per try, best first.
+candidates() {
+    case "$1" in
+        high-sierra) echo "Mac-7BA5B2D9E42DDD94 00000000000J80300 default" ;;
+        mojave)      echo "Mac-7BA5B2DFE22DDD8C 00000000000KXPG00 default" ;;
+        catalina)    printf '%s\n' "Mac-00BE6ED71E35EB86 $Z latest" "Mac-00BE6ED71E35EB86 $Z default" ;;
+        big-sur)     printf '%s\n' "Mac-2BD1B31983FE1663 $Z latest" "Mac-42FD25EABCABB274 $Z latest" ;;
+        monterey)    printf '%s\n' "Mac-B809C3757DA9BB8D $Z latest" "Mac-E43C1C25D4880AD6 $Z latest" ;;
+        ventura)     printf '%s\n' "Mac-4B682C642B45593E $Z latest" "Mac-B4831CEBD52A0C4C $Z latest" ;;
+        sonoma)      printf '%s\n' "Mac-827FAC58A8FDFA22 $Z latest" "Mac-226CB3C6A851A671 $Z latest" ;;
+        sequoia)     echo "Mac-7BA5B2D9E42DDD94 $Z latest" ;;
+        tahoe|"")    printf '%s\n' "Mac-CFF7D910A743CAAF $Z latest" "Mac-27AD2F918AE68F61 $Z latest" ;;
+        *) echo "unknown macOS version '$1'" >&2; return 1 ;;
+    esac
+}
+expected() {
+    case "$1" in
+        high-sierra) echo 10.13 ;; mojave) echo 10.14 ;; catalina) echo 10.15 ;;
+        big-sur) echo 11 ;; monterey) echo 12 ;; ventura) echo 13 ;;
+        sonoma) echo 14 ;; sequoia) echo 15 ;; tahoe) echo 26 ;; *) echo "" ;;
+    esac
+}
+# "13.6.1" matches "13"; "10.15.7" matches "10.15".
+matches() {
+    case "$1." in "$2".*) return 0 ;; esac
+    return 1
+}
 
-path = pathlib.Path("fetch-macOS-v2.py")
-text = path.read_text()
-
-old = (
-    "def verify_image(dmgpath, cnkpath):\n"
-    "    print('Verifying image with chunklist...')\n"
-    "\n"
-    "    with open(dmgpath, 'rb') as dmgf:\n"
-    "        for cnkcount, (cnksize, cnkhash) in enumerate(verify_chunklist(cnkpath), 1):\n"
-    "            terminalsize = max(os.get_terminal_size().columns - TERMINAL_MARGIN, 0)\n"
-)
-new = (
-    "def verify_image(dmgpath, cnkpath):\n"
-    "    print('Verifying image with chunklist...')\n"
-    "\n"
-    "    with open(dmgpath, 'rb') as dmgf:\n"
-    "        for cnkcount, (cnksize, cnkhash) in enumerate(verify_chunklist(cnkpath), 1):\n"
-    "            try:\n"
-    "                terminalsize = max(os.get_terminal_size().columns - TERMINAL_MARGIN, 0)\n"
-    "            except OSError:\n"
-    "                terminalsize = 80\n"
-)
-
-if old in text:
-    path.write_text(text.replace(old, new, 1))
-    print("patched verify_image()'s terminal-size probe")
-else:
-    print("WARNING: fetch-macOS-v2.py's verify_image() didn't match the expected shape -- skipped patching it, upstream may have changed.", flush=True)
-PYEOF
-
-SHORTNAME_ARGS=()
-if [ "$MACOS_SHORTNAME" = "ventura" ]; then
-    # Pin Ventura to an explicit board-id instead of trusting kholia's -s table
-    # (whose ventura entry is os_type=latest and could drift). Mac-4B682C642B45593E
-    # is an iMac18,x-class board OpenCore's boards.json caps at 13.7.8, so
-    # os_type=latest = the newest Ventura point release, never Sonoma/Sequoia.
-    # Only for the ventura selection; every other version still uses -s.
-    SHORTNAME_ARGS=(-b Mac-4B682C642B45593E -os latest)
-elif [ -n "$MACOS_SHORTNAME" ]; then
-    SHORTNAME_ARGS=(-s "$MACOS_SHORTNAME")
-fi
-
-# Clear any leftover download from a PREVIOUS run before fetching. $WORK
-# persists across boots (it's under /var/lib/layerosx), and the wizard can be
-# re-run for a different macOS version after a failed attempt. Without this,
-# an earlier version's BaseSystem.dmg stays in recovery/, and the
-# `find recovery -iname BaseSystem.dmg | head -n1` below could pick up that
-# STALE image instead of the one we just asked for -- i.e. select "Ventura"
-# but silently install whatever a previous run downloaded (seen in practice:
-# a Ventura selection that came up as Sequoia). Also drop the derived
-# BaseSystem.img so a half-finished dmg2img from a prior crash can't be reused.
-rm -rf recovery BaseSystem.img
-
-python3 fetch-macOS-v2.py --action download -o recovery "${SHORTNAME_ARGS[@]}"
-
-DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)
-if [ -n "$DMG" ] && command -v dmg2img >/dev/null 2>&1; then
-    dmg2img "$DMG" BaseSystem.img
-
-    # Best-effort: report the macOS version ACTUALLY downloaded, so the wizard
-    # can confirm it (and warn if it doesn't match what the user picked -- e.g.
-    # kholia's os_type:"latest" Ventura entry handing back Sequoia). Reads
-    # ProductVersion/ProductBuildVersion straight out of SystemVersion.plist in
-    # the decompressed BaseSystem.img -- format-agnostic (HFS+/APFS) as long as
-    # that tiny plist isn't compressed. Prints nothing and writes no file if it
-    # can't find it (the wizard then just shows the selected version). Written
-    # where the wizard looks: <vmdir>/downloaded-version, as "<ver>|<build>".
-    DL_VER_FILE="$(dirname "$VM_DISK")/downloaded-version"
-    rm -f "$DL_VER_FILE"
-    _detected="$(python3 - BaseSystem.img <<'PYEOF'
+# ProductVersion / ProductBuildVersion out of the (converted) BaseSystem image.
+read_version() {
+    python3 - "$1" <<'PYEOF'
 import sys, re
-img = sys.argv[1]
 vpat = re.compile(rb'ProductVersion</key>\s*<string>([0-9]+(?:\.[0-9]+)*)</string>')
 bpat = re.compile(rb'ProductBuildVersion</key>\s*<string>([0-9A-Za-z]+)</string>')
 ver = build = None
 prev = b''
-CH = 8 << 20
 try:
-    with open(img, 'rb') as f:
+    with open(sys.argv[1], 'rb') as f:
         while True:
-            chunk = f.read(CH)
+            chunk = f.read(8 << 20)
             if not chunk:
                 break
             buf = prev + chunk
@@ -150,17 +105,44 @@ except OSError:
 if ver:
     print(ver + (('|' + build) if build else ''))
 PYEOF
-)"
-    if [ -n "$_detected" ]; then
-        printf '%s\n' "$_detected" > "$DL_VER_FILE"
-        echo "Detected downloaded macOS version: ${_detected/|/ build }"
-    else
-        echo "NOTE: couldn't read the downloaded macOS version from the image (will show the selected version instead)." >&2
-    fi
+}
 
-    qemu-img convert -O qcow2 BaseSystem.img "${VM_DISK%.qcow2}-recovery.qcow2"
-    echo "Recovery ready at ${VM_DISK%.qcow2}-recovery.qcow2 — mac-vm-launch.sh needs to attach it as a second disk on first boot so you can actually install macOS."
+command -v dmg2img >/dev/null 2>&1 || { echo "dmg2img is missing -- can't unpack Apple's image." >&2; exit 1; }
+WANT="$(expected "$MACOS_SHORTNAME")"
+mapfile -t TRIES < <(candidates "$MACOS_SHORTNAME")
+rm -f "$DL_VER_FILE"
+GOT="" DETECTED=""
+n=0
+for try in "${TRIES[@]}"; do
+    n=$((n + 1))
+    read -r board mlb ostype <<<"$try"
+    echo "==> [$n/${#TRIES[@]}] asking Apple for ${MACOS_SHORTNAME:-the newest macOS} (board $board, os_type $ostype)"
+    rm -rf recovery BaseSystem.img
+    if ! python3 "$FETCH" --action download -o recovery -b "$board" -m "$mlb" -os "$ostype"; then
+        echo "    download failed with this board -- trying the next one" >&2
+        continue
+    fi
+    DMG=$(find recovery -iname 'BaseSystem.dmg' | head -n1)
+    [ -n "$DMG" ] || { echo "    no BaseSystem.dmg in the download" >&2; continue; }
+    dmg2img "$DMG" BaseSystem.img
+    DETECTED="$(read_version BaseSystem.img)"
+    GOT="${DETECTED%%|*}"
+    if [ -z "$WANT" ] || [ -z "$GOT" ] || matches "$GOT" "$WANT"; then
+        break
+    fi
+    echo "    Apple served macOS $GOT for this board, not $WANT -- trying the next board." >&2
+done
+
+[ -f BaseSystem.img ] || { echo "WARNING: no recovery image could be downloaded." >&2; exit 1; }
+if [ -n "$DETECTED" ]; then
+    printf '%s\n' "$DETECTED" > "$DL_VER_FILE"
+    echo "Detected downloaded macOS version: ${DETECTED/|/ build }"
+    if [ -n "$WANT" ] && ! matches "$GOT" "$WANT"; then
+        echo "WARNING: every board tried served macOS $GOT instead of $WANT -- the first-run wizard will ask." >&2
+    fi
 else
-    echo "WARNING: couldn't find BaseSystem.dmg (under $WORK/recovery) or dmg2img — the download may have failed." >&2
-    exit 1
+    echo "NOTE: couldn't read the downloaded macOS version from the image (will show the selected version instead)." >&2
 fi
+qemu-img convert -O qcow2 BaseSystem.img "${VM_DISK%.qcow2}-recovery.qcow2"
+rm -f BaseSystem.img
+echo "Recovery ready at ${VM_DISK%.qcow2}-recovery.qcow2"

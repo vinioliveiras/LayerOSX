@@ -51,7 +51,10 @@ another drive first never hurts.
 The first-run wizard asks where macOS comes from:
 
 1. **Download from Apple** (default) — pick a version (High Sierra → Tahoe,
-   Ventura pre-selected); Wi-Fi can be set up right there.
+   Ventura pre-selected); Wi-Fi can be set up right there. The image Apple
+   sends is checked: if it isn't the version picked, another Mac model is
+   asked (`kiosk/lib/fetch-recovery.sh`, with the vendored
+   `fetch-macOS-v2.py`).
 2. **I already have a macOS VM/disk** — qcow2, raw, VMware (vmdk), VirtualBox
    (vdi), Hyper-V (vhd/vhdx), from any drive.
 3. **I already have an installer .dmg** — experimental.

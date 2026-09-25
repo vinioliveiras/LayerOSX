@@ -1176,6 +1176,16 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5m. Download from Apple picks the right version
+
+- First-run wizard › Download from Apple › Big Sur: the F2 log shows
+  "[1/2] asking Apple for big-sur (board Mac-2BD1B31983FE1663, os_type
+  latest)" and then "Detected downloaded macOS version: 11.x"; the Mac
+  boots into the Big Sur recovery. Repeat with Monterey (12.x) and
+  Sonoma (14.x).
+- `ls /var/lib/layerosx/fetch-work/` has no `fetch-macOS-v2.py` (the
+  vendored copy in `lib/` is used).
+
 ### 5.5l. Build number
 
 - `./rebuild.sh` prints "==> LayerOSX build N (…)"; the ISO in

@@ -4230,3 +4230,22 @@ renderer (`glxinfo -B`), the Vulkan devices (`vulkaninfo --summary`) — and
 says so when the Reims window can't present. Also fixed its "0\n0 draw
 refusals" count.
 
+
+## Download from Apple: the right macOS every time
+
+"Always downloads the wrong version" had two causes. `fetch-recovery.sh`
+used `fetch-macOS-v2.py`'s own shortname table, whose entries for Catalina,
+Big Sur, Sonoma and Sequoia ask with `os_type=default` — which returns what
+that board *shipped with*, often an older macOS — and it fetched the script
+from GitHub at run time and cached it in `fetch-work/` forever, so a fixed
+upstream never arrived. Now the script is vendored as
+`kiosk/lib/fetch-macOS-v2.py` (with the `get_terminal_size` guard built in)
+and `fetch-recovery.sh` has its own table: for each version, two boards whose
+**last** supported macOS is that version, asked with `os_type=latest`, so
+Apple serves that version's final release. Checked against Apple's servers
+on 2026-09-25 (both boards per version return the same product: Big Sur
+071-78714, Monterey 012-40515, Ventura 042-23155, Sonoma 062-58679, Tahoe
+140-93589). High Sierra and Mojave only come with `default` and a period
+MLB. After each download the `ProductVersion` is read from the image; if it
+doesn't match, the next board is tried, and the result goes to
+`downloaded-version` as before.

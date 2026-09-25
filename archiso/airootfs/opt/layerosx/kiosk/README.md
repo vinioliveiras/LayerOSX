@@ -18,9 +18,11 @@
   you already have, or point to an installer `.dmg` you already have —
   so you can always use whatever's newest that you downloaded from
   Apple's site / the App Store on another Mac.
-- **`lib/fetch-recovery.sh`** — uses OSX-KVM's `fetch-macOS.py` to
-  download the recovery image directly from Apple's servers, onto your
-  own disk.
+- **`lib/fetch-recovery.sh`** — downloads the recovery image for the chosen
+  macOS version straight from Apple's servers (with `lib/fetch-macOS-v2.py`,
+  vendored from OSX-KVM / OpenCore's macrecovery), picking a board-id whose
+  last supported macOS is that version, and checks the version it got —
+  trying another board if Apple served a different one.
 - **`lib/extract-dmg-installer.sh`** — **experimental**. Tries to
   extract a bootable installer from a `.dmg` you already have. The
   hard part is the filesystem inside it (HFS+ usually works, APFS
