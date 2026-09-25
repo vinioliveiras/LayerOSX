@@ -156,6 +156,39 @@ class LogTarget:
         return ""
 
 
+@dataclass
+class MacBackup:
+    folder: str           # folder name under <drive>/LayerOSX-backups
+    name: str
+    created: str          # "2026-09-25T14:32"
+    macos: str            # shortname (ventura), "" unknown
+    macos_version: str    # "13.7.1", "" unknown
+    mac_model: str
+    size: int             # bytes on the drive
+
+    @property
+    def title(self) -> str:
+        return self.name or self.folder
+
+    @property
+    def subtitle(self) -> str:
+        mac = MACOS_NAMES.get(self.macos, "macOS")
+        if self.macos_version and self.macos_version != "1.0":
+            mac += " " + self.macos_version
+        return " · ".join(x for x in (mac, f"{self.size / 1e9:.1f} GB" if self.size else "",
+                                      self.created.replace("T", " ")) if x)
+
+
+@dataclass
+class BackupJob:
+    kind: str             # backup | restore | erase
+    state: str            # stopping | copying | finishing | done | error
+    percent: int
+    message: str
+    path: str             # the backup's folder on the drive
+    running: bool         # the helper is still alive
+
+
 # Credits shown in LayerOSX Settings > About. Edit here.
 CREATOR = "Vini"
 CREATOR_LINK = "github.com/vinioliveiras/LayerOSX"
@@ -241,6 +274,7 @@ class Backend:
         self.opencore_dir = _env("LAYEROSX_OPENCORE_DIR", "/opt/layerosx/opencore")
         self.reims_fail_log = _env("LAYEROSX_REIMS_FAIL_LOG", "/tmp/reims-vgpu-fail.log")
         self.picom_conf = _env("LAYEROSX_PICOM_CONF", "/opt/layerosx/kiosk/picom.conf")
+        self.backup_status = _env("LAYEROSX_BACKUP_STATUS", "/run/layerosx-backup.json")
         self.dry_run = _env("LAYEROSX_DRY_RUN", "0") == "1"
         self.dry_log: List[str] = []
 
@@ -1249,6 +1283,104 @@ class Backend:
         ok = any(l.startswith("Copied") for l in out.splitlines())
         return ok, out.strip() if ok else "Plug in a writable USB drive and try again."
 
+    # ---------------------------------------------------------------- backups
+    # Settings > Mac > Backups. kiosk/lib/mac-backup.sh does the root part
+    # (mount, stop the Mac, copy) in the background and reports progress in
+    # a JSON file; the panel polls backup_job().
+    BACKUP_NAME_OK = re.compile(r"[^A-Za-z0-9 ._-]")
+
+    def backup_targets(self) -> List[LogTarget]:
+        """Drives a backup can go to: log_targets() minus FAT32, which can't
+        hold a file over 4 GB (the Mac's disk always is)."""
+        return [t for t in self.log_targets() if t.fstype != "vfat"]
+
+    def _backup_helper(self, *args: str) -> List[str]:
+        return ["sudo", "-n", os.path.join(self.lib, "mac-backup.sh"), *args]
+
+    def mac_summary(self) -> Tuple[bool, str, int]:
+        """(exists, "macOS Ventura 13.5", bytes the Mac's disk uses)."""
+        disk = os.path.join(self.state_dir, "macos.qcow2")
+        if not os.path.exists(disk):
+            return False, "", 0
+        short = _read(os.path.join(self.state_dir, "macos-version"))
+        dl_ver = _read(os.path.join(self.state_dir, "downloaded-version")).partition("|")[0]
+        label = MACOS_NAMES.get(short, "macOS")
+        if dl_ver and dl_ver != "1.0":
+            label += " " + dl_ver
+        try:
+            used = os.stat(disk).st_blocks * 512
+        except OSError:
+            used = 0
+        return True, label, used
+
+    def default_backup_name(self) -> str:
+        exists, label, _ = self.mac_summary()
+        return label.replace("macOS ", "") if exists else "Mac"
+
+    def backup_job(self) -> Optional[BackupJob]:
+        """The last backup/restore/erase (None if there never was one since boot)."""
+        try:
+            with open(self.backup_status) as f:
+                d = json.load(f)
+        except (OSError, ValueError):
+            return None
+        state = str(d.get("state", ""))
+        pid = d.get("pid")
+        alive = isinstance(pid, int) and os.path.isdir(os.path.join(self.proc, str(pid)))
+        running = alive and state in ("stopping", "copying", "finishing")
+        if not alive and state in ("stopping", "copying", "finishing"):
+            state, d["message"] = "error", "The backup / restore stopped unexpectedly."
+        return BackupJob(kind=str(d.get("kind", "")), state=state, percent=_int(str(d.get("percent", 0))),
+                         message=str(d.get("message", "")), path=str(d.get("path", "")), running=running)
+
+    def _job_busy(self) -> bool:
+        j = self.backup_job()
+        return bool(j and j.running)
+
+    def start_backup(self, device: str, name: str) -> Tuple[bool, str]:
+        if device not in {t.path for t in self.backup_targets()}:
+            return False, "that drive can't hold a backup"
+        if not self.mac_summary()[0]:
+            return False, "there's no Mac to back up yet"
+        if self._job_busy():
+            return False, "a backup or restore is already running"
+        name = self.BACKUP_NAME_OK.sub("", name).strip()[:48] or "Mac"
+        self._spawn(self._backup_helper("backup", device, name))
+        return True, name
+
+    def list_backups(self, device: str) -> List[MacBackup]:
+        if device not in {t.path for t in self.log_targets()}:
+            return []
+        rc, out = self._run(self._backup_helper("list", device), changes=False, timeout=60)
+        if rc != 0:
+            return []
+        try:
+            items = json.loads(out.strip().splitlines()[-1])
+        except (ValueError, IndexError):
+            return []
+        return [MacBackup(folder=str(m.get("folder", "")), name=str(m.get("name", "")),
+                          created=str(m.get("created", "")), macos=str(m.get("macos", "")),
+                          macos_version=str(m.get("macos_version", "")),
+                          mac_model=str(m.get("mac_model", "")), size=_int(str(m.get("size", 0))))
+                for m in items if isinstance(m, dict) and m.get("folder")]
+
+    def start_restore(self, device: str, folder: str) -> Tuple[bool, str]:
+        if device not in {t.path for t in self.log_targets()}:
+            return False, "that drive isn't available"
+        if not folder or folder in (".", "..") or self.BACKUP_NAME_OK.search(folder):
+            return False, "that isn't a backup"
+        if self._job_busy():
+            return False, "a backup or restore is already running"
+        self._spawn(self._backup_helper("restore", device, folder))
+        return True, ""
+
+    def start_erase(self) -> Tuple[bool, str]:
+        """Remove this Mac so the first-run setup can install another macOS."""
+        if self._job_busy():
+            return False, "a backup or restore is running"
+        self._spawn(self._backup_helper("erase"))
+        return True, ""
+
     def open_terminal(self, unlocked: bool = False) -> Tuple[bool, str]:
         """From the panel: `unlocked` = the user already typed the Maintenance
         password there, so open straight away instead of asking again."""
@@ -1455,6 +1587,12 @@ def main(argv: List[str]) -> int:
         print(json.dumps(None if v is None else {"percent": v[0], "muted": v[1]}))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
+    elif what == "backups":
+        # backups <partition>: the backups on that drive (JSON).
+        print(json.dumps([asdict(x) for x in b.list_backups(argv[2] if len(argv) > 2 else "")], indent=2))
+    elif what == "backup-status":
+        j = b.backup_job()
+        print(json.dumps(asdict(j) if j else None, indent=2))
     elif what == "version":
         print(b.version_label())
     elif what == "fps":
@@ -1465,7 +1603,7 @@ def main(argv: List[str]) -> int:
     elif what == "usb":
         print(json.dumps([asdict(d) | {"id": d.id} for d in b.usb_devices()], indent=2))
     else:
-        print("usage: layerosx_backend.py [status|wifi|usb|drives|about|resources|screens|audio-outputs|audio-device|volume|apply-volume|check-maint-password]", file=sys.stderr)
+        print("usage: layerosx_backend.py [status|wifi|usb|drives|backups|backup-status|about|resources|screens|audio-outputs|audio-device|volume|apply-volume|check-maint-password]", file=sys.stderr)
         return 2
     return 0
 

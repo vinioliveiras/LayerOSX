@@ -1176,6 +1176,23 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5n. Backups
+
+- Settings › Mac › Backups shows "macOS <version> · uses N GB".
+- Back Up… lists only non-FAT32 drives; pick an exFAT/NTFS USB drive, name
+  it, Back Up: macOS shuts down (or is stopped after 60 s), the progress
+  dialog counts up, "Backup saved…", the Mac starts again. The drive has
+  `LayerOSX-backups/<name>_<date>/` with macos.qcow2, OVMF_VARS.fd,
+  manifest.json (+ macos-recovery.qcow2). The computer did NOT power off.
+- `~/mac-vm.log`: "Mac stopped for a backup / restore", "waiting",
+  "starting over".
+- Start Over… → the Mac is removed and the first-run setup opens; install
+  Big Sur (5.5m).
+- Restore… → the drive → the backup → Restore: the old Mac comes back
+  (same apps/files, same model); Settings › About shows its macOS version.
+- Unplug the drive mid-backup: "The copy failed…", the Mac starts again
+  unchanged.
+
 ### 5.5m. Download from Apple picks the right version
 
 - First-run wizard › Download from Apple › Big Sur: the F2 log shows

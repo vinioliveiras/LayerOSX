@@ -24,6 +24,7 @@ QMP_CTL_SOCK="/tmp/macvm-ctl.sock"                 # 2nd QMP monitor: lib/qmp-cm
 BATTERY_POWEROFF_FLAG="/tmp/layerosx-battery-poweroff"  # set by lib/battery-watch.sh
 USB_PASSTHROUGH_FILE="$STATE_DIR/usb-passthrough"     # "vvvv:pppp name" lines, lib/usb-passthrough.sh
 HOST_ACTION_FILE="/tmp/layerosx-host-action"          # "reboot"|"poweroff", set by lib/kiosk-menu.sh
+HOLD_FILE="/run/layerosx-hold"                        # PID of lib/mac-backup.sh while it has the Mac stopped
 KIOSK_DIR="/opt/layerosx/kiosk"
 QEMU_BIN="/opt/layerosx/bin/qemu-system-x86_64"
 OPENCORE_DIR="/opt/layerosx/opencore"
@@ -787,8 +788,25 @@ grow_vm_disk() {
 }
 grow_vm_disk
 
+# Settings › Mac › Backups (lib/mac-backup.sh) stops the Mac to copy its disk
+# and holds it stopped while its process runs. Afterwards start over from the
+# top: a restored Mac may be another macOS version (read once, up there), and
+# after "Install another macOS" there's no Mac left, so the first-run setup
+# has to open.
+mac_held() {
+    local pid
+    pid="$(cat "$HOLD_FILE" 2>/dev/null)"
+    [ -n "$pid" ] && [ -d "/proc/$pid" ]
+}
+
 RETRIES=0
 while true; do
+    if mac_held; then
+        echo "The Mac is stopped for a backup / restore (LayerOSX Settings › Mac › Backups) -- waiting."
+        while mac_held; do sleep 2; done
+        echo "Backup / restore finished -- starting over."
+        exec "$0"
+    fi
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
     pick_io          # disk cache/aio and the network backend (MAC_DISK_OPTS, NET_ARGS)
@@ -1028,7 +1046,16 @@ while true; do
         ACTION="vm-only"
     fi
 
+    # Stopped by a backup / restore: macOS shutting down for it is not a
+    # request to power the computer off. The top of the loop waits for it.
+    if mac_held; then
+        echo "Mac stopped for a backup / restore (action was: ${ACTION})."
+        ACTION="held"
+        RETRIES=0
+    fi
+
     case "$ACTION" in
+        held) ;;
         host-poweroff)
             echo "macOS asked to Shut Down — powering off the physical machine."
             sudo systemctl poweroff

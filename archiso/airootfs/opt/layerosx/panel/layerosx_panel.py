@@ -1043,6 +1043,7 @@ class Settings(Adw.ApplicationWindow):
         page.add(g)
         page.add(self._model_group())
         page.add(self._resources_group())
+        page.add(self._backups_group())
         r = Adw.PreferencesGroup(title="Restart")
         rr = Adw.ActionRow(title="Restart the Mac",
                            subtitle="Use this if macOS is stuck or the screen is black. Otherwise use Apple menu › Restart.")
@@ -1093,6 +1094,196 @@ class Settings(Adw.ApplicationWindow):
         if ok:
             self._pending_restart()
         GLib.idle_add(self._sync_model)
+
+    # ------------------------------------------------------------ Backups
+    def _backups_group(self):
+        g = Adw.PreferencesGroup(
+            title="Backups",
+            description="A backup is the whole Mac — macOS, apps, files and settings — copied to another "
+                        "drive (exFAT, NTFS or ext4; FAT32 can't hold it). The Mac shuts down while it's copied.")
+
+        def row(title, subtitle, icon, label, cb, destructive=False):
+            r = Adw.ActionRow(title=title, subtitle=subtitle)
+            r.add_prefix(Gtk.Image.new_from_icon_name(icon))
+            b = Gtk.Button(label=label, valign=Gtk.Align.CENTER,
+                           css_classes=["destructive-action"] if destructive else [])
+            b.connect("clicked", lambda *_: cb())
+            r.add_suffix(b)
+            g.add(r)
+            return r
+        self.backup_row = row("Back up this Mac", "", "document-save-symbolic", "Back Up…", self.on_backup)
+        row("Restore a Mac", "Replace this Mac with one saved on a drive.",
+            "document-revert-symbolic", "Restore…", self.on_restore)
+        row("Install another macOS", "Remove this Mac and open the first-run setup to download or pick "
+            "another version. Back it up first to keep it.", "system-software-install-symbolic",
+            "Start Over…", self.on_start_over, destructive=True)
+        run_async(self.b.mac_summary, self._show_mac_summary)
+        return g
+
+    def _show_mac_summary(self, r):
+        if isinstance(r, Exception):
+            return False
+        exists, label, used = r
+        self.backup_row.set_subtitle(f"{label} · uses {used / 1e9:.1f} GB" if exists else "No Mac installed yet")
+        return False
+
+    def _pick(self, heading, body, items, ok_label, on_ok, empty_text):
+        """Radio list dialog. items: (key, title, subtitle, icon); on_ok(key)."""
+        d = self._dialog(heading, body if items else empty_text)
+        chosen = {"key": items[0][0] if items else None}
+        if items:
+            lb = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
+            first = None
+            for key, title, subtitle, icon in items:
+                row = Adw.ActionRow(title=esc(title), subtitle=esc(subtitle), activatable=True)
+                chk = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=first is None)
+                if first:
+                    chk.set_group(first)
+                first = first or chk
+                chk.connect("toggled", lambda c, k=key: c.get_active() and chosen.update(key=k))
+                row.add_prefix(chk)
+                row.set_activatable_widget(chk)
+                if icon:
+                    row.add_suffix(Gtk.Image.new_from_icon_name(icon))
+                lb.append(row)
+            if len(items) > 4:
+                sw = Gtk.ScrolledWindow(min_content_height=260, hscrollbar_policy=Gtk.PolicyType.NEVER)
+                sw.set_child(lb)
+                d.set_extra_child(sw)
+            else:
+                d.set_extra_child(lb)
+            d.add_response("cancel", "Cancel")
+            d.add_response("ok", ok_label)
+            d.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+            d.set_default_response("ok")
+        else:
+            d.add_response("cancel", "OK")
+        d.set_close_response("cancel")
+        d.connect("response", lambda _d, r: r == "ok" and chosen["key"] and on_ok(chosen["key"]))
+        self._present(d)
+        return False
+
+    @staticmethod
+    def _drive_items(targets):
+        return [(t.path, t.title, " · ".join(x for x in (
+                    t.size_text, t.fstype.upper(), "USB drive" if t.removable else "internal drive",
+                    os.path.basename(t.path)) if x),
+                 "media-removable-symbolic" if t.removable else "drive-harddisk-symbolic")
+                for t in targets]
+
+    def on_backup(self):
+        job = self.b.backup_job()
+        if job and job.running:
+            return self._job_progress()
+        if not self.b.mac_summary()[0]:
+            return self.toast("There's no Mac to back up yet")
+
+        def got(targets):
+            targets = [] if isinstance(targets, Exception) else targets
+            return self._pick("Back Up the Mac", "Choose the drive to copy the Mac to. It goes into a "
+                              "“LayerOSX-backups” folder there.", self._drive_items(targets), "Next",
+                              self._backup_name, "No drive can hold a backup. Plug in a USB drive or disk "
+                              "formatted exFAT, NTFS or ext4 (FAT32 can't hold files over 4 GB).")
+        run_async(self.b.backup_targets, got)
+
+    def _backup_name(self, device):
+        name = self.b.default_backup_name()
+        entry = Gtk.Entry(text=name)
+        d = self._dialog("Name This Backup",
+                         "macOS will shut down while the Mac is copied (save your work first) and start "
+                         "again when it's done. This can take a while for a big Mac.")
+        d.set_extra_child(entry)
+        d.add_response("cancel", "Cancel")
+        d.add_response("ok", "Back Up")
+        d.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+        d.set_default_response("ok")
+        d.set_close_response("cancel")
+        d.connect("response", lambda _d, r: r == "ok" and self._start_job(
+            lambda: self.b.start_backup(device, entry.get_text())))
+        self._present(d)
+
+    def on_restore(self):
+        job = self.b.backup_job()
+        if job and job.running:
+            return self._job_progress()
+
+        def got(targets):
+            targets = [] if isinstance(targets, Exception) else targets
+            return self._pick("Restore a Mac", "Which drive has the backup?", self._drive_items(targets),
+                              "Next", self._restore_from, "No drive found. Plug in the drive with the backup.")
+        run_async(self.b.log_targets, got)
+
+    def _restore_from(self, device):
+        self.toast("Looking for backups…")
+
+        def got(backups):
+            backups = [] if isinstance(backups, Exception) else backups
+            names = {x.folder: x.title for x in backups}
+            return self._pick("Choose a Backup", "The Mac you pick replaces this one.",
+                              [(x.folder, x.title, x.subtitle, "computer-symbolic") for x in backups],
+                              "Restore…", lambda folder: self._confirm_restore(device, folder, names[folder]),
+                              "No LayerOSX backups on that drive (they're in its “LayerOSX-backups” folder).")
+        run_async(lambda: self.b.list_backups(device), got)
+
+    def _confirm_restore(self, device, folder, title):
+        exists = self.b.mac_summary()[0]
+        self.confirm(f"Replace this Mac with “{title}”?",
+                     ("This Mac is shut down and replaced — anything on it that isn't in a backup is lost. "
+                      if exists else "") + "The restored Mac starts when the copy is done.",
+                     "Restore", lambda: self._start_job(lambda: self.b.start_restore(device, folder)),
+                     destructive=exists)
+
+    def on_start_over(self):
+        self.confirm("Remove this Mac and install another macOS?",
+                     "This Mac — macOS, apps and files — is deleted, and the first-run setup opens so you can "
+                     "download another version or pick a disk. Back it up first (Back Up…) if you want to keep it.",
+                     "Remove Mac", lambda: self._start_job(self.b.start_erase), destructive=True)
+
+    def _start_job(self, start):
+        ok, msg = start()
+        if self.b.dry_run:
+            return self.after_action(ok, msg, "")
+        if not ok:
+            return self.toast(msg or "That didn't work")
+        GLib.timeout_add(600, self._job_progress)
+
+    def _job_progress(self):
+        """Progress of the running backup / restore / erase, until it ends."""
+        bar = Gtk.ProgressBar(show_text=True)
+        label = Gtk.Label(wrap=True, xalign=0)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        box.append(bar)
+        box.append(label)
+        titles = {"backup": "Backing Up the Mac", "restore": "Restoring a Mac", "erase": "Removing the Mac"}
+        d = self._dialog("Please Wait", "")
+        d.set_extra_child(box)
+        d.add_response("hide", "Hide")
+        d.set_close_response("hide")
+        state = {"open": True}
+        d.connect("response", lambda *_: state.update(open=False))
+
+        def tick():
+            if not state["open"]:
+                return False
+            j = self.b.backup_job()
+            if j is None:
+                return True
+            d.set_heading(titles.get(j.kind, "Please Wait") if j.running else
+                          ("Done" if j.state == "done" else "That Didn't Work"))
+            bar.set_fraction(max(0, min(100, j.percent)) / 100)
+            bar.set_text(f"{j.percent}%")
+            bar.set_visible(j.running or j.state == "done")
+            label.set_label(j.message)
+            if not j.running:
+                d.set_response_label("hide", "OK")
+                if j.kind in ("restore", "erase") and j.state == "done":
+                    GLib.timeout_add_seconds(4, lambda: self.close() or False)   # the Mac / setup comes back
+                return False
+            return True
+        tick()
+        GLib.timeout_add(1000, tick)
+        self._present(d)
+        return False
 
     # ---------------------------------------------------------- Resources
     def _resources_group(self):
@@ -1607,43 +1798,10 @@ class Settings(Adw.ApplicationWindow):
         run_async(self.b.log_targets, self._choose_drive)
 
     def _choose_drive(self, targets):
-        if isinstance(targets, Exception):
-            targets = []
-        d = self._dialog("Save Diagnostics",
-                         "Choose where to save the logs. They go into a “LayerOSX-logs” folder on that drive."
-                         if targets else
-                         "No drive to save to. Plug in a USB drive and try again.")
-        chosen = {"path": targets[0].path if targets else None}
-        if targets:
-            lb = Gtk.ListBox(css_classes=["boxed-list"], selection_mode=Gtk.SelectionMode.NONE)
-            first = None
-            for t in targets:
-                row = Adw.ActionRow(title=esc(t.title), activatable=True,
-                                    subtitle=esc(" · ".join(x for x in (
-                                        t.size_text, t.fstype.upper(),
-                                        "USB drive" if t.removable else "internal drive",
-                                        os.path.basename(t.path)) if x)))
-                chk = Gtk.CheckButton(valign=Gtk.Align.CENTER, active=first is None)
-                if first:
-                    chk.set_group(first)
-                first = first or chk
-                chk.connect("toggled", lambda c, p=t.path: c.get_active() and chosen.update(path=p))
-                row.add_prefix(chk)
-                row.set_activatable_widget(chk)
-                row.add_suffix(Gtk.Image.new_from_icon_name(
-                    "media-removable-symbolic" if t.removable else "drive-harddisk-symbolic"))
-                lb.append(row)
-            d.set_extra_child(lb)
-            d.add_response("cancel", "Cancel")
-            d.add_response("save", "Save")
-            d.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
-            d.set_default_response("save")
-        else:
-            d.add_response("cancel", "OK")
-        d.set_close_response("cancel")
-        d.connect("response", lambda _d, r: r == "save" and chosen["path"] and self._save_to(chosen["path"]))
-        self._present(d)
-        return False
+        targets = [] if isinstance(targets, Exception) else targets
+        return self._pick("Save Diagnostics", "Choose where to save the logs. They go into a "
+                          "“LayerOSX-logs” folder on that drive.", self._drive_items(targets), "Save",
+                          self._save_to, "No drive to save to. Plug in a USB drive and try again.")
 
     def _save_to(self, device):
         self.toast("Saving diagnostics…")

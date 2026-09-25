@@ -1011,5 +1011,134 @@ class TestPowerAndStatus(FakeMachine):
         self.assertTrue(b.save_diagnostics()[0])
 
 
+
+class TestBackups(FakeMachine):
+    SCRIPT = os.path.join(os.path.dirname(os.path.dirname(HERE)), "archiso", "airootfs",
+                          "opt", "layerosx", "kiosk", "lib", "mac-backup.sh")
+
+    def setUp(self):
+        super().setUp()
+        x = stat.S_IRWXU
+        write(os.path.join(self.bin, "sudo"), '#!/bin/sh\n[ "$1" = -n ] && shift\nexec "$@"\n', x)
+        write(os.path.join(self.state, "macos.qcow2"), "QFI-disk")
+        self.status = os.path.join(self.tmp, "backup.json")
+        os.environ["LAYEROSX_BACKUP_STATUS"] = self.status
+
+    def tearDown(self):
+        os.environ.pop("LAYEROSX_BACKUP_STATUS", None)
+        super().tearDown()
+
+    def test_targets_skip_fat32(self):
+        b = lb.Backend()
+        fat = lb.LogTarget("/dev/sdc1", "STICK", "", 8 << 30, "vfat", True, "")
+        ntfs = lb.LogTarget("/dev/sdd1", "DATA", "", 1 << 40, "ntfs", True, "")
+        b.log_targets = lambda: [fat, ntfs]
+        self.assertEqual([t.path for t in b.backup_targets()], ["/dev/sdd1"])
+        self.assertFalse(b.start_backup("/dev/sdc1", "x")[0])
+
+    def test_summary_and_default_name(self):
+        b = lb.Backend()
+        exists, label, _ = b.mac_summary()
+        self.assertTrue(exists)
+        self.assertEqual(label, "macOS Ventura 13.5")
+        self.assertEqual(b.default_backup_name(), "Ventura 13.5")
+        os.remove(os.path.join(self.state, "macos.qcow2"))
+        self.assertFalse(b.mac_summary()[0])
+        self.assertFalse(b.start_backup("/dev/sda1", "x")[0])   # nothing to back up
+
+    def test_start_dry_run_and_validation(self):
+        os.environ["LAYEROSX_DRY_RUN"] = "1"
+        b = lb.Backend()
+        ok, name = b.start_backup("/dev/sda1", "My Mac; rm -rf /")
+        self.assertTrue(ok)
+        self.assertEqual(name, "My Mac rm -rf")
+        self.assertTrue(b.dry_log[-1].endswith("mac-backup.sh backup /dev/sda1 My Mac rm -rf"))
+        self.assertFalse(b.start_backup("/dev/nvme0n1p6", "x")[0])      # the system root
+        self.assertFalse(b.start_restore("/dev/sda1", "../etc")[0])
+        self.assertFalse(b.start_restore("/dev/sda1", "..")[0])
+        self.assertTrue(b.start_restore("/dev/sda1", "Ventura_2026-09-25_1432")[0])
+        self.assertIn("restore /dev/sda1 Ventura_2026-09-25_1432", b.dry_log[-1])
+        self.assertTrue(b.start_erase()[0])
+        self.assertTrue(b.dry_log[-1].endswith("mac-backup.sh erase"))
+
+    def test_job_status(self):
+        b = lb.Backend()
+        self.assertIsNone(b.backup_job())
+        os.makedirs(os.path.join(self.tmp, "proc", "4242"))
+        write(self.status, '{"kind": "backup", "state": "copying", "percent": 37, '
+                           '"message": "Copying", "path": "LayerOSX-backups/x", "pid": 4242}')
+        j = b.backup_job()
+        self.assertTrue(j.running)
+        self.assertEqual((j.kind, j.percent), ("backup", 37))
+        self.assertFalse(b.start_restore("/dev/sda1", "x")[0])      # one at a time
+        self.assertFalse(b.start_erase()[0])
+        write(self.status, '{"kind": "backup", "state": "copying", "percent": 37, "message": "", "pid": 4243}')
+        j = b.backup_job()                                           # helper died mid-copy
+        self.assertFalse(j.running)
+        self.assertEqual(j.state, "error")
+
+    def test_list_parses_helper(self):
+        write(os.path.join(self.lib, "mac-backup.sh"), textwrap.dedent("""\
+            #!/bin/sh
+            [ "$1 $2" = "list /dev/sda1" ] || exit 2
+            echo '[{"folder": "Big-Sur_2026-09-25_1200", "name": "Big Sur", "created": "2026-09-25T12:00", "macos": "big-sur", "macos_version": "11.7.10", "mac_model": "", "size": 21500000000}]'
+            """), stat.S_IRWXU)
+        b = lb.Backend()
+        [x] = b.list_backups("/dev/sda1")
+        self.assertEqual(x.title, "Big Sur")
+        self.assertEqual(x.subtitle, "macOS Big Sur 11.7.10 · 21.5 GB · 2026-09-25 12:00")
+        self.assertEqual(b.list_backups("/dev/nvme0n1p6"), [])       # not offered
+
+    def test_helper_backup_list_restore(self):
+        """The real kiosk/lib/mac-backup.sh with a folder as the drive and a fake qemu-img."""
+        import json
+        import subprocess
+        qimg = os.path.join(self.bin, "qemu-img")
+        write(qimg, textwrap.dedent("""\
+            #!/usr/bin/env python3
+            import json, os, shutil, sys
+            a = sys.argv[1:]
+            if a[0] == "convert":
+                for p in (10, 55, 100):
+                    sys.stdout.write(f"    ({p}.00/100%)\\r"); sys.stdout.flush()
+                shutil.copy(a[-2], a[-1])
+            elif a[0] == "measure":
+                print(json.dumps({"required": os.path.getsize(a[-1])}))
+            elif a[0] == "info":
+                sys.exit(0 if open(a[-1]).read().startswith("QFI") else 1)
+            """), stat.S_IRWXU)
+        drive = os.path.join(self.tmp, "drive")
+        os.makedirs(drive)
+        env = dict(os.environ, LAYEROSX_QEMU_IMG=qimg, LAYEROSX_BACKUP_FAKE_MNT=drive,
+                   LAYEROSX_HOLD_FILE=os.path.join(self.tmp, "hold"))
+        write(os.path.join(self.state, "OVMF_VARS.fd"), "nvram")
+
+        def run(*args):
+            return subprocess.run(["bash", self.SCRIPT, *args], env=env, capture_output=True, text=True)
+        self.assertEqual(run("backup", "x", "Ventura").returncode, 0)
+        j = lb.Backend().backup_job()
+        self.assertEqual((j.state, j.percent, j.running), ("done", 100, False))
+        [m] = json.loads(run("list", "x").stdout)
+        self.assertEqual((m["name"], m["macos"], m["macos_version"]), ("Ventura", "ventura", "13.5"))
+        folder = m["folder"]
+        for f in ("macos.qcow2", "OVMF_VARS.fd", "macos-version", "manifest.json"):
+            self.assertTrue(os.path.exists(os.path.join(drive, "LayerOSX-backups", folder, f)), f)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "hold")))   # hold released
+        # change the Mac, then restore: disk, NVRAM and version come back, mac-model goes
+        write(os.path.join(self.state, "macos.qcow2"), "QFI-other")
+        write(os.path.join(self.state, "mac-model"), "iMacPro1,1")
+        write(os.path.join(self.state, "macos-version"), "big-sur")
+        self.assertEqual(run("restore", "x", folder).returncode, 0)
+        with open(os.path.join(self.state, "macos.qcow2")) as f:
+            self.assertEqual(f.read(), "QFI-disk")
+        with open(os.path.join(self.state, "macos-version")) as f:
+            self.assertEqual(f.read().strip(), "ventura")
+        self.assertFalse(os.path.exists(os.path.join(self.state, "mac-model")))
+        self.assertFalse(os.path.exists(os.path.join(self.state, "macos.qcow2.new")))
+        self.assertEqual(run("restore", "x", "../state").returncode, 2)
+        self.assertEqual(run("restore", "x", "missing").returncode, 1)
+        self.assertEqual(lb.Backend().backup_job().state, "error")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -39,6 +39,11 @@ def script(win):
     win.ram_row.set_selected(0)
     ok, _ = b.usb_set_always("0781", "5583", True, "SanDisk")
     check("usb always", "0781:5583" in b.usb_always_set())
+    check("backups group", hasattr(win, "backup_row"))
+    win._backup_name("/dev/sda1")
+    win._pick("Choose a Backup", "x", [("f", "Big Sur", "macOS Big Sur 11.7", "computer-symbolic")],
+              "Restore…", lambda k: None, "none")
+    win._job_progress()
     win.select("general")
     targets = b.log_targets()
     check("drives listed (USB first)", [t.path for t in targets][:1] == ["/dev/sda1"])

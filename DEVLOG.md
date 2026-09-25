@@ -4249,3 +4249,35 @@ on 2026-09-25 (both boards per version return the same product: Big Sur
 MLB. After each download the `ProductVersion` is read from the image; if it
 doesn't match, the next board is tried, and the result goes to
 `downloaded-version` as before.
+
+## Backups: back up, restore, install another macOS
+
+LayerOSX holds one Mac (`/var/lib/layerosx/macos.qcow2` + NVRAM + a few
+small files). To try Big Sur without losing the everyday Mac there was only
+"copy the files by hand from a terminal, then `erasevm` and reboot".
+Settings › Mac › Backups now does it:
+
+- `kiosk/lib/mac-backup.sh` (root, via `sudo -n`, like `save-logs-to.sh` and
+  with the same partition checks — plus the partition holding
+  `/var/lib/layerosx` is refused) with `list`, `backup`, `restore`, `erase`.
+  One job at a time (`flock`), progress as JSON in
+  `/run/layerosx-backup.json` (state, percent, message, PID), which the
+  panel polls; a job whose PID is gone mid-copy reads as failed.
+- The disk must not change while it's copied, so the helper writes its PID
+  to `/run/layerosx-hold`, sends the ACPI power button (`system_powerdown`,
+  60 s for macOS to shut down), then a QMP quit, then SIGTERM. The launcher
+  treats any QEMU exit while the hold's PID lives as "held" — macOS shutting
+  down for a backup must not power the computer off — waits at the top of its
+  loop, and afterwards `exec`s itself: a restored Mac may be another macOS
+  version (read once at the top), and after Start Over there's no disk, so
+  the first-run setup has to open.
+- Backup = `qemu-img convert` (compacts: only what macOS uses; progress from
+  `-p`), plus `OVMF_VARS.fd`, `macos-recovery.qcow2`, `macos-version`,
+  `downloaded-version`, `mac-model`, `manifest.json`. Space is checked first
+  (`qemu-img measure`); FAT32 drives aren't offered (4 GB file limit).
+- Restore copies to `macos.qcow2.new` and swaps it in when done; only when
+  the partition can't hold both does it delete the old disk first (the
+  confirmation says the current Mac is replaced). Files missing from the
+  backup (e.g. no `mac-model`) are removed, so the defaults apply.
+- Tests: 6 new (74), including the real helper end to end with a folder as
+  the drive and a fake `qemu-img`; the UI smoke test opens the dialogs.

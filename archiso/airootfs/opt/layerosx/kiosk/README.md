@@ -23,6 +23,10 @@
   vendored from OSX-KVM / OpenCore's macrecovery), picking a board-id whose
   last supported macOS is that version, and checks the version it got —
   trying another board if Apple served a different one.
+- **`lib/mac-backup.sh`** — Settings › Mac › Backups (run through sudo):
+  back the Mac up to a drive, list / restore backups, or remove the Mac so
+  the first-run setup opens again. Holds the Mac stopped through
+  `/run/layerosx-hold`, which `mac-vm-launch.sh` waits on.
 - **`lib/extract-dmg-installer.sh`** — **experimental**. Tries to
   extract a bootable installer from a `.dmg` you already have. The
   hard part is the filesystem inside it (HFS+ usually works, APFS

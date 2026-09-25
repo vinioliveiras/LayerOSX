@@ -43,8 +43,8 @@ recent features are marked "not yet on hardware" in
 **Reinstalling without losing the Mac:** don't format the LayerOSX partition
 in GParted. The installer finds the existing Mac and asks **Keep my Mac /
 Erase it**; Keep preserves `/var/lib/layerosx` (macOS disk, NVRAM, settings)
-and replaces everything else. A backup of `macos.qcow2` + `OVMF_VARS.fd` to
-another drive first never hurts.
+and replaces everything else. A backup first (Settings › Mac › Backups) never
+hurts.
 
 ## First boot
 
@@ -95,7 +95,7 @@ banner.
 | Displays | Brightness; **Screens** — which monitor shows the Mac (Automatic: an external monitor when one is plugged in, else the built-in screen — plugging/unplugging moves the Mac by itself), other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off; windows opened while it's off stay square until reopened). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
-| Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Restart the Mac** (the black-screen rescue). |
+| Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Backups** (below), **Restart the Mac** (the black-screen rescue). |
 | General | Appearance, Restart / Shut Down the computer. |
 | Maintenance | **Logs** — Show startup log, Detailed logs, **Monitoring mode** (records everything, below), Save diagnostics to a drive; **Terminal**; **Advanced** — text consoles (Ctrl+Alt+F1…F6, next boot); **Password** — an optional Maintenance password that locks this whole section, the terminal and tty2. |
 | About | This computer (model, CPU, RAM, GPUs, disk), the Mac (macOS version, what the VM got), credits. |
@@ -105,6 +105,24 @@ power mode Automatic,
 automatic USB, all cores but 2 (max 8, power of two), RAM minus 12%
 (min 4 GB) — on Reims capped to what its GPU can map (below) — no
 Maintenance password.
+
+### Backups (Settings › Mac)
+
+- **Back Up…** — pick a drive (exFAT, NTFS, ext4…; FAT32 can't hold a file
+  over 4 GB) and a name; macOS is asked to shut down (then stopped, like
+  Restart the Mac), and the Mac is copied to
+  `<drive>/LayerOSX-backups/<name>_<date>/`: its disk compacted to the space
+  macOS uses (`qemu-img convert`), NVRAM, the macOS recovery, which macOS
+  and Mac model it is, `manifest.json`. The Mac starts again afterwards.
+- **Restore…** — pick the drive, then one of its backups; it replaces this
+  Mac (kept until the copy is complete when there's room for both).
+- **Start Over…** — removes this Mac (`erasevm`) and opens the first-run
+  setup, to download or pick another macOS. Back up first to keep it.
+
+LayerOSX runs one Mac at a time; backups are how several are kept (e.g. a
+Big Sur to test and your everyday Ventura). `kiosk/lib/mac-backup.sh` does
+the root part; the launcher waits while it runs and then starts over from the
+top. Progress: `/run/layerosx-backup.json`.
 
 ## Terminal commands
 
