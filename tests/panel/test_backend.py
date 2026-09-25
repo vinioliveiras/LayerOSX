@@ -494,7 +494,7 @@ class TestAutomaticScreen(TestScreens):
         self.assertEqual(self.d.effective_target(outs, ""), "HDMI-1-0")
         self.assertEqual(self.d.effective_target(outs, "eDP-1"), "eDP-1")   # a choice wins
         unplugged = [dict(o, connected=o["connected"] and o["name"] != "HDMI-1-0") for o in outs]
-        self.assertEqual(self.d.effective_target(unplugged, ""), "")         # laptop only: hands off
+        self.assertEqual(self.d.effective_target(unplugged, ""), "eDP-1")    # back to the laptop screen
         dp = dict(outs[1], name="DP-2", label="DisplayPort")
         three = outs + [dp]
         self.assertEqual(self.d.effective_target(three, ""), "HDMI-1-0")    # first external by default
@@ -502,6 +502,24 @@ class TestAutomaticScreen(TestScreens):
         self.assertEqual(self.d.effective_target(three, ""), "DP-2")        # ... unless one was plugged last
         desktop = [dict(o, builtin=False) for o in outs]
         self.assertEqual(self.d.effective_target(desktop, ""), "")          # no built-in screen: hands off
+
+    def test_unplugged_screen_in_use(self):
+        outs = self.d.query()
+        # The Mac was on HDMI, laptop screen off; HDMI is pulled out but X still
+        # has it laid out (active, disconnected).
+        pulled = [dict(o, connected=o["connected"] and o["name"] != "HDMI-1-0",
+                       active=o["name"] == "HDMI-1-0", primary=o["name"] == "HDMI-1-0") for o in outs]
+        t = self.d.effective_target(pulled, "")
+        self.assertEqual(t, "eDP-1")
+        self.assertEqual(self.d.plan(pulled, t, "off"),
+                         ["--output", "HDMI-1-0", "--off",
+                          "--output", "eDP-1", "--auto", "--primary", "--pos", "0x0"])
+        # a fixed choice that got unplugged: light everything, drop the dead one
+        self.assertEqual(self.d.plan(pulled, "HDMI-1-0", "off"), ["--auto"])
+        # hands-off (desktop, no built-in) still clears the dead monitor
+        desk = [dict(o, builtin=False) for o in pulled]
+        self.assertEqual(self.d.plan(desk, self.d.effective_target(desk, ""), "off"),
+                         ["--output", "HDMI-1-0", "--off"])
 
     def test_apply_on_automatic_moves_the_mac_and_refullscreens_it(self):
         self.d.LAST_PLUGGED = os.path.join(self.tmp, "last-plugged")

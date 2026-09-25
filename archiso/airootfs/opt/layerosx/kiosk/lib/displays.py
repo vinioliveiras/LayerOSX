@@ -182,11 +182,17 @@ def plan(outs, target, others, modes=None):
     if not connected:
         return []
     per = {}                      # output -> its xrandr options, target first
+    # A screen unplugged while in use keeps its CRTC (and its part of the X
+    # screen) until someone turns it off: the Mac's window, new windows and
+    # the pointer can all end up on a monitor that no longer exists.
+    for o in outs:
+        if o["active"] and not o["connected"]:
+            per[o["name"]] = ["--off"]
     t = next((o for o in connected if o["name"] == target), None) if target else None
     if target and t is None:
         # Saved screen is unplugged: light up every connected screen again,
         # unless they already all are.
-        if not all(o["active"] for o in connected):
+        if not all(o["active"] for o in connected) or per:
             return ["--auto"]
     if t is not None:
         ok = t["active"] and t["primary"] and (t["x"], t["y"]) == (0, 0)
@@ -238,7 +244,10 @@ def effective_target(outs, target):
     if ext and builtin:
         last = _read_path(LAST_PLUGGED)
         return next((o["name"] for o in ext if o["name"] == last), ext[0]["name"])
-    return ""
+    # Only the built-in screen left (an external one was just unplugged): the
+    # Mac goes back to it -- and it's switched back on if it had been turned
+    # off while the external screen showed the Mac.
+    return builtin["name"] if builtin else ""
 
 
 def _read_path(path):
@@ -347,6 +356,7 @@ def watch():
             before = _mac_screen(q, effective_target(q, settings()[0]))
             apply(quiet=True)
             outs = query()
+            follow(outs, effective_target(outs, settings()[0]))   # even when the layout didn't change
             s = _mac_screen(outs, effective_target(outs, settings()[0]))
             if s and (not before or before["name"] != s["name"] or plugged):
                 hint = ("\nOn a 4K screen, macOS can switch to 3840 × 2160 in System Settings › Displays."

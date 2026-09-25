@@ -4169,3 +4169,32 @@ on.
   mirrors the rule. Tests: 64 (effective_target cases, the re-fullscreen
   calls). Not yet on hardware.
 
+## Unplugging the screen in use; Wi-Fi page refresh and switch
+
+**Black screen after unplugging the monitor the Mac was on.** Xorg keeps an
+unplugged output's CRTC — and its part of the X screen — until something
+turns it off, and on Automatic the previous rule left the layout alone when
+only the laptop screen remained (which had been switched off while the
+external one showed the Mac). So the Mac's window stayed on a monitor that
+no longer existed, the laptop screen stayed dark, and new windows (Settings)
+were centred on the ghost monitor too.
+
+- `plan()` now always turns off outputs that are active but disconnected,
+  in every mode (hands-off included); a fixed choice that's unplugged gets
+  `--auto` (all connected on, dead ones off) as before.
+- Automatic falls back to the built-in screen when no external one is left,
+  so it's switched back on and becomes primary.
+- `watch` always moves the Mac's window (re-fullscreened) and the pointer to
+  the Mac's screen after a plug/unplug — openbox centres new windows on the
+  pointer's monitor, so Settings opens where the Mac is.
+- Tests: 65 (the pulled-out-while-in-use layouts).
+
+**Wi-Fi page.** The network list refreshes every 10 s while the page is on
+screen (NetworkManager's own scan results; a forced rescan every third time)
+and is only redrawn when something changed, so rows don't jump under the
+pointer. The on/off switch used `state-set` returning True to hold itself
+while asking for confirmation, which left GTK's `active` and `state` apart —
+drawn as a coloured switch in the off position. It now uses
+`notify::active`, snaps back on while the dialog is up, and goes grey-off
+once confirmed, like every other switch.
+

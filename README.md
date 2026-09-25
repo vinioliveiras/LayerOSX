@@ -88,7 +88,7 @@ banner.
 
 | Section | What's there |
 |---|---|
-| Wi-Fi | On/off, current network, nearby networks, hidden networks. |
+| Wi-Fi | On/off, current network, nearby networks (refreshed every 10 s while the page is open), hidden networks. |
 | Battery | Level, state, what the low-battery guard does; **Power mode** — Automatic (Performance on the charger, Balanced on battery), Performance, Balanced, Power Saver. |
 | Displays | Brightness; **Screens** — which monitor shows the Mac (Automatic: an external monitor when one is plugged in, else the built-in screen — plugging/unplugging moves the Mac by itself), other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off; windows opened while it's off stay square until reopened). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |

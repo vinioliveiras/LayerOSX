@@ -1176,6 +1176,17 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5k. Unplug the screen in use; Wi-Fi page
+
+- Mac on the external monitor (laptop screen off), unplug it: within ~5 s
+  the laptop screen lights up with the Mac on it. Ctrl+Alt+W opens Settings
+  on the laptop screen (not off-screen).
+- Two external monitors, Mac on one, unplug it: the Mac moves to the other.
+- Settings › Wi-Fi: leave it open, turn a phone hotspot on/off — the list
+  updates by itself within ~10–30 s without flicker.
+- Wi-Fi switch off → confirmation; Cancel → stays on (normal look); Turn Off
+  → grey off switch like the other switches.
+
 ### 5.5j. Monitor hotplug
 
 - Screens on Automatic, Mac running on the laptop. Plug in an HDMI monitor:

@@ -97,6 +97,9 @@ def dot(color):
     return Gtk.Box(css_classes=["dot", f"dot-{color}"], valign=Gtk.Align.CENTER)
 
 
+WIFI_REFRESH_SECONDS = 10      # Wi-Fi list refresh while that page is open
+
+
 def wifi_icon(signal):
     for lim, name in ((75, "excellent"), (50, "good"), (25, "ok")):
         if signal >= lim:
@@ -153,6 +156,7 @@ class Settings(Adw.ApplicationWindow):
         self.select(start if start in dict((s[0], s) for s in SECTIONS) else "wifi")
         self.refresh()
         GLib.timeout_add_seconds(REFRESH_SECONDS, lambda: self.refresh() or True)
+        GLib.timeout_add_seconds(WIFI_REFRESH_SECONDS, self._wifi_autorefresh)
 
     # ------------------------------------------------------------ plumbing
     def toast(self, text):
@@ -268,7 +272,9 @@ class Settings(Adw.ApplicationWindow):
         if self.split.get_content() is not page:
             self.split.set_content(page)
         self.split.set_show_content(True)
+        self.current_sid = sid
         if sid == "wifi":
+            self._wifi_key = None
             self._scan_wifi()
         elif sid == "usb":
             self._load_usb()
@@ -294,7 +300,10 @@ class Settings(Adw.ApplicationWindow):
                      "choose a network here and macOS follows it.")
         self.wifi_switch_row.add_prefix(badge("network-wireless-symbolic", "blue", big=True))
         self.wifi_switch = Gtk.Switch(valign=Gtk.Align.CENTER)
-        self.wifi_switch.connect("state-set", self._on_wifi_radio)
+        # notify::active, not state-set: returning True from state-set to hold
+        # the switch while asking left "active" and "state" apart, which GTK
+        # draws as a coloured switch in the off position.
+        self.wifi_switch.connect("notify::active", self._on_wifi_radio)
         self.wifi_switch_row.add_suffix(self.wifi_switch)
         top.add(self.wifi_switch_row)
         self.wifi_state_row = Adw.ActionRow(title="…")
@@ -323,14 +332,30 @@ class Settings(Adw.ApplicationWindow):
         extra.append(scan)
         return self._pane("Wi-Fi", page, extra)
 
-    def _scan_wifi(self):
+    def _scan_wifi(self, rescan=True):
         if "wifi" not in self.pages:
             return
-        self.wifi_spinner.set_spinning(True)
-        run_async(lambda: (self.b.wifi_enabled(), self.b.wifi_scan()), self._show_wifi)
+        if rescan:
+            self.wifi_spinner.set_spinning(True)
+        run_async(lambda: (self.b.wifi_enabled(), self.b.wifi_scan(rescan=rescan)), self._show_wifi)
+
+    def _wifi_autorefresh(self):
+        """Every WIFI_REFRESH_SECONDS while the Wi-Fi page is on screen: re-read
+        NetworkManager's list (it scans by itself; a forced rescan only every
+        third time) and redraw only if something changed."""
+        if getattr(self, "current_sid", "") == "wifi" and self.get_visible() \
+                and not self.wifi_spinner.get_spinning():
+            self._wifi_ticks = getattr(self, "_wifi_ticks", 0) + 1
+            self._scan_wifi(rescan=self._wifi_ticks % 3 == 0)
+        return True
 
     def _show_wifi(self, res):
         self.wifi_spinner.set_spinning(False)
+        if not isinstance(res, Exception):
+            key = (res[0], tuple((n.ssid, n.connected, n.secure, wifi_icon(n.signal)) for n in res[1]))
+            if key == getattr(self, "_wifi_key", None):
+                return False                 # nothing changed: don't redraw under the pointer
+            self._wifi_key = key
         for grp, row in self._wifi_rows:
             grp.remove(row)
         self._wifi_rows = []
@@ -373,17 +398,27 @@ class Settings(Adw.ApplicationWindow):
         grp.add(r)
         self._wifi_rows.append((grp, r))
 
-    def _on_wifi_radio(self, _sw, state):
+    def _on_wifi_radio(self, sw, _pspec):
         if self._updating:
-            return False
-        if not state:
+            return
+        if not sw.get_active():
+            # Back on until the user confirms; then off for real.
+            self._updating = True
+            sw.set_active(True)
+            self._updating = False
+
+            def off():
+                self._updating = True
+                sw.set_active(False)
+                self._updating = False
+                self._set_radio(False)
             self.confirm("Turn Wi-Fi off?", "The Mac loses its internet connection too (unless a cable is plugged in).",
-                         "Turn Off", lambda: self._set_radio(False), destructive=True)
-            return True  # keep the switch on until confirmed
+                         "Turn Off", off, destructive=True)
+            return
         self._set_radio(True)
-        return False
 
     def _set_radio(self, on):
+        self._wifi_key = None                # redraw after the change
         ok, msg = self.b.set_wifi_enabled(on)
         self.after_action(ok, msg, "Wi-Fi on" if on else "Wi-Fi off")
         GLib.timeout_add(1500, lambda: self._scan_wifi() or self.refresh() or False)
@@ -409,6 +444,7 @@ class Settings(Adw.ApplicationWindow):
         def done(r):
             ok = not isinstance(r, Exception) and r[0]
             self.toast(f"Connected to {ssid}" if ok else f"Couldn't connect to {ssid}")
+            self._wifi_key = None
             self.refresh()
             GLib.timeout_add(1200, lambda: self._scan_wifi() or False)
             return False
