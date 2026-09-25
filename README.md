@@ -1,4 +1,4 @@
-# LayerOSX
+# LayerOSX (alpha)
 
 An installer ISO for a deliberately empty Arch Linux whose only job is to boot
 straight into an accelerated macOS VM: QEMU from
