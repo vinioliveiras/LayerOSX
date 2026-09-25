@@ -343,11 +343,15 @@ learn_reims_budget() {
 #    loop; a 32 MB qcow2 L2 cache maps 256 GB (the 1 MB default only 8 GB, so
 #    big-disk random I/O kept re-reading qcow2 metadata); discard/detect-zeroes
 #    give freed space back (APFS TRIM) so the image stops only growing.
-#  * the network was QEMU's built-in user-mode NAT (slirp), whose whole TCP/IP
-#    stack runs inside QEMU's main loop. passt does the same unprivileged NAT
-#    in its own process; QEMU just forwards frames. Falls back to slirp when
-#    passt isn't installed.
-# Overrides: $STATE_DIR/disk-cache (none|writeback), $STATE_DIR/net (passt|user).
+#  * the network: QEMU's built-in NAT (slirp) runs its TCP/IP stack inside
+#    QEMU's main loop; passt does the same in its own process. BUT with passt
+#    the Mac's internet kept dropping on the test laptop, so slirp is the
+#    default again and passt is opt-in ($STATE_DIR/net = passt) with settings
+#    that don't depend on the host's network at start: MTU 1500 (passt
+#    defaults to 65520 via DHCP, which a vmxnet3 guest may not cope with) and
+#    the fixed 10.0.2.x addresses slirp uses (passt otherwise copies the host's
+#    address/gateway once, and they go stale when the Wi-Fi reconnects).
+# Overrides: $STATE_DIR/disk-cache (none|writeback), $STATE_DIR/net (user|passt).
 pick_io() {
     local cache aio net
     cache="$(cat "$STATE_DIR/disk-cache" 2>/dev/null)"
@@ -364,13 +368,13 @@ pick_io() {
     fi
     MAC_DISK_OPTS="cache=$cache,aio=$aio,discard=unmap,detect-zeroes=unmap,l2-cache-size=32M"
     net="$(cat "$STATE_DIR/net" 2>/dev/null)"
-    case "$net" in user) ;; *) net=passt ;; esac
+    case "$net" in passt) ;; *) net=user ;; esac
     if [ "$net" = passt ] && ! command -v passt >/dev/null 2>&1; then
         echo "Network: passt not installed -- using QEMU's built-in NAT."
         net=user
     fi
     if [ "$net" = passt ]; then
-        NET_ARGS=(-netdev passt,id=net0)
+        NET_ARGS=(-netdev passt,id=net0,mtu=1500,address=10.0.2.15,netmask=255.255.255.0,gateway=10.0.2.2,ipv6=off)
     else
         NET_ARGS=(-netdev user,id=net0)
     fi

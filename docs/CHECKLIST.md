@@ -1176,6 +1176,19 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5i. Network stability, monitoring mode
+
+- `mac-vm.log`: "I/O: … network user." Internet in macOS stays up for an
+  hour of normal use (and across a Wi-Fi reconnect of the laptop).
+- `cat /etc/NetworkManager/conf.d/layerosx-wifi-powersave.conf`;
+  `iw dev wlan0 get power_save` (if iw is there) → off.
+- Settings › Maintenance › Monitoring mode on → `macmonitor status` shows a
+  session in ~/monitoring; use the Mac for a while; when the internet drops,
+  press Ctrl+Alt+M. Turn it off → `summary.txt` has averages, "Network
+  outages" and the MARK. Reboot with it on → a new session starts by itself.
+- Save diagnostics → the bundle has `monitoring-<session>/` and the summary
+  at the end of diag.txt.
+
 ### 5.5h. Disk / network I/O, crash guard
 
 - `mac-vm.log`: "I/O: disk cache=none,aio=io_uring,…; network passt."

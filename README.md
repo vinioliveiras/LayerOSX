@@ -69,6 +69,7 @@ APFS inside macOS with `sudo diskutil apfs resizeContainer <container> 0`.
 | **Ctrl+Alt+W** | LayerOSX Settings (below). Falls back to a zenity menu if GTK can't start. |
 | **Ctrl+Alt+T** | Maintenance terminal (open, unless a Maintenance password is set). One at a time: pressing it again brings the open one back. |
 | **Ctrl+Alt+U** | USB picker: give a device to the Mac or take it back. |
+| **Ctrl+Alt+M** | With monitoring mode on: mark this moment in the timeline. |
 | Brightness / volume keys | Handled by Linux, work while the Mac has focus. |
 | Apple menu › **Restart** | Restarts the Mac only (the computer stays on). |
 | Apple menu › **Shut Down** | Shuts the computer down. |
@@ -94,7 +95,7 @@ banner.
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
 | Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", memory (automatic or fixed), **Restart the Mac** (the black-screen rescue). |
 | General | Appearance, Restart / Shut Down the computer. |
-| Maintenance | **Logs** — Show startup log, Detailed logs, Save diagnostics to a drive; **Terminal**; **Advanced** — text consoles (Ctrl+Alt+F1…F6, next boot); **Password** — an optional Maintenance password that locks this whole section, the terminal and tty2. |
+| Maintenance | **Logs** — Show startup log, Detailed logs, **Monitoring mode** (records everything, below), Save diagnostics to a drive; **Terminal**; **Advanced** — text consoles (Ctrl+Alt+F1…F6, next boot); **Password** — an optional Maintenance password that locks this whole section, the terminal and tty2. |
 | About | This computer (model, CPU, RAM, GPUs, disk), the Mac (macOS version, what the VM got), credits. |
 
 Defaults on a new install: Reims graphics, Apple-logo boot, sound on,
@@ -117,6 +118,7 @@ From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
 | `wifi [status\|pick\|list]` | Host Wi-Fi (`pick` opens Settings › Wi-Fi). |
 | `maclog [tail\|oc\|err\|launch\|qemu\|all]` | Boot / launcher logs. |
 | `macfps [--once]` | The Mac's frame rate on Reims, live. |
+| `macmonitor [on\|off\|status\|mark\|summary]` | Monitoring mode (below). |
 | `echo N > /var/lib/layerosx/audio-buffer-ms` | Sound buffer in ms (default 128; then `relaunch`). |
 | `macdiag [usb]` | Full diagnostics bundle (optionally onto a USB drive). |
 | `macstatus` | Current settings and VM disk state. |
@@ -135,6 +137,28 @@ From the Ctrl+Alt+T terminal (user `mac`). Settings are plain files in
   A bundle is also saved to any USB drive after every Mac session.
 - **Something fails the same way 5 times in a row:** the launcher stops and
   leaves the screen still, so the terminal (Ctrl+Alt+T) stays usable.
+
+## Monitoring mode
+
+For chasing slowdowns, drops and crashes with data instead of guesses.
+Settings › Maintenance › Monitoring mode (or `macmonitor on`) records, every
+second, into `~/monitoring/<YYYYmmdd-HHMMSS>/`:
+
+| File | What |
+|---|---|
+| `summary.txt` | written at stop: avg / p95 / max of everything below, network outages, busiest QEMU threads, marked moments |
+| `events.log` | timeline: the Mac (re)started, crashes, network down/up, memory/I/O pressure, CPU ≥ 90 °C, **Ctrl+Alt+M** marks |
+| `system.csv` / `cpu.csv` | load, memory, huge pages, dirty/writeback, PSI pressure (cpu/memory/io), CPU temperature and clock; per-core busy % |
+| `qemu.csv` / `threads.csv` | the Mac's QEMU: CPU %, RSS; each thread above 1% (vCPUs, Reims, main loop) |
+| `gpu.csv` | NVIDIA (nvidia-smi) and AMD (sysfs): busy %, VRAM/GTT, clocks, temperature, power (every 2 s) |
+| `disk.csv` / `net.csv` | per disk MB/s and busy %; per interface KB/s, errors, drops, Wi-Fi signal |
+| `netcheck.csv` | every 5 s: gateway ping, DNS lookup, TCP connect — tells a host Wi-Fi drop from a problem inside the Mac's NAT |
+| `reims.csv` | Reims' frames shown per second and refusals |
+| `logs/` | kernel, system warnings, NetworkManager/Wi-Fi, launcher, macOS serial, Reims (followed live) |
+
+It stays on across reboots until turned off; the newest 5 sessions are
+kept, a session stops sampling at 1 GB, and Save diagnostics / `macdiag`
+include the newest session. `kiosk/lib/monitor.py` is the collector.
 
 ## How it works
 
@@ -183,9 +207,11 @@ Installed system: tty1 autologin → startx → .xinitrc
   else 70% of the host. A fixed RAM above it gets a warning in Settings.
 - **Disk and network:** the Mac's disk runs with `cache=none,aio=io_uring`
   (no host page cache — big downloads used to fill it and stall the host),
-  a 32 MB qcow2 L2 cache and TRIM (`discard=unmap`); the network NAT is
-  `passt` in its own process instead of QEMU's built-in slirp. Overrides:
-  `disk-cache` (none|writeback), `net` (passt|user) state files.
+  a 32 MB qcow2 L2 cache and TRIM (`discard=unmap`). Network: QEMU's
+  built-in NAT (slirp); `passt` (NAT in its own process) is opt-in — it made
+  the internet drop on the test laptop. Wi-Fi power saving is off
+  (NetworkManager). Overrides: `disk-cache` (none|writeback), `net`
+  (user|passt) state files.
 - **Crash guard:** when QEMU crashes (Reims) or macOS panics, the Mac is
   started again, a diagnostics bundle goes to `~/crash-reports` (newest 5)
   and a notice says what happened.

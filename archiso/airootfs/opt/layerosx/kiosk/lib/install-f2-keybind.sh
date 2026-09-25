@@ -159,6 +159,16 @@ if "layerosx-usb" not in content and "</keyboard>" in content:
     )
     content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
 
+# 7b2) Ctrl+Alt+M: put a mark in the monitoring timeline ("the internet just
+#      dropped") -- macmonitor mark; does nothing when monitoring is off.
+if "layerosx-monitor-mark" not in content and "</keyboard>" in content:
+    keybind = (
+        '  <keybind key="C-A-m"> <!-- layerosx-monitor-mark -->\n'
+        '    <action name="Execute"><command>/usr/local/bin/macmonitor mark</command></action>\n'
+        "  </keybind>\n"
+    )
+    content = content.replace("</keyboard>", keybind + "</keyboard>", 1)
+
 # 7c) Both modes: the laptop's volume keys -> this computer's volume (the
 #     same control as Settings > Sound > Volume). openbox grabs them before the
 #     VM window, like the brightness keys.

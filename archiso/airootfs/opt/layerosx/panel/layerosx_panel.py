@@ -899,6 +899,19 @@ class Settings(Adw.ApplicationWindow):
         GLib.idle_add(self._sync_volume)
 
     # ------------------------------------------------------------------ USB
+    def _on_monitoring(self, row, _pspec):
+        if self._updating:
+            return
+        on = row.get_active()
+
+        def done(res):
+            ok, msg = res if isinstance(res, tuple) else (False, str(res))
+            m = self.b.monitoring()
+            self.after_action(ok, msg, (f"Monitoring on — {os.path.basename(m['session'])}" if on and m["running"]
+                                        else "Monitoring on" if on else "Monitoring off — summary saved"))
+            return False
+        run_async(lambda: self.b.set_monitoring(on), done)
+
     def _page_usb(self):
         page = Adw.PreferencesPage()
         auto_g = Adw.PreferencesGroup()
@@ -1221,6 +1234,15 @@ class Settings(Adw.ApplicationWindow):
         self.diag_row.set_active(self.b.diag_logs())
         self.diag_row.connect("notify::active", self._on_diag_logs)
         lg.add(self.diag_row)
+        self.mon_row = Adw.SwitchRow(
+            title="Monitoring mode",
+            subtitle="Records CPU, graphics, memory, disk, network and every log each second into "
+                     "~/monitoring — for finding slowdowns and drops. Ctrl+Alt+M marks a moment. "
+                     "Save diagnostics includes it.")
+        self.mon_row.add_prefix(Gtk.Image.new_from_icon_name("utilities-system-monitor-symbolic"))
+        self.mon_row.set_active(self.b.monitoring()["saved"])
+        self.mon_row.connect("notify::active", self._on_monitoring)
+        lg.add(self.mon_row)
         d = Adw.ActionRow(title="Save diagnostics", subtitle="Copies the logs to a drive you choose")
         d.add_prefix(Gtk.Image.new_from_icon_name("document-save-symbolic"))
         db = Gtk.Button(label="Save…", valign=Gtk.Align.CENTER)

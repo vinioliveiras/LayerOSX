@@ -96,4 +96,6 @@ file_permissions=(
   ["/usr/local/bin/wifi"]="0:0:755"
   ["/usr/local/bin/usb"]="0:0:755"
   ["/usr/local/bin/macfps"]="0:0:755"
+  ["/usr/local/bin/macmonitor"]="0:0:755"
+  ["/opt/layerosx/kiosk/lib/monitor.py"]="0:0:755"
 )

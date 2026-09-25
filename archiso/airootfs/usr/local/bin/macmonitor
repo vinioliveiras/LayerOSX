@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Monitoring mode: record CPU, GPU, memory, disk, network, the Mac's QEMU
+# threads, Reims' frame rate and every log into ~/monitoring/<session>/
+# (see /opt/layerosx/kiosk/lib/monitor.py for the folder layout).
+#
+#   macmonitor on | off      turn it on/off, and keep it that way across reboots
+#   macmonitor start | stop  just this session (stop writes summary.txt)
+#   macmonitor status        running? which folder, how big, since when
+#   macmonitor mark [text]   put a mark in the timeline ("internet dropped")
+#                            -- Ctrl+Alt+M does the same with no text
+#   macmonitor summary       print the newest session's summary.txt
+# Settings > Maintenance > Monitoring mode is the same switch.
+set -uo pipefail
+STATE_DIR="${LAYEROSX_STATE_DIR:-/var/lib/layerosx}"
+MON=/opt/layerosx/kiosk/lib/monitor.py
+BASE="$HOME/monitoring"
+PIDF="/tmp/layerosx-monitor-$(id -u).pid"
+SESSF="/tmp/layerosx-monitor-$(id -u).session"
+
+running() { [ -s "$PIDF" ] && kill -0 "$(cat "$PIDF")" 2>/dev/null; }
+session() { cat "$SESSF" 2>/dev/null; }
+
+start() {
+    if running; then echo "Monitoring is already running: $(session)"; return 0; fi
+    mkdir -p "$BASE"
+    : > "$SESSF"
+    setsid python3 "$MON" run --dir "$BASE" > "$SESSF" 2>>"$BASE/monitor.err" < /dev/null &
+    echo $! > "$PIDF"
+    for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$SESSF" ] && break; sleep 0.2; done
+    echo "Monitoring started: $(session)"
+}
+
+stop() {
+    if ! running; then echo "Monitoring isn't running."; rm -f "$PIDF"; return 0; fi
+    local pid; pid="$(cat "$PIDF")"
+    kill -TERM "$pid" 2>/dev/null
+    for _ in $(seq 1 60); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done
+    rm -f "$PIDF"
+    echo "Monitoring stopped. Summary: $(session)/summary.txt"
+}
+
+case "${1:-status}" in
+    on)    mkdir -p "$STATE_DIR" && echo on > "$STATE_DIR/monitoring"; start ;;
+    off)   rm -f "$STATE_DIR/monitoring"; stop ;;
+    start) start ;;
+    stop)  stop ;;
+    status)
+        if running; then
+            s="$(session)"
+            echo "Monitoring: running since $(basename "$s") -- $s ($(du -sh "$s" 2>/dev/null | cut -f1))"
+        else
+            echo "Monitoring: off"
+        fi
+        [ "$(cat "$STATE_DIR/monitoring" 2>/dev/null)" = on ] && echo "(on at every start: 'macmonitor off' to stop that)" ;;
+    mark)
+        if running && [ -d "$(session)" ]; then
+            shift
+            printf '%s  MARK: %s\n' "$(date '+%F %T')" "${*:-(Ctrl+Alt+M)}" >> "$(session)/events.log"
+            echo "Marked."
+        else
+            echo "Monitoring isn't running." >&2; exit 1
+        fi ;;
+    summary)
+        s="$(ls -1d "$BASE"/2* 2>/dev/null | tail -n 1)"
+        [ -n "$s" ] || { echo "No monitoring sessions yet."; exit 1; }
+        [ -f "$s/summary.txt" ] || python3 "$MON" summary "$s" >/dev/null
+        cat "$s/summary.txt" ;;
+    *) sed -n '2,15p' "$0"; exit 2 ;;
+esac

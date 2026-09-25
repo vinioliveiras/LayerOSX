@@ -804,6 +804,24 @@ class Backend:
             self._run(["pkill", "-x", "picom"], timeout=5)
         return True, ""
 
+    # Monitoring mode (kiosk/lib/monitor.py via /usr/local/bin/macmonitor):
+    # records everything into ~/monitoring/<session>/ while on.
+    def monitoring(self) -> dict:
+        uid = os.getuid()
+        pid = _read(f"/tmp/layerosx-monitor-{uid}.pid")
+        running = pid.isdigit() and os.path.exists(f"/proc/{pid}")
+        session = _read(f"/tmp/layerosx-monitor-{uid}.session") if running else ""
+        size = 0
+        if session and os.path.isdir(session):
+            for dp, _, fs in os.walk(session):
+                size += sum(os.path.getsize(os.path.join(dp, f)) for f in fs if os.path.exists(os.path.join(dp, f)))
+        return {"saved": _read(os.path.join(self.state_dir, "monitoring")) == "on",
+                "running": running, "session": session, "size_mb": round(size / 1048576, 1)}
+
+    def set_monitoring(self, on: bool) -> Tuple[bool, str]:
+        rc, out = self._run([os.path.join(self.bin, "macmonitor"), "on" if on else "off"], timeout=30)
+        return rc == 0, out.strip()
+
     def screen_target(self) -> str:
         t = _read(os.path.join(self.state_dir, "display-target"))
         return t if t and t != "auto" else "auto"

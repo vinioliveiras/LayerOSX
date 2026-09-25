@@ -122,6 +122,22 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
     [ -r "$QEMU_D_LOG" ] && tail -40 "$QEMU_D_LOG" || echo '(none — release build, or no guest errors)'
 } > "$DIAG" 2>&1
 
+# The newest monitoring-mode session (macmonitor), whole when it's under
+# 300 MB, else its CSVs/summary/events plus the last 20 MB of each log.
+MON_SESSION="$(ls -1d "$HOME"/monitoring/2* 2>/dev/null | tail -n 1)"
+if [ -n "$MON_SESSION" ]; then
+    [ -f "$MON_SESSION/summary.txt" ] || python3 /opt/layerosx/kiosk/lib/monitor.py summary "$MON_SESSION" >/dev/null 2>&1
+    dst="$OUT/monitoring-$(basename "$MON_SESSION")"
+    if [ "$(du -sm "$MON_SESSION" 2>/dev/null | cut -f1)" -lt 300 ] 2>/dev/null; then
+        cp -r "$MON_SESSION" "$dst" 2>/dev/null
+    else
+        mkdir -p "$dst/logs"
+        cp "$MON_SESSION"/*.csv "$MON_SESSION"/*.txt "$MON_SESSION"/*.log "$dst/" 2>/dev/null
+        for f in "$MON_SESSION"/logs/*; do tail -c 20M "$f" > "$dst/logs/$(basename "$f")" 2>/dev/null; done
+    fi
+    { echo; echo "===== MONITORING (newest session: $(basename "$MON_SESSION")) ====="; cat "$MON_SESSION/summary.txt" 2>/dev/null; } >> "$DIAG"
+fi
+
 # Raw logs alongside the summary, so nothing is lost to truncation.
 for f in "$SERIAL_LOG" "$LAUNCHLOG" "$QEMU_D_LOG" /tmp/reims-vgpu-fail.log; do
     [ -r "$f" ] && cp -f "$f" "$OUT/" 2>/dev/null || true

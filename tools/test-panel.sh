@@ -6,7 +6,7 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO/tests/panel"
-python3 -m unittest -v test_backend
+python3 -m unittest -v test_backend test_monitor
 if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
     python3 - <<'PY'
 import os, subprocess, sys, tempfile

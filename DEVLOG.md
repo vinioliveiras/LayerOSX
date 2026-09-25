@@ -4047,3 +4047,48 @@ work across such a crash from the host side.
 features Reims doesn't translate yet; they need a failure log taken right
 after reproducing (TODO).
 
+## Internet dropping: back to slirp, Wi-Fi power saving off
+
+After the switch to passt, the Mac's internet kept stopping "for no reason".
+Two passt defaults don't suit us: it hands the guest an MTU of 65520 over
+DHCP (fine for virtio-net, doubtful for macOS' vmxnet3 driver), and it
+copies the host's address, gateway and DNS once at start — stale as soon as
+the laptop's Wi-Fi reconnects or roams, where slirp re-reads the host's
+resolver. slirp is the default again; passt stays opt-in (`net` = passt)
+with `mtu=1500`, slirp's fixed 10.0.2.15/24 via 10.0.2.2, IPv6 off. The
+multitasking gain came mostly from the disk change, which stays.
+
+Separately, a host-side cause of the same symptom: Wi-Fi power saving,
+which on many laptop chips (Realtek/MediaTek) dozes and drops the link.
+`/etc/NetworkManager/conf.d/layerosx-wifi-powersave.conf` turns it off.
+Monitoring mode's connectivity checks (below) tell the two apart.
+
+## Monitoring mode
+
+Asked for: a switch that records everything — CPU, GPU, memory, kernel and
+logs — in an organised folder, to fix performance problems faster.
+
+- `kiosk/lib/monitor.py run` samples every second from /proc and /sys (GPU
+  every 2 s: `nvidia-smi` for NVIDIA, sysfs for AMD; network checks every
+  5 s: gateway ping, DNS lookup of apple.com, TCP connect to 1.1.1.1:443) and
+  follows the kernel journal, warnings from every service, NetworkManager,
+  the launcher log, macOS' serial log and Reims' failure log (minus its
+  per-second counters) — `journalctl` via `sudo -n`, the kiosk user is in
+  wheel. Output: CSVs with fixed headers flushed every row, `events.log`
+  (timeline incl. PSI stalls, ≥ 90 °C, QEMU start/stop, crashes, network
+  down/up, Ctrl+Alt+M marks), `config.txt` (settings + QEMU command line),
+  `README.txt`, and `summary.txt` at stop (avg/p95/max, outages, busiest
+  QEMU threads, marks).
+- `/usr/local/bin/macmonitor on|off|start|stop|status|mark|summary`;
+  Settings › Maintenance › Monitoring mode; `.xinitrc` starts it when the
+  `monitoring` state file is on; Ctrl+Alt+M = `macmonitor mark`.
+- Limits: 1 GB per session (then samples stop, logs continue), newest 5
+  sessions kept. `macdiag` / Save diagnostics include the newest session
+  (whole under 300 MB, else CSVs + summary + last 20 MB of each log) and
+  append its summary to `diag.txt`.
+- Tested: a real run in a VM (all files written, the fake Reims lines turned
+  into fps rows, a CRASH line in the launcher log landed in events.log, a
+  fake QEMU process was picked up, network checks ok), `macmonitor
+  on/mark/status/off`, the openbox keybind; unit tests for the summary and
+  pruning (`tests/panel/test_monitor.py`). Not yet on the laptop.
+
