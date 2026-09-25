@@ -5,7 +5,10 @@ iso_name="layerosx"
 iso_label="LAYEROSX_$(date +%Y%m)"
 iso_publisher="LayerOSX <https://github.com/vinioliveiras/LayerOSX>"
 iso_application="LayerOSX Live/Install medium"
-iso_version="$(date +%Y.%m.%d)"
+# Date + build number (build.sh writes etc/layerosx/version before mkarchiso),
+# e.g. layerosx-2026.09.25-b43-x86_64.iso.
+_layerosx_build="$(sed -n 's/^build=//p' "$(dirname "${BASH_SOURCE[0]}")/airootfs/etc/layerosx/version" 2>/dev/null)"
+iso_version="$(date +%Y.%m.%d)-b${_layerosx_build:-0}"
 install_dir="layerosx"
 buildmodes=('iso')
 # uefi.systemd-boot is the only mode we actually intend to support

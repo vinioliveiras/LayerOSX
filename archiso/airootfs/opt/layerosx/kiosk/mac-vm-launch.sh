@@ -63,6 +63,7 @@ QEMU_D_LOG="$HOME/mac-vm-qemu.log"   # QEMU -D log: always (Reims messages); + -
 # "Attaching recovery disk" lines belongs to which attempt -- confirmed on
 # real hardware, that ambiguity cost a whole debugging session.
 exec > >(while IFS= read -r _l || [ -n "$_l" ]; do printf '%(%H:%M:%S)T %s\n' -1 "$_l"; done | tee -a "$LOG") 2>&1
+echo "LayerOSX $(tr '\n' ' ' < /etc/layerosx/version 2>/dev/null || echo '(no version file)')"
 
 # Common landing spot for a condition nothing below would ever fix by
 # itself (missing binary/image from an incomplete build, or missing

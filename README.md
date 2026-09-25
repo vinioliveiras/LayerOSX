@@ -241,7 +241,14 @@ cd LayerOSX
 docker-buildx qemu-img mtools git python curl`, starts Docker, checks for
 ~30 GB free) and then `archiso/build.sh`. The first build compiles QEMU +
 Reims in Docker (**30–60+ min**); later builds reuse it. The ISO lands in
-`archiso/out/`.
+`archiso/out/` as `layerosx-<date>-b<build>-x86_64.iso`.
+
+Every build gets a **build number** (one more than the last build of this
+checkout, kept in `archiso/.build-number`) baked into
+`/etc/layerosx/version` with the git commit and date/time. It shows in the
+installer's dialogs, under "LayerOSX" in the Settings sidebar, in Settings ›
+About, in `macstatus`, at the top of every launcher log and in `macdiag` —
+compare it with the ISO's file name to be sure you run the newest build.
 
 Build options (environment variables):
 

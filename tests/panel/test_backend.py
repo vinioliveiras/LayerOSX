@@ -804,6 +804,19 @@ class TestReimsRamCap(FakeMachine):
         self.assertEqual(lb.Backend().resources().ram_auto_mb, lb.Backend.auto_ram_mb(host))
 
 
+class TestVersion(FakeMachine):
+    def test_build_number_shown(self):
+        # an image from before build numbers
+        self.assertEqual(lb.Backend().version_label(), "Version 4cac427")
+        self.assertEqual(lb.Backend().about().build, "")
+        write(os.path.join(self.etc, "version"), "build=43\nversion=5bade9b\nbuilt=2026-09-25 14:32\nmode=release\n")
+        self.assertEqual(lb.Backend().version_label(), "Build 43 · 2026-09-25 14:32")
+        a = lb.Backend().about()
+        self.assertEqual((a.build, a.layerosx_version, a.built), ("43", "5bade9b", "2026-09-25 14:32"))
+        os.remove(os.path.join(self.etc, "version"))
+        self.assertEqual(lb.Backend().version_label(), "Development build")
+
+
 class TestDebugToggles(FakeMachine):
     def test_detailed_logs_and_text_consoles(self):
         lock = os.path.join(self.tmp, "10-layerosx-kiosk-lock.conf")

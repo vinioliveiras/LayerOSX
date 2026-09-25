@@ -177,6 +177,7 @@ MACOS_NAMES = {"high-sierra": "macOS High Sierra", "mojave": "macOS Mojave", "ca
 class About:
     layerosx_version: str
     built: str
+    build: str            # build number (build.sh), "" before builds had one
     mode: str
     machine: str          # vendor + model from DMI
     cpu: str
@@ -1261,6 +1262,14 @@ class Backend:
         return True, ""
 
     # ------------------------------------------------------------------ about
+    def version_label(self) -> str:
+        """Short "Build 43 · 2026-09-25 14:32" for the sidebar / installer
+        (etc/layerosx/version, written by build.sh)."""
+        v = dict(l.split("=", 1) for l in _read(os.path.join(self.etc_dir, "version")).splitlines() if "=" in l)
+        if v.get("build"):
+            return f"Build {v['build']}" + (f" · {v['built']}" if v.get("built") else "")
+        return f"Version {v['version']}" if v.get("version") else "Development build"
+
     def about(self) -> About:
         """The real machine, the Mac it runs and the credits (read-only)."""
         kv = lambda text: dict(l.split("=", 1) for l in text.splitlines() if "=" in l)  # noqa: E731
@@ -1325,6 +1334,7 @@ class Backend:
         gfx = prof.get("gfx") or self.setting("gfx")[0]
         return About(
             layerosx_version=ver.get("version", "development"), built=ver.get("built", ""),
+            build=ver.get("build", ""),
             mode=ver.get("mode", self.mode), machine=machine, cpu=cpu, cpu_threads=threads,
             memory_gb=mem, gpus=gpus, storage=storage, kernel=os.uname().release, macos=macos,
             vm_cpu=prof.get("cpu_model", ""), vm_cores=_int(prof.get("cores", "0")),
@@ -1445,6 +1455,8 @@ def main(argv: List[str]) -> int:
         print(json.dumps(None if v is None else {"percent": v[0], "muted": v[1]}))
     elif what == "drives":
         print(json.dumps([asdict(t) for t in b.log_targets()], indent=2))
+    elif what == "version":
+        print(b.version_label())
     elif what == "fps":
         v = b.mac_fps()
         print("no current frame-rate data (Mac stopped, or not on Reims)" if v is None else f"{v} fps")

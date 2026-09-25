@@ -15,7 +15,13 @@ set -euo pipefail
 
 LOG=/var/log/layerosx-install.log
 exec > >(tee -a "$LOG") 2>&1
-echo "===== LayerOSX install: $(date -Is) ====="
+# Which build this ISO is (build.sh: etc/layerosx/version) -- in every
+# dialog title, so it's obvious whether the USB has the newest build.
+BUILD_LABEL="$(sed -n 's/^build=//p' /etc/layerosx/version 2>/dev/null)"
+BUILD_WHEN="$(sed -n 's/^built=//p' /etc/layerosx/version 2>/dev/null)"
+if [ -n "$BUILD_LABEL" ]; then BUILD_LABEL="build $BUILD_LABEL${BUILD_WHEN:+ · $BUILD_WHEN}"
+elif [ -n "$BUILD_WHEN" ]; then BUILD_LABEL="built $BUILD_WHEN"; fi
+echo "===== LayerOSX install: $(date -Is) -- ${BUILD_LABEL:-development build} ====="
 
 # Dialogs use the same look as the installed system (default Adwaita,
 # rounded by picom -- started in the live .xinitrc), not the old forced
@@ -30,12 +36,12 @@ rm -f ~/.config/gtk-3.0/gtk.css ~/.config/gtk-3.0/settings.ini 2>/dev/null || tr
 # leaving you looking at a dead black screen with no explanation.
 trap 'exec 3>&- 2>/dev/null || true
     bash /opt/layerosx/kiosk/lib/save-logs-to-usb.sh 2>/dev/null || true
-    zenity --error --width=560 --title="LayerOSX — Install" \
+    zenity --error --width=560 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
     --text="Something went wrong during install and it stopped (see the log for details).\n\nLog: $LOG\n\nA copy was also just saved to the USB drive itself (layerosx-logs/ folder) if one was reachable — readable from any machine, no need to type anything here.\n\nOpen a terminal (Ctrl+Alt+F2, login: root / layerosx) to look, then reboot and try again — nothing was rebooted, so you are not stuck with a broken install." \
     2>/dev/null || true' ERR
 
-zenity --info --width=560 --title="LayerOSX — Install" \
-    --text="Next: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself -- EXCEPT when reinstalling over LayerOSX and you want to keep your Mac: then leave that partition as it is (the installer will offer to keep it). When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press Ctrl+Alt+T any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
+zenity --info --width=560 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
+    --text="LayerOSX ${BUILD_LABEL:-development build}\n\nNext: GParted opens so you can partition the disk.\n\nCreate at least:\n  • an EFI System Partition (fat32, ~512MB, flag 'esp'/'boot')\n  • a root partition (ext4, using the rest of the disk)\n\nFormat both from inside GParted itself -- EXCEPT when reinstalling over LayerOSX and you want to keep your Mac: then leave that partition as it is (the installer will offer to keep it). When you're done, apply the changes and close GParted to continue.\n\nTip: once the install itself is running, press Ctrl+Alt+T any time to open a terminal showing exactly what's happening (safe to close again, doesn't pause anything)." \
     || exit 1
 
 gparted
@@ -49,18 +55,18 @@ if [ "${#ROWS[@]}" -eq 0 ]; then
 fi
 
 ROOT_PART=$(zenity --list --width=600 --height=320 \
-    --title="LayerOSX — Install" \
+    --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
     --text="Which partition is the ROOT filesystem (/)? Its entire content will be replaced." \
     --column="Partition" --column="Size" --column="Filesystem" "${ROWS[@]}")
 [ -n "$ROOT_PART" ] || exit 1
 
 ESP_PART=$(zenity --list --width=600 --height=320 \
-    --title="LayerOSX — Install" \
+    --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
     --text="Which partition is the EFI System Partition (fat32, ~512MB)?" \
     --column="Partition" --column="Size" --column="Filesystem" "${ROWS[@]}")
 [ -n "$ESP_PART" ] || exit 1
 
-zenity --question --width=480 --title="LayerOSX — Install" \
+zenity --question --width=480 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
     --text="This will ERASE the content of $ROOT_PART and install LayerOSX there, using $ESP_PART as the EFI partition.\n\nThis cannot be undone. Continue?" \
     || exit 1
 
@@ -94,7 +100,7 @@ mount "$ESP_PART" /mnt/boot
 # partition is removed, the new system is copied, and the Mac is put back.
 KEEP_MAC=0
 if [ -e /mnt/var/lib/layerosx/macos.qcow2 ]; then
-    if zenity --question --width=520 --title="LayerOSX — Install" \
+    if zenity --question --width=520 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
         --ok-label="Keep my Mac" --cancel-label="Erase it" \
         --text="$ROOT_PART already has a LayerOSX Mac (macOS, your files in it, and its settings).\n\nKeep my Mac: LayerOSX is reinstalled around it; macOS, your files and settings stay.\nErase it: start from scratch (macOS will be installed again)." 2>/dev/null; then
         KEEP_MAC=1
@@ -129,7 +135,7 @@ xsetroot -solid "#000000" 2>/dev/null || true
 PROGRESS_FIFO=$(mktemp -u /tmp/layerosx-progress.XXXXXX)
 mkfifo "$PROGRESS_FIFO"
 zenity --progress --no-cancel --auto-close \
-    --title="LayerOSX — Install" --text="Starting…" --width=560 \
+    --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" --text="Starting…" --width=560 \
     < "$PROGRESS_FIFO" 2>/dev/null &
 ZENITY_PID=$!
 exec 3>"$PROGRESS_FIFO"
@@ -251,7 +257,7 @@ if [ -z "$KERNEL_SRC" ]; then
     find /run/archiso -maxdepth 4 >&2 2>&1
     echo "=== end diagnostics ===" >&2
     bash /opt/layerosx/kiosk/lib/save-logs-to-usb.sh 2>/dev/null || true
-    zenity --error --width=560 --title="LayerOSX — Install" \
+    zenity --error --width=560 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
         --text="Could not find the kernel anywhere (looked for the build-time stash and the boot medium). A diagnostic dump was saved to the USB drive's layerosx-logs/ folder if one was reachable.\n\nMake sure you're still booted from the LayerOSX USB/ISO, then reboot and try again." \
         2>/dev/null || true
     exit 1
@@ -358,7 +364,7 @@ progress 100 "Done."
 exec 3>&-
 wait "$ZENITY_PID" 2>/dev/null || true
 
-zenity --info --width=480 --title="LayerOSX — Install" \
+zenity --info --width=480 --title="LayerOSX — Install${BUILD_LABEL:+ ($BUILD_LABEL)}" \
     --text="Done. Remove the installation media, then reboot." \
     --ok-label="Reboot now"
 systemctl reboot

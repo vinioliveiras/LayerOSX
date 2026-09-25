@@ -27,6 +27,7 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
 {
     printf 'LayerOSX diagnostics — %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf 'build mode: %s\n' "$(cat /etc/layerosx/mode 2>/dev/null || echo '(unknown)')"
+    printf 'LayerOSX: %s\n' "$(tr '\n' ' ' < /etc/layerosx/version 2>/dev/null || echo '(no version file)')"
     printf 'host: %s\n' "$(uname -srm 2>/dev/null)"
 
     _sec "HOST CPU"

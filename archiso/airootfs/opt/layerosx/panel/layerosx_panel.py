@@ -234,6 +234,8 @@ class Settings(Adw.ApplicationWindow):
         texts.append(Gtk.Label(label="LayerOSX", xalign=0, css_classes=["title"]))
         self.side_status = Gtk.Label(label="…", xalign=0, css_classes=["sub"])
         texts.append(self.side_status)
+        # Which build this is, always visible (etc/layerosx/version).
+        texts.append(Gtk.Label(label=self.b.version_label(), xalign=0, css_classes=["sub", "dim-label"]))
         card.append(texts)
         box.append(card)
 
@@ -1442,7 +1444,8 @@ class Settings(Adw.ApplicationWindow):
         # One ISO for everyone now; only an old debug build still says so.
         mode = " · Debug build" if a.mode == "debug" else ""
         self.about_version.set_label(
-            f"Version {a.layerosx_version}" + (f" · built {a.built}" if a.built else "") + mode)
+            (f"Build {a.build} · " if a.build else "") + f"Version {a.layerosx_version}"
+            + (f" · built {a.built}" if a.built else "") + mode)
 
         def group(title, rows, description=None):
             g = Adw.PreferencesGroup(title=title, description=description)

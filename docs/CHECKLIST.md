@@ -1176,6 +1176,16 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5l. Build number
+
+- `./rebuild.sh` prints "==> LayerOSX build N (…)"; the ISO in
+  `archiso/out/` is `layerosx-<date>-bN-x86_64.iso`; the next build is N+1.
+- Live ISO: the installer's first dialog says "LayerOSX build N · <date>",
+  titles say "LayerOSX — Install (build N · …)".
+- Installed: Settings sidebar shows "Build N · <date time>" under LayerOSX;
+  About shows "Build N · Version <commit> · built …"; `macstatus` and the
+  first line of `mac-vm.log` for that start show it too.
+
 ### 5.5k. Unplug the screen in use; Wi-Fi page
 
 - Mac on the external monitor (laptop screen off), unplug it: within ~5 s

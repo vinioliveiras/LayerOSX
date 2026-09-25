@@ -34,10 +34,18 @@ echo "==================================================================="
 # system rsynced from it) both carry it. Regenerated every build, gitignored.
 mkdir -p airootfs/etc/layerosx
 printf '%s\n' "$MODE" > airootfs/etc/layerosx/mode
-# Version shown in LayerOSX Settings > About: git commit (+ "-dirty" when built
-# from uncommitted changes) and build date. Regenerated every build, gitignored.
+# Version: a build number that goes up by one on every build of this checkout
+# (archiso/.build-number, gitignored), the git commit (+ "-dirty" when built
+# from uncommitted changes) and the build date/time. Shown by the installer,
+# LayerOSX Settings (sidebar + About), the launcher log and macdiag, and put
+# in the ISO's file name -- so "am I running the newest build?" is one look.
+# Regenerated every build, gitignored.
+_build=$(( $(cat .build-number 2>/dev/null || echo 0) + 1 ))
+echo "$_build" > .build-number
 _ver="$(git -C .. describe --always --dirty 2>/dev/null || echo unknown)"
-printf 'version=%s\nbuilt=%s\nmode=%s\n' "$_ver" "$(date +%Y-%m-%d)" "$MODE" > airootfs/etc/layerosx/version
+printf 'build=%s\nversion=%s\nbuilt=%s\nmode=%s\n' "$_build" "$_ver" "$(date '+%Y-%m-%d %H:%M')" "$MODE" \
+    > airootfs/etc/layerosx/version
+echo "==> LayerOSX build $_build ($_ver, $(date '+%Y-%m-%d %H:%M'))"
 
 # Maintenance terminal (Ctrl+Alt+T / Settings > Maintenance):
 #   open (default) -> available; asks for a password only if the user set a

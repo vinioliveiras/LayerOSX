@@ -15,6 +15,7 @@ CLAUDE.md
 archiso/airootfs/etc/layerosx/mode
 archiso/airootfs/etc/layerosx/terminal
 archiso/airootfs/etc/layerosx/version
+archiso/.build-number
 archiso/airootfs/etc/X11/xorg.conf.d/10-layerosx-kiosk-lock.conf
 archiso/airootfs/opt/layerosx/lib/
 archiso/airootfs/opt/layerosx/opencore/*.qcow2

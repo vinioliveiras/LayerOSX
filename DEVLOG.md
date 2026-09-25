@@ -4198,3 +4198,16 @@ drawn as a coloured switch in the off position. It now uses
 `notify::active`, snaps back on while the dialog is up, and goes grey-off
 once confirmed, like every other switch.
 
+## Build numbers
+
+To tell at a glance whether the machine runs the newest build: `build.sh`
+increments `archiso/.build-number` (gitignored, per checkout) and writes
+`build=N`, `version=<git describe --dirty>`, `built=<date time>` and `mode`
+to `etc/layerosx/version`; `profiledef.sh` puts the number in the ISO name
+(`layerosx-2026.09.25-b43-x86_64.iso`). Shown in: every installer dialog
+title and the first dialog's text, the Settings sidebar under "LayerOSX"
+(`Backend.version_label()`: "Build 43 · 2026-09-25 14:32"), Settings ›
+About, `macstatus`, the first line the launcher logs on each start, and
+`macdiag`'s header. `layerosx_backend.py version` prints the label.
+Tests: 66.
+

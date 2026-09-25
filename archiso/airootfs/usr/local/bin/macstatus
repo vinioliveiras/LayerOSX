@@ -4,6 +4,7 @@ S=/var/lib/layerosx
 source /opt/layerosx/kiosk/lib/settings.sh; gfx=$(effective_setting gfx); verb=$(effective_setting verbose); aud=$(effective_setting audio)
 cpu=$(awk -F': ' '/^vendor_id/{print $2; exit}' /proc/cpuinfo)
 echo "===== macOS VM status ====="
+echo "  LayerOSX : $(python3 /opt/layerosx/panel/layerosx_backend.py version 2>/dev/null || echo '?')"
 echo "  host CPU : $cpu"
 echo "  gpu      : $gfx      (gpu reims|vmware)"
 echo "  verbose  : $verb     (verbose on|off)  -- on = full boot logs"
