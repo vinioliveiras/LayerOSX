@@ -306,10 +306,16 @@ devices.
   macOS HDA driver (VoodooHDA/AppleALC) in OpenCore — to evaluate.
 
 - **3D in the browser (WebGL games like venge.io / krunker.io) and
-  Photomator RAW editing** — broken drawing, one crash. Metal work Reims
-  can't translate yet (compute / Core Image paths). Needs a Reims failure
-  log taken right after reproducing; likely to report upstream (Reims is
-  alpha).
+  Photomator RAW editing** — broken drawing, one crash. Reims translation
+  gaps, measured (DEVLOG, "First monitoring session"): texture descriptors
+  with 32769 mip levels (`draw_prepare_texture_resolve_missing`, draws
+  skipped) and compute writes to storage texture format 0x6e
+  (`linear_tex_fmt_storage`). Report upstream with those lines.
+- **Freezes of several seconds** — macOS stops submitting frames while the
+  host is idle (guest-side). Retest with Detailed logs off and on the AMD
+  iGPU; check whether they follow Reims refusals.
+- **Huge pages not applied** (`ShmemHugePages` 0 despite `[advise]`) —
+  next monitoring run records THP counters to find out why.
 
 **Next**
 

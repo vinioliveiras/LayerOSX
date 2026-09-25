@@ -4092,3 +4092,48 @@ logs — in an organised folder, to fix performance problems faster.
   on/mark/status/off`, the openbox keybind; unit tests for the summary and
   pruning (`tests/panel/test_monitor.py`). Not yet on the laptop.
 
+## First monitoring session (ASUS TUF A15, 7 minutes: Photomator RAW, krunker.io, venge.io)
+
+What the data says:
+
+- **The RAM fix worked.** No `import_exceeds_heap`; Reims logged "first guest
+  frame presented via engine resident (same-device zero-copy)".
+- **The host is not the bottleneck.** CPU 16% average (p95 36%), no memory
+  or I/O pressure (PSI ≈ 0), disk and Wi-Fi fine, no host network outage,
+  CPU up to 87 °C with normal clocks. The QEMU threads are the 8 vCPUs
+  (15–42% each) and the main loop (31%); Reims' own threads ~1%.
+- **The freeze the user marked (Ctrl+Alt+M) is inside macOS.** From that
+  second Reims received nothing at all to draw (no command batches, drain
+  0.1% busy, no GPU interrupts pending) while the vCPUs sat at 20–30% —
+  macOS stopped submitting frames, it wasn't waiting on the host. Candidates:
+  a GPU command Reims refused (below) leaving WindowServer waiting, or
+  guest-side timing. Detailed logs and the startup log were still on in this
+  run (serial kernel debugging costs time).
+- **Photomator / WebGL games:** Reims refusals, all first seen in those apps:
+  `draw_prepare_texture_resolve_missing` (137 skipped draws) with texture
+  descriptors declaring 32769 mip levels (`texture_desc_levels_over_cap
+  declared=32769 cap=16`) — a descriptor Reims can't decode yet — and
+  `compute_stage_tex linear_fail reason=linear_tex_fmt_storage fmt 0x6e`
+  (a compute shader writing a storage texture format Reims can't back
+  linearly: Core Image in Photomator). Both are Reims translation gaps, to
+  report upstream with these lines. Two `sync_exec_lock_hold` of ~0.45 s
+  (one at boot) are Reims-side hitches.
+- **NVIDIA is "discrete" to Reims:** `vk_guest_sampled
+  reason=discrete_topology` — some guest textures get copied rather than
+  used in place. The Radeon 680M shares system RAM (integrated), which is
+  worth comparing (Settings › Displays › Graphics card).
+- **Huge pages didn't take:** shmem THP was `[advise]` but
+  `ShmemHugePages` stayed 0 with 44 GB of guest RAM in shmem. Not
+  explained yet; the monitor now records `thp_file_alloc` /
+  `thp_file_fallback` (/proc/vmstat) and QEMU's `ShmemPmdMapped` so the next
+  run shows whether huge pages were never tried or tried and refused.
+- macOS' own log: `AppleUSBAudio … Resetting engine due to immediate error
+  on write` 3× (audio glitches from macOS' side) and
+  `X86PlatformPlugin … Failed to get CPU P States / C States` (no CPU power
+  management in the guest; expected in a VM).
+
+Monitor fixes from this session: the "Reims: GPU device lost" events were a
+false positive (Reims' per-second counters include `device_lost=0`) — now
+only a non-zero count or a line of its own counts; the first refusal of
+each kind becomes an event (and shows in the summary).
+

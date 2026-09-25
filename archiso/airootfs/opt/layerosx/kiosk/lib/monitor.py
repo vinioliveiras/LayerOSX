@@ -252,6 +252,7 @@ class Monitor:
         os.makedirs(f"{root}/logs", exist_ok=True)
         self.events = open(f"{root}/events.log", "a", buffering=1)
         self.over_budget = False
+        self.seen_refusals = set()
 
     def event(self, msg):
         self.events.write(f"{now()}  {msg}\n")
@@ -313,7 +314,8 @@ class Monitor:
         sysc = Csv(f"{self.root}/system.csv", ["time", "load1", "mem_used_mb", "mem_avail_mb", "shmem_mb",
                    "shmem_hugepages_mb", "anon_hugepages_mb", "dirty_mb", "writeback_mb", "swap_used_mb",
                    "psi_cpu_some", "psi_mem_some", "psi_mem_full", "psi_io_some", "psi_io_full",
-                   "cpu_temp_c", "cpu_mhz_avg", "cpu_mhz_max", "cpu_busy_pct"])
+                   "cpu_temp_c", "cpu_mhz_avg", "cpu_mhz_max", "cpu_busy_pct",
+                   "thp_file_alloc", "thp_file_fallback", "qemu_shmem_pmd_mb"])
         cpuc = Csv(f"{self.root}/cpu.csv", ["time"] + cores)
         qc = Csv(f"{self.root}/qemu.csv", ["time", "pid", "cpu_pct", "rss_mb", "threads"])
         tc = Csv(f"{self.root}/threads.csv", ["time", "tid", "name", "cpu_pct"])
@@ -346,9 +348,15 @@ class Monitor:
             ps = [psi("cpu")[0], *psi("memory"), *psi("io")]
             temp = cpu_temp()
             mhz = cpu_mhz()
+            vm = dict(l.split() for l in rd(f"{PROC}/vmstat").splitlines() if l.count(" ") == 1)
+            pmd = ""
+            if pid and tick % 10 == 0:
+                sm = re.search(r"ShmemPmdMapped:\s+(\d+)", rd(f"{PROC}/{pid}/smaps_rollup"))
+                pmd = int(sm.group(1)) // 1024 if sm else ""
             sysc.row([ts, rd(f"{PROC}/loadavg").split(" ")[0], mb("MemTotal") - mb("MemAvailable"), mb("MemAvailable"),
                       mb("Shmem"), mb("ShmemHugePages"), mb("AnonHugePages"), mb("Dirty"), mb("Writeback"),
-                      mb("SwapTotal") - mb("SwapFree"), *ps, temp, *mhz, busy.get("cpu", "")])
+                      mb("SwapTotal") - mb("SwapFree"), *ps, temp, *mhz, busy.get("cpu", ""),
+                      vm.get("thp_file_alloc", ""), vm.get("thp_file_fallback", ""), pmd])
             if isinstance(ps[2], float) and ps[2] > 10 and not high_psi:
                 self.event(f"memory pressure: {ps[2]}% of time fully stalled on memory (avg10)")
             if isinstance(ps[4], float) and ps[4] > 20 and not high_psi:
@@ -425,11 +433,18 @@ class Monitor:
             ms += int(m.group(1))
             asked += int(m.group(2))
             fresh += int(m.group(3))
-        refusals = len(re.findall(r"refused_by=|_declined|import_exceeds_heap|device_lost|fail_event", chunk))
+        refusals = len(re.findall(r"refused_by=|_declined|import_exceeds_heap|fail_event", chunk))
         if ms:
             rc.row([ts, fresh * 1000.0 / ms, asked, refusals])
-        if "device_lost" in chunk:
+        # Reims' per-second counters carry "device_lost=0"; only a non-zero
+        # count or a line of its own is a lost device.
+        if re.search(r"device_lost=[1-9]|^(?!OFF )\S*device_lost", chunk, re.M):
             self.event("Reims: GPU device lost")
+        for reason in sorted(set(re.findall(r"refused_by=(\w+)|reason=(linear_tex_fmt_storage|draw_prepare_texture_resolve_missing|import_exceeds_heap)", chunk))):
+            r = reason[0] or reason[1]
+            if r not in self.seen_refusals:
+                self.seen_refusals.add(r)
+                self.event(f"Reims: first refusal of kind {r} (drawing/compute it can't translate yet)")
         return pos + len(raw)
 
     def netcheck_loop(self):
@@ -591,7 +606,7 @@ def write_summary(root):
         for name, v in sorted(tot.items(), key=lambda kv: -kv[1])[:12]:
             lines.append(f"  {name:<28} {v / samples:6.1f}")
         lines.append("")
-    notable = [e for e in ev if any(k in e for k in ("MARK:", "NETWORK DOWN", "network back", "CRASH", "pressure",
+    notable = [e for e in ev if any(k in e for k in ("MARK:", "NETWORK DOWN", "network back", "CRASH", "pressure", "Reims:",
                                                      "temperature", "device lost",
                                                      "QEMU started", "not running", "FATAL", "Reims couldn't"))]
     if notable:
