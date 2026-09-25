@@ -175,6 +175,29 @@ fi
 } | tee "$RUN/run.log"
 [ "$PRINT" = 1 ] && exit 0
 
+# Which GPU drives which screen, and which one the desktop composites on.
+# A Reims window rendered on one GPU and shown on a screen / compositor
+# running on the other has to cross GPUs at every frame -- the first thing
+# to rule out when one GPU works and the other doesn't. -> host-gpu.txt
+{
+    echo "session=${XDG_SESSION_TYPE:-?} desktop=${XDG_CURRENT_DESKTOP:-?} x11_forced=$X11"
+    echo "--- GPUs (PCI)"
+    lspci -nnk 2>/dev/null | grep -A3 -E 'VGA|3D controller|Display controller' | grep -vE '^--$'
+    echo "--- screens per GPU (/sys/class/drm)"
+    for c in /sys/class/drm/card[0-9]*; do
+        [ -e "$c/device/driver" ] || continue
+        case "$c" in *-*) continue ;; esac
+        drv="$(basename "$(readlink -f "$c/device/driver")")"
+        boot="$(cat "$c/device/boot_vga" 2>/dev/null)"
+        conns="$(for o in "$c"-*; do [ -e "$o/status" ] && [ "$(cat "$o/status")" = connected ] && printf '%s ' "${o##*/$(basename "$c")-}"; done)"
+        echo "$(basename "$c") driver=$drv boot_vga=${boot:-?} connected: ${conns:-none}"
+    done
+    echo "--- X/XWayland renderer (what an X11 window is composited with)"
+    command -v glxinfo >/dev/null && env -u WAYLAND_DISPLAY glxinfo -B 2>/dev/null | grep -E 'OpenGL renderer|OpenGL vendor' || echo "(glxinfo not installed: pacman -S mesa-utils)"
+    echo "--- Vulkan devices"
+    command -v vulkaninfo >/dev/null && vulkaninfo --summary 2>/dev/null | grep -E 'deviceName|driverName|deviceType' || echo "(vulkaninfo not installed: pacman -S vulkan-tools)"
+} > "$RUN/host-gpu.txt" 2>&1
+
 # Reims appends its always-on failure log to /tmp/reims-vgpu-fail.log across
 # runs; remember where this run starts so only its part is copied.
 REIMS_FAIL=/tmp/reims-vgpu-fail.log
@@ -210,7 +233,12 @@ if [ "$RC" -gt 128 ]; then E="killed by signal $((RC-128))"; else E="exit status
 echo "QEMU ended: $E after $(( $(date +%s) - START ))s" | tee -a "$RUN/run.log"
 if [ -r "$REIMS_FAIL" ]; then
     tail -c +"$REIMS_FAIL_START" "$REIMS_FAIL" > "$RUN/reims-fail.log" 2>/dev/null
-    _ref="$(grep -c 'refused_by=' "$RUN/reims-fail.log" 2>/dev/null || echo 0)"
+    _ref="$(grep -c 'refused_by=' "$RUN/reims-fail.log" 2>/dev/null)"; _ref="${_ref:-0}"
     echo "Reims failure log: $RUN/reims-fail.log ($_ref draw refusals)" | tee -a "$RUN/run.log"
 fi
-echo "==> logs: $RUN"
+if grep -qE 'vk_window_create_swapchain|SURFACE_LOST|failed to import supplied dmabufs|window_attach_engine' "$RUN/run.log"; then
+    echo "==> The Reims window couldn't present on this desktop (see run.log). Usually the GPU drawing"
+    echo "    the Mac isn't the one this desktop composites on / drives the screen -- see host-gpu.txt."
+    echo "    That's this desktop's display stack, not the Mac; LayerOSX's kiosk (Xorg) behaves differently."
+fi
+echo "==> logs: $RUN (host GPUs/screens: host-gpu.txt)"

@@ -4211,3 +4211,22 @@ About, `macstatus`, the first line the launcher logs on each start, and
 `macdiag`'s header. `layerosx_backend.py version` prints the label.
 Tests: 66.
 
+## AMD on the build machine: the desktop can't show it; run-mac-here reports the GPU layout
+
+`tools/run-mac-here.sh --gpu amd --x11` on the CachyOS desktop (GNOME,
+Wayland) ends at once with `vk_window_create_swapchain
+vk_result=Initialization_of_an_object_has_failed`; without `--x11` the day
+before, GNOME refused the frames (`failed to import supplied dmabufs: Could
+not bind the given EGLImage to a CoglTexture2D`, then `SURFACE_LOST`). Both
+are the desktop's display stack failing to take a Vulkan swapchain rendered
+by the Radeon — typical when the compositor / XWayland runs on the other GPU
+of a hybrid laptop — not the Mac or Reims' translation. The LayerOSX kiosk
+(Xorg, the AMD iGPU as primary: panel `eDP-1`, NVIDIA outputs as `*-1-0`)
+did present an AMD session ("same-device zero-copy").
+
+run-mac-here now writes `host-gpu.txt` for every run — which driver owns
+which connected screen (`/sys/class/drm`), `boot_vga`, the X/XWayland
+renderer (`glxinfo -B`), the Vulkan devices (`vulkaninfo --summary`) — and
+says so when the Reims window can't present. Also fixed its "0\n0 draw
+refusals" count.
+
