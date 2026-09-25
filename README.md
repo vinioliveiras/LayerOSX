@@ -21,8 +21,7 @@ where macOS comes from, once.
 
 ## Status
 
-Boots and runs macOS (Ventura tested) on real hardware — an ASUS TUF A15
-(Ryzen 7 7735HS, RTX 4060 + Radeon 680M) — with Reims acceleration. Still
+Boots and runs macOS (Ventura tested) on real hardware — with Reims acceleration. Still
 alpha: Reims itself is alpha, and several
 recent features are marked "not yet on hardware" in
 [docs/CHECKLIST.md](docs/CHECKLIST.md), the step-by-step test plan.
