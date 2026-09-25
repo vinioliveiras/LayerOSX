@@ -5,8 +5,12 @@ The Mac has ONE display (Reims advertises a single display port, VMware/VGA
 have one head), so with several monitors plugged in the question is only which
 one shows it and what the others do. The choice lives in the state dir:
 
-  display-target   xrandr output name (e.g. HDMI-1-0), absent/"auto" = leave
-                   Xorg's own layout alone (the pre-existing behaviour)
+  display-target   xrandr output name (e.g. HDMI-1-0); absent/"auto" =
+                   Automatic: an external screen when one is plugged in (the
+                   one plugged in last), else the built-in one -- plugging or
+                   unplugging a monitor moves the Mac by itself. A machine
+                   with no built-in screen and only external ones is left as
+                   Xorg lays it out.
   display-others   "off" (default) or "mirror" (same picture as the Mac's screen)
   display-modes    JSON {output: {"size": "WxH" | null, "rate": Hz | null}} --
                    a fixed resolution / refresh rate per screen (null size =
@@ -23,8 +27,9 @@ Commands:
           screen back on (never leave the user with nothing lit). No-op when
           the layout already matches (no flicker on every relaunch).
   watch   poll every 3 s (xrandr --current: no re-probe); when screens are
-          plugged/unplugged and a choice exists, apply again and move the
-          Mac's window onto its screen. Started from .xinitrc.
+          plugged/unplugged, apply again, move the Mac's window onto its
+          screen (re-fullscreened there, so Reims scales to the new size) and
+          say where the Mac went. Started from .xinitrc.
 
 Run by mac-vm-launch.sh before each launch (apply) and by the panel (list).
 Env: LAYEROSX_STATE_DIR overrides the state dir (tests). stdlib only.
@@ -42,6 +47,7 @@ BUILTIN = re.compile(r"^(eDP|LVDS|DSI)", re.I)
 KINDS = (("HDMI", "HDMI"), ("DP", "DisplayPort"), ("DVI", "DVI"), ("VGA", "VGA"),
          ("USB", "USB-C"), ("Virtual", "Virtual"))
 MAC_WINDOWS = ("^Reims vGPU$", "^QEMU")
+LAST_PLUGGED = os.environ.get("LAYEROSX_DISPLAY_LAST", f"/tmp/layerosx-display-last-plugged-{os.getuid()}")
 
 
 def _read(name):
@@ -219,6 +225,30 @@ def plan(outs, target, others, modes=None):
     return args
 
 
+def effective_target(outs, target):
+    """The output the Mac should be on: the chosen one; on Automatic, an
+    external screen when one is connected (the last one plugged in, else the
+    first by name), else the built-in one. "" = leave Xorg's layout alone (no
+    built-in screen, nothing external either: a desktop's own arrangement)."""
+    if target:
+        return target
+    connected = [o for o in outs if o["connected"]]
+    ext = [o for o in connected if not o["builtin"]]
+    builtin = next((o for o in connected if o["builtin"]), None)
+    if ext and builtin:
+        last = _read_path(LAST_PLUGGED)
+        return next((o["name"] for o in ext if o["name"] == last), ext[0]["name"])
+    return ""
+
+
+def _read_path(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
 def _mac_screen(outs, target):
     t = next((o for o in outs if o["name"] == target and o["active"]), None)
     return t or next((o for o in outs if o["primary"] and o["active"]), None) \
@@ -237,14 +267,20 @@ def follow(outs, target):
         ids = subprocess.run(["xdotool", "search", "--name", pattern],
                              capture_output=True, text=True).stdout.split()
         for wid in ids:
+            # A fullscreen window is pinned to its old monitor's geometry:
+            # drop fullscreen, move/size it onto the Mac's screen, fullscreen
+            # it again there (Reims then scales the Mac to the new size).
+            subprocess.run(["xdotool", "windowstate", "--remove", "FULLSCREEN", wid], capture_output=True)
             subprocess.run(["xdotool", "windowmove", wid, str(s["x"]), str(s["y"]),
                             "windowsize", wid, str(s["width"]), str(s["height"])],
                            capture_output=True)
+            subprocess.run(["xdotool", "windowstate", "--add", "FULLSCREEN", wid], capture_output=True)
 
 
 def apply(quiet=False):
     target, others = settings()
     outs = query()
+    target = effective_target(outs, target)
     args = plan(outs, target, others, saved_modes())
     if args:
         if not quiet:
@@ -283,18 +319,39 @@ def connected_now():
     return tuple(sorted(m.group(1) for m in re.finditer(r"^(\S+) connected", out, re.M)))
 
 
+def notify(text):
+    """A short notice above the Mac (openbox keeps LayerOSX* windows on top)."""
+    if shutil.which("zenity"):
+        subprocess.Popen(["zenity", "--info", "--width=380", "--timeout=6", "--no-wrap",
+                          "--title=LayerOSX — Displays", f"--text={text}"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
 def watch():
     """Re-apply the screen choice on plug/unplug. Polls the cheap
     connected_now(); the full query() (a real probe) runs only when something
-    actually changed and a choice exists."""
+    actually changed."""
     last = None
     while True:
         seen = connected_now()
         if last is not None and seen != last:
-            target, _ = settings()
-            if target or saved_modes():
-                time.sleep(2)            # EDID settling right after a plug
-                apply(quiet=True)
+            plugged = [n for n in seen if n not in last and not BUILTIN.match(n)]
+            if plugged:
+                try:
+                    with open(LAST_PLUGGED, "w") as f:
+                        f.write(plugged[-1] + "\n")
+                except OSError:
+                    pass
+            time.sleep(2)                # EDID settling right after a plug
+            q = query()
+            before = _mac_screen(q, effective_target(q, settings()[0]))
+            apply(quiet=True)
+            outs = query()
+            s = _mac_screen(outs, effective_target(outs, settings()[0]))
+            if s and (not before or before["name"] != s["name"] or plugged):
+                hint = ("\nOn a 4K screen, macOS can switch to 3840 × 2160 in System Settings › Displays."
+                        if s["width"] >= 3840 else "")
+                notify(f"The Mac is now on {s['label']} ({s['width']} × {s['height']}).{hint}")
         last = seen
         time.sleep(3)
 

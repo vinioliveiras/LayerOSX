@@ -4137,3 +4137,35 @@ false positive (Reims' per-second counters include `device_lost=0`) — now
 only a non-zero count or a line of its own counts; the first refusal of
 each kind becomes an event (and shows in the summary).
 
+## Plugging a monitor in or out moves the Mac
+
+Asked: detect a monitor plugged in / removed over HDMI and update the Mac.
+
+What the Mac itself can see: Reims gives macOS **one** display with a fixed
+list of modes (1920×1080 default, 1440×1080, 1280×1024, 3840×2160, all
+advertised at 120 Hz) and no hotplug, so macOS never sees a second monitor
+appear. What we can do is move that one display: the Reims window is
+borderless-fullscreen and scales the Mac's picture to whatever screen it's
+on.
+
+- **Automatic now means "follow the external screen":**
+  `displays.py effective_target()` picks, when nothing is chosen, an
+  external screen if one is connected (the one plugged in last, else the
+  first by name) as long as there's a built-in screen, else the built-in
+  one. A machine with only external screens is left as Xorg lays it out.
+  Other screens follow "Other screens" (off / mirror), now also on
+  Automatic.
+- `displays.py watch` (already polling `xrandr --current` every 3 s) now
+  acts on every plug/unplug, not only when a screen was chosen: remembers
+  the newly plugged output, applies the layout, and moves the Mac's window
+  there — dropping and re-adding fullscreen with `xdotool windowstate`,
+  since a fullscreen window stays pinned to its old monitor's geometry —
+  then shows a 6 s notice ("The Mac is now on LG ULTRAGEAR (1920 × 1080)"; on
+  a 4K screen, a hint that macOS can switch to 3840 × 2160 in System
+  Settings › Displays).
+- Unplugging the external screen brings the Mac back to the built-in one
+  the same way.
+- Settings › Displays › Screens explains Automatic; `Backend.mac_screen()`
+  mirrors the rule. Tests: 64 (effective_target cases, the re-fullscreen
+  calls). Not yet on hardware.
+

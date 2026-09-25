@@ -599,19 +599,20 @@ class Settings(Adw.ApplicationWindow):
                      ([f"{target} (not connected)"] if target != "auto" and target not in names else [])
             self._set_choices(self.screen_row, labels, self._screen_values.index(target))
             if target == "auto":
-                sub = "Linux's own screen layout" if len(screens) > 1 else ""
+                sub = ("An external screen when one is plugged in, else the built-in one — "
+                       "plugging or unplugging moves the Mac" if len(screens) > 1 else "")
             elif target not in names:
                 sub = "Not connected — every screen is turned on instead"
             else:
                 sc = next(sc for sc in screens if sc.name == target)
                 sub = f"{sc.name} · {sc.width}×{sc.height}" if sc.width else sc.name
             if len(screens) <= 1 and target == "auto":
-                sub = "Only one screen connected"
+                sub = "Only one screen connected — plug in another and the Mac moves to it"
             self.screen_row.set_subtitle(sub)
             self._others_values = ["off", "mirror"]
             self._set_choices(self.others_row, ["Turn off", "Mirror the Mac"],
                               self._others_values.index(others))
-            self.others_row.set_sensitive(target != "auto")
+            self.others_row.set_sensitive(True)
             self.others_row.set_visible(len(screens) > 1 or target != "auto")
             self._sync_modes(screens)
         finally:

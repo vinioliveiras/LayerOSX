@@ -557,6 +557,14 @@ class Backend:
         connected, else the primary, else the first."""
         screens = self.screens() if screens is None else screens
         t = self.screen_target()
+        if t == "auto":
+            # Mirrors displays.py effective_target(): an external screen when
+            # one is plugged in (the last one plugged, else the first), with a
+            # built-in one present.
+            ext = [x for x in screens if not x.builtin]
+            if ext and any(x.builtin for x in screens):
+                last = _read(f"/tmp/layerosx-display-last-plugged-{os.getuid()}")
+                return next((x for x in ext if x.name == last), ext[0])
         return next((x for x in screens if x.name == t), None) or \
             next((x for x in screens if x.primary), None) or (screens[0] if screens else None)
 

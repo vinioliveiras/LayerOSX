@@ -1176,6 +1176,18 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.5j. Monitor hotplug
+
+- Screens on Automatic, Mac running on the laptop. Plug in an HDMI monitor:
+  within ~5 s the Mac moves to it (fullscreen, correct size), the laptop
+  screen turns off (or mirrors, per "Other screens"), a notice names the
+  monitor.
+- Unplug it: the Mac comes back to the laptop screen, notice again.
+- A 4K monitor: the notice mentions 3840 × 2160; choosing it in macOS
+  System Settings › Displays gives a sharp picture.
+- With a fixed screen chosen in Settings: unplug it → all screens light up;
+  plug it back → the Mac returns to it.
+
 ### 5.5i. Network stability, monitoring mode
 
 - `mac-vm.log`: "I/O: … network user." Internet in macOS stays up for an

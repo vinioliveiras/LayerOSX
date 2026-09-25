@@ -487,6 +487,35 @@ class TestScreens(FakeMachine):
         self.assertTrue(any(c.startswith("xdotool mousemove") for c in calls))
 
 
+class TestAutomaticScreen(TestScreens):
+    def test_automatic_follows_an_external_screen(self):
+        self.d.LAST_PLUGGED = os.path.join(self.tmp, "last-plugged")
+        outs = self.d.query()                       # eDP-1 + HDMI-1-0 connected
+        self.assertEqual(self.d.effective_target(outs, ""), "HDMI-1-0")
+        self.assertEqual(self.d.effective_target(outs, "eDP-1"), "eDP-1")   # a choice wins
+        unplugged = [dict(o, connected=o["connected"] and o["name"] != "HDMI-1-0") for o in outs]
+        self.assertEqual(self.d.effective_target(unplugged, ""), "")         # laptop only: hands off
+        dp = dict(outs[1], name="DP-2", label="DisplayPort")
+        three = outs + [dp]
+        self.assertEqual(self.d.effective_target(three, ""), "HDMI-1-0")    # first external by default
+        write(self.d.LAST_PLUGGED, "DP-2\n")
+        self.assertEqual(self.d.effective_target(three, ""), "DP-2")        # ... unless one was plugged last
+        desktop = [dict(o, builtin=False) for o in outs]
+        self.assertEqual(self.d.effective_target(desktop, ""), "")          # no built-in screen: hands off
+
+    def test_apply_on_automatic_moves_the_mac_and_refullscreens_it(self):
+        self.d.LAST_PLUGGED = os.path.join(self.tmp, "last-plugged")
+        self.d.time.sleep = lambda *_: None
+        write(os.path.join(self.bin, "xdotool"),
+              f'#!/bin/sh\necho "xdotool $*" >> {self.log}\n'
+              f'[ "$1" = search ] && echo 4242\nexit 0\n', stat.S_IRWXU)
+        self.d.apply(quiet=True)
+        calls = self.calls()
+        self.assertIn("xrandr --output HDMI-1-0 --auto --primary --pos 0x0 --output eDP-1 --off", calls)
+        self.assertIn("xdotool windowstate --remove FULLSCREEN 4242", calls)
+        self.assertIn("xdotool windowstate --add FULLSCREEN 4242", calls)
+
+
 class TestModesAndGpu(TestScreens):
     def test_modes_listed(self):
         sc = {x.name: x for x in lb.Backend().screens()}
