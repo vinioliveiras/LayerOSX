@@ -190,6 +190,23 @@ class BackupJob:
     running: bool         # the helper is still alive
 
 
+@dataclass
+class MacDisk:
+    """A partition of a drive inside the computer that can be shown to the Mac."""
+    partuuid: str
+    path: str             # /dev/nvme0n1p7 (changes between boots; partuuid doesn't)
+    label: str
+    fstype: str
+    size: int
+    model: str
+    blocked: str          # "" = can be given to the Mac, else why not
+    on_mac: bool
+
+    @property
+    def title(self) -> str:
+        return self.label or f"{os.path.basename(self.path)} ({self.fstype or 'unknown'})"
+
+
 # Credits shown in LayerOSX Settings > About. Edit here.
 CREATOR = "Vini"
 CREATOR_LINK = "github.com/vinioliveiras/LayerOSX"
@@ -1297,12 +1314,71 @@ class Backend:
     # (swap, LUKS/BitLocker, squashfs, unknown) is never offered.
     SAVE_FSTYPES = ("vfat", "exfat", "ntfs", "ext4", "ext3", "ext2", "btrfs", "xfs")
 
+    # Internal drives in the Mac (Settings > USB Devices > Drives inside this
+    # computer): partitions of the computer's own disks, handed to the Mac as
+    # extra SATA disks when it starts (mac-vm-launch.sh + lib/disk-access.sh).
+    # State: mac-disks, one PARTUUID per line. Never the system's own
+    # partitions or the one holding the Mac; USB drives go through USB instead.
+    MAC_READABLE = {"ntfs": "read-only in macOS", "exfat": "", "vfat": "", "apfs": "", "hfsplus": ""}
+
+    def mac_disk_ids(self) -> set:
+        return {l.strip().lower() for l in _read(os.path.join(self.state_dir, "mac-disks")).splitlines()
+                if re.fullmatch(r"[0-9a-fA-F-]{8,36}", l.strip())}
+
+    def mac_disks(self) -> List[MacDisk]:
+        rc, out = self._run(["lsblk", "-J", "-b", "-o",
+                             "NAME,PATH,LABEL,SIZE,FSTYPE,MOUNTPOINTS,RM,HOTPLUG,TRAN,TYPE,MODEL,PARTUUID"],
+                            changes=False, timeout=10)
+        try:
+            tree = json.loads(out)["blockdevices"] if rc == 0 else []
+        except (ValueError, KeyError):
+            tree = []
+        rc, st = self._run(["findmnt", "-nro", "SOURCE", "--target", self.state_dir], changes=False, timeout=5)
+        state_src = st.strip().split("[")[0] if rc == 0 else ""
+        chosen = self.mac_disk_ids()
+        out_l = []
+        for disk in tree:
+            if disk.get("type") != "disk" or disk.get("rm") or disk.get("hotplug") or disk.get("tran") == "usb":
+                continue
+            for n in disk.get("children") or []:
+                if n.get("type") != "part" or not n.get("partuuid"):
+                    continue
+                path = n.get("path") or f"/dev/{n.get('name')}"
+                mps = [m for m in (n.get("mountpoints") or []) if m]
+                fs = (n.get("fstype") or "").lower()
+                label = n.get("label") or ""
+                size = int(n.get("size") or 0)
+                if any(m in ("/", "/boot", "/boot/efi", "[SWAP]") or m.startswith("/run/archiso") for m in mps) \
+                        or path == state_src or fs == "swap" or (fs == "vfat" and size < 1 << 30):
+                    continue          # the system itself, swap, EFI/boot partitions
+                if fs in ("bitlocker", "crypto_luks"):
+                    why = "encrypted -- macOS can't open it"
+                elif fs not in self.MAC_READABLE:
+                    why = f"macOS can't read {fs or 'this partition'}"
+                elif mps:
+                    why = f"in use by Linux ({mps[0]})"
+                else:
+                    why = ""
+                out_l.append(MacDisk(partuuid=n["partuuid"].lower(), path=path, label=label, fstype=fs,
+                                     size=size, model=(disk.get("model") or "").strip(), blocked=why,
+                                     on_mac=n["partuuid"].lower() in chosen))
+        return out_l
+
+    def set_mac_disk(self, partuuid: str, on: bool) -> Tuple[bool, str]:
+        partuuid = partuuid.lower()
+        d = next((x for x in self.mac_disks() if x.partuuid == partuuid), None)
+        if on and (d is None or d.blocked):
+            return False, (d.blocked if d else "that partition isn't available")
+        cur = self.mac_disk_ids()
+        new = (cur | {partuuid}) if on else (cur - {partuuid})
+        return self._write_state("mac-disks", "\n".join(sorted(new)) if new else None)
+
     def log_targets(self) -> List[LogTarget]:
         """Drives the user can save diagnostics to: partitions with a writable
         filesystem, never the running system's root/boot, nor Ventoy's tiny
         VTOYEFI partition. Removable (USB) drives first."""
         rc, out = self._run(["lsblk", "-J", "-b", "-o",
-                             "NAME,PATH,LABEL,SIZE,FSTYPE,MOUNTPOINTS,RM,HOTPLUG,TRAN,TYPE,MODEL"],
+                             "NAME,PATH,LABEL,SIZE,FSTYPE,MOUNTPOINTS,RM,HOTPLUG,TRAN,TYPE,MODEL,PARTUUID"],
                             changes=False, timeout=10)
         if rc != 0:
             return []
@@ -1311,6 +1387,7 @@ class Backend:
         except (ValueError, KeyError):
             return []
         targets = []
+        mac_given = self.mac_disk_ids()     # the Mac has them: Linux must not mount them too
 
         def walk(nodes, parent):
             for n in nodes:
@@ -1321,7 +1398,8 @@ class Backend:
                     label = n.get("label") or ""
                     system = any(m in ("/", "/boot", "/boot/efi", "[SWAP]") or m.startswith("/run/archiso")
                                  for m in mps)
-                    if fs in self.SAVE_FSTYPES and not system and label != "VTOYEFI":
+                    given = (n.get("partuuid") or "").lower() in mac_given
+                    if fs in self.SAVE_FSTYPES and not system and label != "VTOYEFI" and not given:
                         removable = bool(parent.get("rm") or parent.get("hotplug") or
                                          (parent.get("tran") or "") == "usb" or n.get("rm") or n.get("hotplug"))
                         targets.append(LogTarget(

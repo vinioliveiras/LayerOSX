@@ -970,6 +970,14 @@ class Settings(Adw.ApplicationWindow):
                         "automatically every time it's plugged in.")
         page.add(self.usb_group)
         self._usb_rows = []
+        self.disk_group = Adw.PreferencesGroup(
+            title="Drives inside this computer",
+            description="Partitions of this computer's own disks the Mac can use, like an extra drive "
+                        "(Windows' NTFS is read-only in macOS; exFAT, FAT, APFS and HFS+ read-write). "
+                        "Linux stays away from them while they're given. Applies when the Mac restarts.")
+        page.add(self.disk_group)
+        self._disk_rows = []
+        run_async(self.b.mac_disks, self._show_disks)
         refresh = Gtk.Button(icon_name="view-refresh-symbolic", tooltip_text="Refresh")
         refresh.connect("clicked", lambda *_: self._load_usb())
         return self._pane("USB Devices", page, refresh)
@@ -981,6 +989,39 @@ class Settings(Adw.ApplicationWindow):
         if ok and on:
             # Give what's already plugged in right away, then show it.
             run_async(self.b.usb_auto_once, lambda _r: self._load_usb())
+
+    def _show_disks(self, disks):
+        if isinstance(disks, Exception):
+            disks = []
+        for r in self._disk_rows:
+            self.disk_group.remove(r)
+        self._disk_rows = []
+        if not disks:
+            r = Adw.ActionRow(title="No other partitions", subtitle="Only the disk LayerOSX runs from.")
+            self.disk_group.add(r)
+            self._disk_rows.append(r)
+        for d in disks:
+            size = f"{d.size / 1e9:.0f} GB" if d.size else ""
+            sub = " · ".join(x for x in (size, d.fstype.upper(), d.model, os.path.basename(d.path),
+                                         d.blocked or self.b.MAC_READABLE.get(d.fstype, "")) if x)
+            r = Adw.ActionRow(title=esc(d.title), subtitle=esc(sub))
+            r.add_prefix(Gtk.Image.new_from_icon_name("drive-harddisk-symbolic"))
+            sw = Gtk.Switch(active=d.on_mac, valign=Gtk.Align.CENTER, sensitive=not d.blocked or d.on_mac)
+            sw.connect("notify::active", lambda w, _p, u=d.partuuid, t=d.title: self._on_disk(w, u, t))
+            r.add_suffix(sw)
+            r.set_activatable_widget(sw)
+            self.disk_group.add(r)
+            self._disk_rows.append(r)
+        return False
+
+    def _on_disk(self, sw, partuuid, title):
+        on = sw.get_active()
+        ok, msg = self.b.set_mac_disk(partuuid, on)
+        self.after_action(ok, msg, f"{title} {'goes to' if on else 'leaves'} the Mac — applies when the Mac restarts")
+        if ok:
+            self._pending_restart()
+        else:
+            run_async(self.b.mac_disks, self._show_disks)
 
     def _load_usb(self):
         if "usb" in self.pages:

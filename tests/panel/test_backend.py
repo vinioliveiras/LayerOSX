@@ -83,13 +83,13 @@ class FakeMachine(unittest.TestCase):
             {"name": "nvme0n1", "path": "/dev/nvme0n1", "type": "disk", "rm": False, "hotplug": False,
              "tran": "nvme", "model": "WD SN560", "size": 1000204886016, "children": [
                 {"name": "nvme0n1p1", "path": "/dev/nvme0n1p1", "type": "part", "fstype": "vfat",
-                 "label": None, "size": 209715200, "mountpoints": ["/boot/efi"]},
+                 "label": None, "size": 209715200, "mountpoints": ["/boot/efi"], "partuuid": "aaaa-0001"},
                 {"name": "nvme0n1p3", "path": "/dev/nvme0n1p3", "type": "part", "fstype": "BitLocker",
-                 "label": None, "size": 727000000000, "mountpoints": [None]},
+                 "label": None, "size": 727000000000, "mountpoints": [None], "partuuid": "aaaa-0003"},
                 {"name": "nvme0n1p6", "path": "/dev/nvme0n1p6", "type": "part", "fstype": "ext4",
-                 "label": "layerosx", "size": 170000000000, "mountpoints": ["/"]},
+                 "label": "layerosx", "size": 170000000000, "mountpoints": ["/"], "partuuid": "aaaa-0006"},
                 {"name": "nvme0n1p7", "path": "/dev/nvme0n1p7", "type": "part", "fstype": "ntfs",
-                 "label": "DATA", "size": 4000000000000, "mountpoints": [None]}]},
+                 "label": "DATA", "size": 4000000000000, "mountpoints": [None], "partuuid": "AAAA-0007"}]},
             {"name": "sda", "path": "/dev/sda", "type": "disk", "rm": True, "hotplug": True, "tran": "usb",
              "model": "SanDisk 3.2Gen1", "size": 123000000000, "children": [
                 {"name": "sda1", "path": "/dev/sda1", "type": "part", "fstype": "exfat",
@@ -305,6 +305,23 @@ class TestUsb(FakeMachine):
         self.assertEqual(lb.Backend().usb_auto_once(), [])
         self.assertTrue(b.set_usb_auto(True)[0])
         self.assertFalse(os.path.exists(os.path.join(self.state, "usb-auto")))
+
+
+class TestMacDisks(FakeMachine):
+    def test_candidates_and_choice(self):
+        b = lb.Backend()
+        disks = {d.partuuid: d for d in b.mac_disks()}
+        self.assertEqual(set(disks), {"aaaa-0003", "aaaa-0007"})    # no ESP, no system root, no USB
+        self.assertIn("encrypted", disks["aaaa-0003"].blocked)
+        self.assertEqual((disks["aaaa-0007"].blocked, disks["aaaa-0007"].title), ("", "DATA"))
+        self.assertFalse(b.set_mac_disk("aaaa-0003", True)[0])
+        self.assertFalse(b.set_mac_disk("aaaa-0006", True)[0])
+        self.assertTrue(b.set_mac_disk("AAAA-0007", True)[0])
+        self.assertTrue(lb.Backend().mac_disks()[1].on_mac)
+        # given to the Mac -> never offered for saving logs / backups
+        self.assertEqual([t.path for t in b.log_targets()], ["/dev/sda1"])
+        self.assertTrue(b.set_mac_disk("aaaa-0007", False)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "mac-disks")))
 
 
 class TestSaveLogs(FakeMachine):

@@ -376,6 +376,38 @@ learn_hugepages_refusal() {
     echo "Reims couldn't map the huge-page RAM into the GPU ($hit) -- next start uses normal pages."
 }
 
+# --- The computer's own partitions in the Mac -----------------------------------
+# Settings > USB Devices > Drives inside this computer ($STATE_DIR/mac-disks,
+# one PARTUUID per line): each becomes an extra SATA disk on a second AHCI
+# controller (6 ports), raw, O_DIRECT. lib/disk-access.sh (sudo) gives this
+# user access for the run and refuses system / mounted partitions; access is
+# taken back when QEMU exits. A partition that's gone or mounted is skipped.
+EXTRA_DISK_ARGS=()
+EXTRA_DISK_DEVS=()
+pick_mac_disks() {
+    local u dev out n=0
+    EXTRA_DISK_ARGS=(); EXTRA_DISK_DEVS=()
+    while read -r u; do
+        [ -n "$u" ] || continue
+        [ "$n" -ge 6 ] && { echo "Mac disks: only 6 extra partitions fit -- skipping the rest."; break; }
+        dev="$(readlink -f "/dev/disk/by-partuuid/$u" 2>/dev/null)"
+        if [ ! -b "$dev" ]; then echo "Mac disks: partition $u isn't here -- skipped."; continue; fi
+        if ! out="$(sudo -n "$KIOSK_DIR/lib/disk-access.sh" grant "$dev" 2>&1)"; then
+            echo "Mac disks: $dev skipped ($out)."; continue
+        fi
+        [ "$n" = 0 ] && EXTRA_DISK_ARGS+=(-device ich9-ahci,id=sata2)
+        EXTRA_DISK_ARGS+=(-drive "id=HostPart$n,if=none,format=raw,file=$dev,cache=none,aio=io_uring,discard=unmap"
+                          -device "ide-hd,bus=sata2.$n,drive=HostPart$n")
+        EXTRA_DISK_DEVS+=("$dev")
+        echo "Mac disks: $dev ($u) -> the Mac's SATA disk $n."
+        n=$((n + 1))
+    done < <(tr 'A-Z' 'a-z' < "$STATE_DIR/mac-disks" 2>/dev/null)
+}
+release_mac_disks() {
+    local dev
+    for dev in "${EXTRA_DISK_DEVS[@]}"; do sudo -n "$KIOSK_DIR/lib/disk-access.sh" revoke "$dev" >/dev/null 2>&1; done
+}
+
 # --- Disk and network I/O -------------------------------------------------------
 # A big App Store download made the whole Mac (sound, screen) stall. Two
 # host-side costs grew with it, both on QEMU's main loop:
@@ -852,6 +884,7 @@ while true; do
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
     pick_io          # disk cache/aio and the network backend (MAC_DISK_OPTS, NET_ARGS)
     pick_hugepages   # 2 MB pages for the guest RAM when they can be reserved (MEM_HUGE)
+    pick_mac_disks   # the computer's own partitions chosen for the Mac (EXTRA_DISK_ARGS)
     # Which physical screen shows the Mac (Settings > Displays > Screens): put it
     # at 0,0 as primary and turn off / mirror the others before QEMU opens its
     # window there. No-op when nothing is chosen ("Automatic") or the layout
@@ -947,6 +980,7 @@ while true; do
         "${DISPLAY_ARGS[@]}"
     )
     QEMU_ARGS+=("${GFX_ARGS[@]}")
+    if [ "${#EXTRA_DISK_ARGS[@]}" -gt 0 ]; then QEMU_ARGS+=("${EXTRA_DISK_ARGS[@]}"); fi
     if [ "${#AUDIO_ARGS[@]}" -gt 0 ]; then QEMU_ARGS+=("${AUDIO_ARGS[@]}"); fi
     # USB devices the user chose to "always" give to the Mac (usb always /
     # the picker's "Always"). Matched by vendor:product, so QEMU attaches each
@@ -1043,6 +1077,7 @@ while true; do
     QEMU_RC=$?
     learn_reims_budget
     learn_hugepages_refusal
+    release_mac_disks
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
     # How QEMU ended, always logged: >128 = killed by signal (rc-128; 11 =
     # segfault, 6 = abort, 9 = SIGKILL, 15 = SIGTERM). Together with the QMP

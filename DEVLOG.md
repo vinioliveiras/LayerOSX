@@ -4368,3 +4368,20 @@ Now (Backend.usb_devices / _usb_kind / _usb_blocked):
   (a Ventoy/VTOYEFI/ARCH* label) now stays — it's where logs are saved.
 - The panel's USB list shows a keyboard/mouse/camera/drive icon from the
   device's interfaces. Tests: 85.
+
+## The computer's own partitions in the Mac
+
+Settings › USB Devices › **Drives inside this computer** lists the
+partitions of the non-removable disks (lsblk, by PARTUUID so the choice
+survives device renames): not /, /boot, the ESP, swap or the partition
+holding /var/lib/layerosx; BitLocker/LUKS and filesystems macOS can't read
+(ext4, btrfs, xfs) are shown greyed with the reason; a partition mounted on
+Linux too. Chosen ones (`mac-disks`) become extra SATA disks on a second
+AHCI controller (`ich9-ahci,id=sata2`, up to 6), raw with
+`cache=none,aio=io_uring`. QEMU runs as the kiosk user, so
+`lib/disk-access.sh grant` (sudo) sets an ACL on the device node for the run
+— re-checking it's a partition of a fixed disk, not a system partition, not
+mounted — and `revoke` takes it back when QEMU exits. A partition given to
+the Mac is never offered by the diagnostics / backup drive pickers (Linux
+mounting it while macOS writes would corrupt it). macOS sees each as a disk
+with the filesystem directly on it; NTFS is read-only there.

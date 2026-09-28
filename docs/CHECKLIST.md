@@ -1176,6 +1176,18 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.6d. Internal partitions in the Mac
+
+- Settings › USB Devices › Drives inside this computer: DATA (NTFS) is
+  listed, the Windows C: shows "encrypted" if BitLocker, CachyOS's ext4
+  "macOS can't read ext4", LayerOSX's own partition and the ESP not at all.
+- Switch DATA on, restart the Mac: the log says "Mac disks: /dev/nvme0n1pX
+  … -> the Mac's SATA disk 0"; Finder shows DATA (read-only). Try an exFAT
+  partition if there is one: writable.
+- Save diagnostics / Back Up… no longer offer DATA while it's switched on.
+- Switch it off, restart: gone from the Mac; `getfacl /dev/nvme0n1pX` has no
+  entry for mac.
+
 ### 5.6c. USB: cameras, keyboards, mice, drives
 
 - Mac running: the built-in webcam is on the Mac by itself (Photo Booth /
