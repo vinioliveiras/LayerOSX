@@ -701,8 +701,9 @@ class Settings(Adw.ApplicationWindow):
     def _reims_gpu_group(self):
         g = Adw.PreferencesGroup(
             title="Graphics card",
-            description="Which GPU draws the Mac when Graphics is Reims. Automatic lets Reims choose "
-                        "(it prefers a dedicated GPU). Applies when the Mac restarts.")
+            description="Which GPU draws the Mac when Graphics is Reims. Automatic uses the GPU the "
+                        "Mac's screen is connected to (no copying between GPUs); if that fails once, "
+                        "Reims chooses. Applies when the Mac restarts.")
         self.gpu_row = Adw.ComboRow(title="Draw with")
         self.gpu_row.add_prefix(Gtk.Image.new_from_icon_name("video-display-symbolic"))
         self.gpu_row.connect("notify::selected", self._on_reims_gpu)

@@ -305,15 +305,55 @@ fi
 # every loop pass, so a change made in LayerOSX Settings > Mac > Resources takes
 # effect on "Restart Mac" without restarting the kiosk session.
 REIMS_FAIL_LOG="/tmp/reims-vgpu-fail.log"
-REIMS_BUDGET_FILE="$STATE_DIR/reims-import-budget"   # "<budget MB> <reims-gpu choice>"
+REIMS_BUDGET_FILE="$STATE_DIR/reims-import-budget"   # "<budget MB> <REIMS_GPU_KEY>"
+
+# --- Which GPU Reims uses (decided before the RAM, which depends on it) ------
+# Settings > Displays > Graphics card ($STATE_DIR/reims-gpu: a Vulkan ICD file
+# name, or auto). Automatic = the GPU driving the Mac's screen (lib/gpu-pick.py):
+# no frame copy between GPUs on hybrid laptops. If that automatic pick then
+# fails (Reims can't present / crashes), it's remembered in $AUTO_GPU_FAILED and
+# Automatic falls back to Reims' own choice; picking Automatic again in
+# Settings forgets it. REIMS_GPU_KEY names the GPU for the per-GPU memories
+# (RAM budget, huge-page refusal); REIMS_VENDOR goes to power-mode.sh (GPU
+# clocks in Performance mode) through $REIMS_VENDOR_FILE.
+AUTO_GPU_FAILED="$STATE_DIR/auto-gpu-failed"
+REIMS_VENDOR_FILE="/tmp/layerosx-reims-vendor"
+REIMS_AUTO_ICD="" REIMS_VENDOR="" REIMS_GPU_KEY="auto"
+pick_reims_gpu() {
+    local choice out icd vendor why
+    choice="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null)"; choice="${choice:-auto}"
+    out="$(python3 "$KIOSK_DIR/lib/displays.py" mac-output 2>/dev/null)"
+    read -r icd vendor why < <(python3 "$KIOSK_DIR/lib/gpu-pick.py" "$choice" "$out" \
+        "$(cat "$AUTO_GPU_FAILED" 2>/dev/null)" 2>/dev/null)
+    REIMS_AUTO_ICD="" REIMS_GPU_KEY="$choice" REIMS_VENDOR="${vendor:--}"
+    if [ "$choice" = auto ] && [ -n "$icd" ] && [ "$icd" != - ]; then
+        REIMS_AUTO_ICD="$icd"
+        REIMS_GPU_KEY="auto:$(basename "$icd")"
+    fi
+    if [ "$choice" = auto ]; then
+        echo "Graphics card (Automatic): ${REIMS_AUTO_ICD:-the one Reims picks itself} -- ${why:-?}."
+    fi
+    printf '%s\n' "$REIMS_VENDOR" > "$REIMS_VENDOR_FILE" 2>/dev/null
+    # GPU clocks follow the power mode for this GPU (lib/power-mode.sh).
+    sudo -n "$KIOSK_DIR/lib/power-mode.sh" restore >/dev/null 2>&1 &
+}
+learn_auto_gpu_failure() {
+    [ -n "$REIMS_AUTO_ICD" ] || return 0
+    local hit=""
+    case "$QEMU_RC" in 132|133|134|135|136|139) hit="QEMU crashed" ;; esac
+    [ -n "$hit" ] || hit="$(tail -c +"$(( ${REIMS_LOG_OFFSET:-0} + 1 ))" "$REIMS_FAIL_LOG" 2>/dev/null \
+        | grep -aoE 'vk_window_create_swapchain|present unavailable|SURFACE_LOST|device_lost=[1-9]' | head -n 1)"
+    [ -n "$hit" ] || return 0
+    basename "$REIMS_AUTO_ICD" > "$AUTO_GPU_FAILED"
+    echo "Graphics card (Automatic): $(basename "$REIMS_AUTO_ICD") failed ($hit) -- Automatic uses Reims' own choice from now on."
+}
 
 # The GPU-import budget Reims reported for the current GPU choice, minus a
 # 1 GB margin (QEMU's other RAM blocks count too), in whole GB -- or 70% of
 # the host when this GPU hasn't reported one yet. Keep in sync with
 # Backend.ram_cap_mb().
 reims_ram_cap_mb() {
-    local host_mb="$1" gpu b g
-    gpu="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)"
+    local host_mb="$1" gpu="$REIMS_GPU_KEY" b g
     { read -r b g < "$REIMS_BUDGET_FILE"; } 2>/dev/null || true
     if [ -n "${b:-}" ] && [ "${g:-}" = "$gpu" ] && [ "$b" -gt 6144 ] 2>/dev/null; then
         echo $(( (b - 1024) / 1024 * 1024 ))
@@ -331,7 +371,7 @@ learn_reims_budget() {
         | grep -ao 'guest_ram_map_import_exceeds_heap needed_mb=[0-9]* budget_mb=[0-9]*' | tail -n 1)"
     [ -n "$line" ] || return 0
     b="${line##*budget_mb=}"
-    printf '%s %s\n' "$b" "$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)" > "$REIMS_BUDGET_FILE" 2>/dev/null
+    printf '%s %s\n' "$b" "$REIMS_GPU_KEY" > "$REIMS_BUDGET_FILE" 2>/dev/null
     echo "Reims couldn't map the Mac's RAM into the GPU ($line) -- next start keeps the Mac under $(( (b - 1024) / 1024 * 1024 )) MB."
 }
 
@@ -346,9 +386,8 @@ learn_reims_budget() {
 HUGEPAGES_REFUSED="$STATE_DIR/hugepages-refused"   # "<reims-gpu choice>"
 MEM_HUGE=""
 pick_hugepages() {
-    local out gpu
+    local out gpu="$REIMS_GPU_KEY"
     MEM_HUGE=""
-    gpu="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)"
     case "$(cat "$STATE_DIR/hugepages" 2>/dev/null)" in
         off|0|no|false)
             sudo -n "$KIOSK_DIR/lib/hugepages.sh" release >/dev/null 2>&1
@@ -372,7 +411,7 @@ learn_hugepages_refusal() {
     hit="$(tail -c +"$(( ${REIMS_LOG_OFFSET:-0} + 1 ))" "$REIMS_FAIL_LOG" 2>/dev/null \
         | grep -aoE 'guest_ram_map_(host_refused|no_usable_region|no_backend_import|scattered)' | head -n 1)"
     [ -n "$hit" ] || return 0
-    printf '%s\n' "$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)" > "$HUGEPAGES_REFUSED"
+    printf '%s\n' "$REIMS_GPU_KEY" > "$HUGEPAGES_REFUSED"
     echo "Reims couldn't map the huge-page RAM into the GPU ($hit) -- next start uses normal pages."
 }
 
@@ -740,7 +779,10 @@ configure_toggles() {
     # Absent/"auto" or a manifest that no longer exists = Reims' own choice.
     if [ "$GFX" = "reims-vgpu-pci" ]; then
         _rg="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || true)"
-        if [ -n "$_rg" ] && [ "$_rg" != auto ]; then
+        if { [ -z "$_rg" ] || [ "$_rg" = auto ]; } && [ -n "$REIMS_AUTO_ICD" ]; then
+            REIMS_ENV+=(VK_DRIVER_FILES="$REIMS_AUTO_ICD" VK_ICD_FILENAMES="$REIMS_AUTO_ICD")
+            echo "Reims: Vulkan limited to $REIMS_AUTO_ICD (Automatic: the GPU driving the Mac's screen)."
+        elif [ -n "$_rg" ] && [ "$_rg" != auto ]; then
             _icd=""
             for _d in /usr/share/vulkan/icd.d /etc/vulkan/icd.d; do
                 [ -f "$_d/$_rg" ] && { _icd="$_d/$_rg"; break; }
@@ -882,6 +924,7 @@ while true; do
         exec "$0"
     fi
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
+    pick_reims_gpu   # which GPU Reims draws with (Automatic: the one driving the Mac's screen)
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
     pick_io          # disk cache/aio and the network backend (MAC_DISK_OPTS, NET_ARGS)
     pick_hugepages   # 2 MB pages for the guest RAM when they can be reserved (MEM_HUGE)
@@ -1078,6 +1121,7 @@ while true; do
     QEMU_RC=$?
     learn_reims_budget
     learn_hugepages_refusal
+    learn_auto_gpu_failure
     release_mac_disks
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
     # How QEMU ended, always logged: >128 = killed by signal (rc-128; 11 =

@@ -374,8 +374,13 @@ def main(argv):
         apply()
     elif cmd == "watch":
         watch()
+    elif cmd == "mac-output":
+        # The output the Mac is (about to be) shown on, "" = Xorg's own layout.
+        outs = query()
+        print(effective_target(outs, settings()[0]) or
+              next((o["name"] for o in outs if o.get("primary")), ""))
     else:
-        print("usage: displays.py [list|apply|watch]", file=sys.stderr)
+        print("usage: displays.py [list|apply|watch|mac-output]", file=sys.stderr)
         return 2
     return 0
 

@@ -29,6 +29,9 @@
 - **`lib/disk-access.sh`** — (sudo) gives the kiosk user's QEMU access to
   one of the computer's own partitions for the Mac (ACL), or takes it back;
   refuses system, mounted and removable ones.
+- **`lib/gpu-pick.py`** — Automatic graphics card: the GPU driving the Mac's
+  screen (Xorg primary vs secondary-provider outputs), and the Reims GPU's
+  vendor for power-mode.sh.
 - **`lib/mac-backup.sh`** — Settings › Mac › Backups (run through sudo):
   back the Mac up to a drive, list / restore backups, or remove the Mac so
   the first-run setup opens again. Holds the Mac stopped through

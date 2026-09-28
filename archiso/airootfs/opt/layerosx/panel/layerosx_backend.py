@@ -466,7 +466,9 @@ class Backend:
         if self.setting("gfx")[0] != "reims":
             return 0
         parts = _read(os.path.join(self.state_dir, "reims-import-budget")).split()
-        if len(parts) == 2 and parts[0].isdigit() and int(parts[0]) > 6144 and parts[1] == self.reims_gpu():
+        gpu = self.reims_gpu()   # the launcher keys Automatic as "auto:<icd it picked>"
+        if len(parts) == 2 and parts[0].isdigit() and int(parts[0]) > 6144 and \
+                (parts[1] == gpu or (gpu == "auto" and parts[1].startswith("auto:"))):
             return (int(parts[0]) - 1024) // 1024 * 1024
         return host_mb * 70 // 100 // 1024 * 1024
 
@@ -704,6 +706,7 @@ class Backend:
 
     def set_reims_gpu(self, gpu_id: str) -> Tuple[bool, str]:
         if gpu_id in ("auto", "", None):
+            self._write_state("auto-gpu-failed", None)   # give the automatic pick another try
             return self._write_state("reims-gpu", None)
         if gpu_id not in [g.id for g in self.reims_gpus()]:
             return False, f"no such graphics card {gpu_id!r}"

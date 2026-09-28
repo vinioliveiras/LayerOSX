@@ -4392,3 +4392,29 @@ asks `layerosx_backend.py mac-disks-on`). Windows' recovery/reserved
 partitions (NTFS/FAT under 2 GB, no filesystem) are left out. Consequence: a
 partition the Mac has isn't offered for saving diagnostics/backups — switch
 it off first.
+
+## GPU: Automatic = the screen's GPU, clocks up in Performance
+
+**Automatic graphics card.** Reims on its own prefers the discrete GPU; on a
+hybrid laptop whose panel hangs off the iGPU (the TUF: Radeon 680M drives
+eDP, the RTX 4060 the HDMI), every frame then crosses GPUs (Reims' "discrete
+topology" copies). `lib/gpu-pick.py` now picks, on Automatic, the GPU
+driving the Mac's screen (`displays.py mac-output`): Xorg's primary GPU
+(`boot_vga`) for its own outputs, the other one for a secondary provider's
+outputs (`NAME-<provider>-<n>`, e.g. HDMI-1-0); only with exactly two GPUs
+of different vendors (one Vulkan ICD each), else Reims decides. The launcher
+limits Vulkan to that ICD. Because the AMD path has misbehaved, a failed
+automatic pick (QEMU crash signal, or `vk_window_create_swapchain`, `present
+unavailable`, `SURFACE_LOST`, `device_lost=N` in the Reims log) is written to
+`auto-gpu-failed` and Automatic then leaves the choice to Reims; choosing
+Automatic in Settings again retries. Per-GPU memories (RAM budget, huge-page
+refusal) are keyed `auto:<icd>` (`REIMS_GPU_KEY`).
+
+**GPU clocks.** Frames come in bursts; a GPU that drops to idle clocks
+between them pays the ramp-up every frame. `power-mode.sh` gets the Reims
+GPU's vendor from the launcher (`/tmp/layerosx-reims-vendor`) and, in
+Performance: AMD `power_dpm_force_performance_level=high`, NVIDIA
+`nvidia-smi --lock-gpu-clocks=<max/2>,<max>`, Intel (i915) `gt_min_freq_mhz`
+= RP1. Other modes, and any GPU Reims isn't using: back to the driver
+(`auto`, `--reset-gpu-clocks` only if we locked them — never waking an idle
+dGPU, RPn). The launcher re-applies the power mode on every Mac start. Tests: 89.

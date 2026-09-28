@@ -1176,6 +1176,18 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.6e. GPU: Automatic picks the screen's GPU; clocks in Performance
+
+- Displays › Graphics card = Automatic, Mac on the built-in screen: log says
+  "Graphics card (Automatic): …radeon_icd… -- drives eDP-1" and "Reims:
+  Vulkan limited to …radeon…". If the Mac then fails to show, the next start
+  says "failed (…) -- Automatic uses Reims' own choice" and works on NVIDIA.
+- External HDMI screen as the Mac's screen: picks nvidia_icd.json.
+- On the charger (Performance): `cat /sys/class/drm/card*/device/power_dpm_force_performance_level`
+  → high for the Radeon when Reims uses it; with NVIDIA, `nvidia-smi -q -d CLOCK`
+  shows locked clocks. Unplug (Balanced): back to auto / reset.
+- `sudo /opt/layerosx/kiosk/lib/power-mode.sh status` shows reims_gpu_vendor.
+
 ### 5.6d. Internal partitions in the Mac
 
 - Settings › USB Devices › Drives inside this computer: DATA (NTFS) is

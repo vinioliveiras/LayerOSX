@@ -22,6 +22,9 @@ CPUFREQ="${LAYEROSX_CPUFREQ:-/sys/devices/system/cpu/cpufreq}"
 PROFILE="${LAYEROSX_PLATFORM_PROFILE:-/sys/firmware/acpi/platform_profile}"
 PSU="${LAYEROSX_POWER_SUPPLY:-/sys/class/power_supply}"
 RUN_FILE="${LAYEROSX_POWER_RUN:-/run/layerosx-power-mode}"
+DRM="${LAYEROSX_DRM:-/sys/class/drm}"
+REIMS_VENDOR_FILE="${LAYEROSX_REIMS_VENDOR_FILE:-/tmp/layerosx-reims-vendor}"   # written by mac-vm-launch.sh
+NVIDIA_SMI="${LAYEROSX_NVIDIA_SMI:-nvidia-smi}"
 
 _rd() { cat "$1" 2>/dev/null | tr -d '\n'; }
 _has() { case " $(_rd "$1") " in *" $2 "*) return 0 ;; esac; return 1; }
@@ -93,10 +96,50 @@ apply_profile() {
     done
 }
 
+# The GPU Reims draws with: in Performance its clocks stay up instead of
+# dropping to idle between frames (the Mac's frames arrive in bursts, and the
+# GPU ramping back up each time costs frame time). Only that GPU -- forcing
+# an idle dGPU up would just keep it awake. Other modes: the driver decides.
+#   AMD    power_dpm_force_performance_level high | auto
+#   NVIDIA nvidia-smi --lock-gpu-clocks <half of max>,<max> | --reset-gpu-clocks
+#   Intel  gt_min_freq_mhz = RP1 (efficient) | RPn (lowest)   (i915)
+NV_LOCKED="${LAYEROSX_NV_LOCKED:-/run/layerosx-nvidia-clocks-locked}"
+apply_gpu() {
+    local want="$1" vendor card dev v max mode
+    vendor="$(_rd "$REIMS_VENDOR_FILE")"
+    for card in "$DRM"/card[0-9]*; do
+        case "${card##*/}" in *-*) continue ;; esac
+        dev="$card/device"
+        v="$(_rd "$dev/vendor")"
+        # Only Reims' GPU is raised; any other goes back to the driver's choice
+        # (the GPU Reims uses can change between Mac starts).
+        mode="$want"; [ "$v" = "$vendor" ] || mode=balanced
+        case "$v" in
+            0x1002)
+                [ -e "$dev/power_dpm_force_performance_level" ] || continue
+                if [ "$mode" = performance ]; then _wr "$dev/power_dpm_force_performance_level" high
+                else _wr "$dev/power_dpm_force_performance_level" auto; fi ;;
+            0x8086)
+                [ -e "$card/gt_min_freq_mhz" ] || continue
+                if [ "$mode" = performance ]; then _wr "$card/gt_min_freq_mhz" "$(_rd "$card/gt_RP1_freq_mhz")"
+                else _wr "$card/gt_min_freq_mhz" "$(_rd "$card/gt_RPn_freq_mhz")"; fi ;;
+            0x10de)
+                command -v "$NVIDIA_SMI" >/dev/null 2>&1 || continue
+                if [ "$mode" = performance ]; then
+                    max="$("$NVIDIA_SMI" --query-gpu=clocks.max.graphics --format=csv,noheader,nounits 2>/dev/null | head -n1 | tr -dc '0-9')"
+                    [ -n "$max" ] && "$NVIDIA_SMI" --lock-gpu-clocks="$((max / 2)),$max" >/dev/null 2>&1 && : > "$NV_LOCKED"
+                elif [ -e "$NV_LOCKED" ]; then   # never wake an idle dGPU just to reset it
+                    "$NVIDIA_SMI" --reset-gpu-clocks >/dev/null 2>&1; rm -f "$NV_LOCKED"
+                fi ;;
+        esac
+    done
+}
+
 apply_effective() {
     local m; m="$(effective)"
     apply_cpufreq "$m"
     apply_profile "$m"
+    apply_gpu "$m"
     printf '%s\n' "$m" > "$RUN_FILE" 2>/dev/null || true
     echo "power mode: $(saved) -> $m"
 }
@@ -117,6 +160,7 @@ case "${1:-}" in
         echo "governor=$(_rd "$pol/scaling_governor")"
         echo "epp=$(_rd "$pol/energy_performance_preference")"
         echo "profile=$(_rd "$PROFILE")"
-        echo "profile_choices=$(_rd "${PROFILE}_choices")" ;;
+        echo "profile_choices=$(_rd "${PROFILE}_choices")"
+        echo "reims_gpu_vendor=$(_rd "$REIMS_VENDOR_FILE")" ;;
     *) echo "usage: power-mode.sh restore | apply <mode> | status" >&2; exit 2 ;;
 esac
