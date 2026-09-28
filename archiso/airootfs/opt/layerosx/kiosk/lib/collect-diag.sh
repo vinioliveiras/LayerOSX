@@ -49,7 +49,18 @@ _sec() { printf '\n===== %s =====\n' "$1"; }
     echo "-- huge pages for the Mac's RAM (shmem THP; want [advise] and ShmemHugePages > 0 while the Mac runs) --"
     grep -H . /sys/kernel/mm/transparent_hugepage/enabled /sys/kernel/mm/transparent_hugepage/shmem_enabled \
         /sys/kernel/mm/transparent_hugepage/hugepages-2048kB/shmem_enabled 2>/dev/null
-    grep -E '^(AnonHugePages|ShmemHugePages|ShmemPmdMapped|Shmem):' /proc/meminfo 2>/dev/null
+    grep -E '^(AnonHugePages|ShmemHugePages|ShmemPmdMapped|Shmem|HugePages_Total|HugePages_Free):' /proc/meminfo 2>/dev/null
+    echo "-- CPU pinning (vCPU thread -> CPU) --"
+    _q="$(pgrep -f qemu-system-x86_64 | head -n1)"
+    if [ -n "$_q" ]; then
+        for _t in /proc/"$_q"/task/*; do
+            printf '%s %s %s\n' "${_t##*/}" "$(cat "$_t/comm" 2>/dev/null)" "$(taskset -pc "${_t##*/}" 2>/dev/null | sed 's/.*: //')"
+        done | grep -i 'cpu\|qemu\|reims' | head -40
+    fi
+    grep -E 'CPU pinning|Huge pages' "$HOME/mac-vm.log" 2>/dev/null | tail -4
+    echo "-- host tuning --"
+    cat /proc/cmdline; sysctl vm.swappiness vm.dirty_bytes vm.compaction_proactiveness net.ipv4.tcp_congestion_control 2>/dev/null
+    swapon --show 2>/dev/null
 
     _sec "QEMU"
     LD_LIBRARY_PATH="/opt/layerosx/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \

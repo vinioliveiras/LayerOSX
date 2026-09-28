@@ -39,6 +39,21 @@ else
     echo 'GRUB_DISABLE_OS_PROBER=false' >> /etc/default/grub
 fi
 
+# Latency-oriented kernel options, the same on every machine:
+#  preempt=full        -- Arch's kernel is built with dynamic preemption; "full"
+#                         lets QEMU/Reims/audio threads preempt kernel work
+#                         (what linux-zen does by default) -> fewer stutters.
+#  nowatchdog          -- no soft/hard-lockup watchdog timers on every CPU.
+#  split_lock_detect=off -- Intel only (ignored elsewhere): don't trap guest
+#                         split locks.
+#  transparent_hugepage=madvise -- THP only where asked (QEMU asks for guest RAM).
+# Not touched: CPU vulnerability mitigations (security first).
+for _opt in preempt=full nowatchdog split_lock_detect=off transparent_hugepage=madvise; do
+    if ! grep -q "GRUB_CMDLINE_LINUX_DEFAULT=.*${_opt%%=*}" /etc/default/grub 2>/dev/null; then
+        sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=\"\(.*\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\1 ${_opt}\"/" /etc/default/grub
+    fi
+done
+
 # Independent lspci check rather than reading state from
 # 10-hardware-detect.sh — each postinstall script is meant to run
 # standalone (run.sh continues even if one script fails), so no

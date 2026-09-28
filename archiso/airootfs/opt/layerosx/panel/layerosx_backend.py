@@ -517,6 +517,15 @@ class Backend:
     def set_cpu_pin(self, on: bool) -> Tuple[bool, str]:
         return self._write_state("cpu-pin", None if on else "off")
 
+    def hugepages(self) -> bool:
+        """2 MB pages for the Mac's RAM (kiosk/lib/hugepages.sh): on unless hugepages = off."""
+        return _read(os.path.join(self.state_dir, "hugepages")).lower() not in ("off", "0", "no", "false")
+
+    def set_hugepages(self, on: bool) -> Tuple[bool, str]:
+        if on:   # switching on again also forgets a GPU that refused them once
+            self._write_state("hugepages-refused", None)
+        return self._write_state("hugepages", None if on else "off")
+
     def set_ram(self, value) -> Tuple[bool, str]:
         """'auto'/0 or a size in MB (>= 2048, leaving Linux at least 2 GB)."""
         if value in ("auto", 0, "0", None):

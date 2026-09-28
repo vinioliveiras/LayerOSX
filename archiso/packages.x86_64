@@ -33,6 +33,8 @@ sudo
 git
 nano
 networkmanager
+# compressed RAM swap (etc/systemd/zram-generator.conf)
+zram-generator
 efibootmgr
 grub
 os-prober

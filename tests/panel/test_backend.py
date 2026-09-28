@@ -1036,6 +1036,15 @@ class TestBackups(FakeMachine):
         self.assertTrue(b.set_cpu_pin(True)[0])
         self.assertFalse(os.path.exists(os.path.join(self.state, "cpu-pin")))
 
+    def test_hugepages_toggle(self):
+        b = lb.Backend()
+        self.assertTrue(b.hugepages())
+        self.assertTrue(b.set_hugepages(False)[0])
+        self.assertFalse(lb.Backend().hugepages())
+        write(os.path.join(self.state, "hugepages-refused"), "auto\n")
+        self.assertTrue(b.set_hugepages(True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "hugepages-refused")))
+
     def test_targets_skip_fat32(self):
         b = lb.Backend()
         fat = lb.LogTarget("/dev/sdc1", "STICK", "", 8 << 30, "vfat", True, "")

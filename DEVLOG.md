@@ -4303,3 +4303,50 @@ cores than vCPUs. Settings › Mac › Resources › **Dedicated cores**
 now matches the host. No real-time priority for the vCPUs: a vCPU spinning
 at SCHED_FIFO starves the kernel threads on its core and can freeze the
 host. Tests: 5 new (79).
+
+## Performance passes 2–4: huge pages, host tuning, keeping Linux off the Mac's cores
+
+Everything adapts to the machine; nothing is sized for the test laptop.
+
+**Huge pages.** shmem THP (`advise`) never took (ShmemHugePages stayed 0),
+so a ~43 GB Mac ran on ~11 million 4 KB pages. The guest RAM is now a
+hugetlb memfd (`memory-backend-memfd,…,hugetlb=on,hugetlbsize=2M` — still a
+shared memfd, which Reims needs). `lib/hugepages.sh reserve <MB>` (sudo)
+sizes the 2 MB pool from the Mac's RAM before each start: reuses a pool
+that's already there (a Mac restart), otherwise drops caches, compacts once
+and grows the pool, and refuses — putting the pool back — when MemAvailable
+wouldn't leave Linux 2 GB or memory is too fragmented; the Mac then starts on
+normal pages and the log says why. Reims imports guest RAM with
+VK_EXT_external_memory_host; if a GPU driver refuses hugetlb pages
+(`guest_ram_map_host_refused|no_usable_region|no_backend_import|scattered`
+in the Reims log after a huge-page run), that GPU choice goes to
+`hugepages-refused` and is skipped next time; switching Settings › Mac ›
+Resources › Huge pages on again forgets it.
+
+**Linux off the Mac's cores.** Pinning (pass 1) kept QEMU's own threads off
+the vCPU cores, but IRQs, kernel workqueues, system services and the kiosk
+session (Xorg, picom, panel) still ran anywhere. `cpu-pin.py` now moves the
+session's processes (same user) to the host set every 30 s, and
+`lib/host-cpus.sh` (sudo) moves IRQs (`/proc/irq/*/smp_affinity_list`,
+skipping the ones the kernel won't move), the unbound workqueue cpumask and
+`system.slice`/`init.scope` (`AllowedCPUs`, runtime). The launcher resets its
+own affinity to every CPU before starting QEMU (it inherits the host set
+otherwise); Dedicated cores off runs `cpu-pin.py reset`. The pinning loop
+also stops on a zombie QEMU.
+
+**Host tuning.** Kernel options (50-grub.sh): `preempt=full` (Arch's kernel
+has dynamic preemption — what linux-zen defaults to, without changing
+kernels and the NVIDIA DKMS build), `nowatchdog`, `split_lock_detect=off`
+(Intel), `transparent_hugepage=madvise`. `etc/sysctl.d/90-layerosx.conf`:
+swappiness 10, vfs_cache_pressure 50, dirty 256 MB / background 64 MB
+(fixed bytes, not 20% of RAM), `compaction_proactiveness=0`, NMI/soft
+watchdogs off, `split_lock_mitigate=0`, fq + BBR (`tcp_bbr` loaded by
+modules-load.d; the Mac's NAT traffic is host TCP). zram swap via
+zram-generator (¼ RAM, ≤ 8 GB, zstd). Not done: `mitigations=off`
+(security), a sched_ext scheduler (extra daemon; preempt=full first), a
+different kernel. Services: the installed system already only runs
+NetworkManager, the LayerOSX units and NVIDIA's — nothing worth trimming.
+
+Monitoring: system.csv gains hugetlb_total/free, threads.csv the CPU each
+thread last ran on; macdiag shows the pinning, huge pages, cmdline, sysctls
+and swap. Tests: 84.

@@ -1310,6 +1310,13 @@ class Settings(Adw.ApplicationWindow):
         self.pin_row.set_active(self.b.cpu_pin())
         self.pin_row.connect("notify::active", self._on_pin)
         g.add(self.pin_row)
+        self.huge_row = Adw.SwitchRow(
+            title="Huge pages",
+            subtitle="The Mac's memory uses 2 MB pages, reserved when it starts (when there's enough free "
+                     "memory). Faster, and it can't be swapped out.")
+        self.huge_row.set_active(self.b.hugepages())
+        self.huge_row.connect("notify::active", self._on_huge)
+        g.add(self.huge_row)
         self.ram_row = Adw.ComboRow(title="Memory")
         self.ram_row.add_prefix(Gtk.Image.new_from_icon_name("drive-harddisk-solidstate-symbolic"))
         self.ram_row.connect("notify::selected", self._on_ram)
@@ -1388,6 +1395,11 @@ class Settings(Adw.ApplicationWindow):
         on = row.get_active()
         ok, msg = self.b.set_cpu_pin(on)
         self._resource_changed(ok, msg, "Dedicated cores on" if on else "Dedicated cores off")
+
+    def _on_huge(self, row, _pspec):
+        on = row.get_active()
+        ok, msg = self.b.set_hugepages(on)
+        self._resource_changed(ok, msg, "Huge pages on" if on else "Huge pages off")
 
     def _on_ram(self, row, _pspec):
         if self._updating:

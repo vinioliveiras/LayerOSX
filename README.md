@@ -95,7 +95,7 @@ banner.
 | Displays | Brightness; **Screens** — which monitor shows the Mac (Automatic: an external monitor when one is plugged in, else the built-in screen — plugging/unplugging moves the Mac by itself), other screens off or mirrored, resolution and refresh rate; **Graphics** — Reims / VMware / Standard VGA; **Graphics card** — which GPU Reims draws with; **Performance** — the Mac's frame rate (Reims) and **Window effects** (animations/rounded corners, live on/off; windows opened while it's off stay square until reopened). |
 | Sound | Sound from the Mac (on by default); **Volume** slider + mute (live); **Output** — speakers/headphones (automatic) or an HDMI screen. |
 | USB Devices | **Give new devices to the Mac** (on by default); every device with a switch (Mac / computer) and a star (always to the Mac). Built-in devices, keyboards, mice, hubs and mounted drives stay on Linux. |
-| Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", **Dedicated cores** (each vCPU pinned to its own physical core, on by default), memory (automatic or fixed), **Backups** (below), **Restart the Mac** (the black-screen rescue). |
+| Mac | State, **Model** (MacBook Pro 13" 2020 by default; MacBook Pro 16", iMac, iMac Pro, Mac Pro), **Resources** — cores, "Keep 2 threads for Linux", **Dedicated cores** (each vCPU pinned to its own physical core, on by default), **Huge pages** (on by default), memory (automatic or fixed), **Backups** (below), **Restart the Mac** (the black-screen rescue). |
 | General | Appearance, Restart / Shut Down the computer. |
 | Maintenance | **Logs** — Show startup log, Detailed logs, **Monitoring mode** (records everything, below), Save diagnostics to a drive; **Terminal**; **Advanced** — text consoles (Ctrl+Alt+F1…F6, next boot); **Password** — an optional Maintenance password that locks this whole section, the terminal and tty2. |
 | About | This computer (model, CPU, RAM, GPUs, disk), the Mac (macOS version, what the VM got), credits. |
@@ -235,10 +235,22 @@ Installed system: tty1 autologin → startx → .xinitrc
 - **Crash guard:** when QEMU crashes (Reims) or macOS panics, the Mac is
   started again, a diagnostics bundle goes to `~/crash-reports` (newest 5)
   and a notice says what happened.
-- **Guest RAM pages:** Reims needs the RAM in a shared memfd, which is
-  shmem — 4 KB pages unless shmem transparent huge pages are allowed.
-  `etc/tmpfiles.d/layerosx-hugepages.conf` sets `shmem_enabled=advise`, so
-  QEMU's `MADV_HUGEPAGE` gives the Mac 2 MB pages (and only the Mac).
+- **Guest RAM pages:** the Mac's RAM is a hugetlb memfd (2 MB pages,
+  `lib/hugepages.sh` reserves the pool before each start, sized from its
+  RAM, only when Linux keeps ≥ 2 GB). Not enough free memory → normal pages
+  (logged); a GPU where Reims refuses to map them is remembered
+  (`hugepages-refused`) and skipped. Fallback on normal pages: shmem THP
+  `advise` (`etc/tmpfiles.d/layerosx-hugepages.conf`).
+- **Dedicated cores:** `lib/cpu-pin.py` pins vCPU i to the i-th physical
+  core (fastest first, core 0 last) and moves QEMU's other threads, the
+  kiosk session and — via `lib/host-cpus.sh` (sudo) — IRQs, kernel
+  workqueues and system services to the spare cores / SMT siblings. Skipped
+  when there are fewer physical cores than vCPUs.
+- **Host tuning** (same on every machine): kernel `preempt=full nowatchdog
+  split_lock_detect=off transparent_hugepage=madvise`;
+  `etc/sysctl.d/90-layerosx.conf` — swappiness 10, dirty writeback capped at
+  256 MB, no proactive compaction, no NMI watchdog, BBR + fq; zram swap (¼ of
+  RAM, max 8 GB). CPU vulnerability mitigations stay on.
 - **State:** `/var/lib/layerosx/` — `macos.qcow2`, `OVMF_VARS.fd`,
   `macos-recovery.qcow2`, and one small file per setting (`gfx`, `verbose`,
   `audio`, `audio-output`, `audio-volume`, `power-mode`, `compositor`, `usb-auto`, `usb-passthrough`,

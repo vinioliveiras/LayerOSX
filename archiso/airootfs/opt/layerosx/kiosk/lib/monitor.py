@@ -315,10 +315,11 @@ class Monitor:
                    "shmem_hugepages_mb", "anon_hugepages_mb", "dirty_mb", "writeback_mb", "swap_used_mb",
                    "psi_cpu_some", "psi_mem_some", "psi_mem_full", "psi_io_some", "psi_io_full",
                    "cpu_temp_c", "cpu_mhz_avg", "cpu_mhz_max", "cpu_busy_pct",
-                   "thp_file_alloc", "thp_file_fallback", "qemu_shmem_pmd_mb"])
+                   "thp_file_alloc", "thp_file_fallback", "qemu_shmem_pmd_mb",
+                   "hugetlb_total", "hugetlb_free"])
         cpuc = Csv(f"{self.root}/cpu.csv", ["time"] + cores)
         qc = Csv(f"{self.root}/qemu.csv", ["time", "pid", "cpu_pct", "rss_mb", "threads"])
-        tc = Csv(f"{self.root}/threads.csv", ["time", "tid", "name", "cpu_pct"])
+        tc = Csv(f"{self.root}/threads.csv", ["time", "tid", "name", "cpu_pct", "on_cpu"])
         dc = Csv(f"{self.root}/disk.csv", ["time", "disk", "read_mb_s", "write_mb_s", "busy_pct"])
         nc = Csv(f"{self.root}/net.csv", ["time", "iface", "rx_kb_s", "tx_kb_s", "errors", "drops", "wifi_signal_dbm"])
         rc = Csv(f"{self.root}/reims.csv", ["time", "fps", "presents_asked", "refusals"])
@@ -356,7 +357,8 @@ class Monitor:
             sysc.row([ts, rd(f"{PROC}/loadavg").split(" ")[0], mb("MemTotal") - mb("MemAvailable"), mb("MemAvailable"),
                       mb("Shmem"), mb("ShmemHugePages"), mb("AnonHugePages"), mb("Dirty"), mb("Writeback"),
                       mb("SwapTotal") - mb("SwapFree"), *ps, temp, *mhz, busy.get("cpu", ""),
-                      vm.get("thp_file_alloc", ""), vm.get("thp_file_fallback", ""), pmd])
+                      vm.get("thp_file_alloc", ""), vm.get("thp_file_fallback", ""), pmd,
+                      m.get("HugePages_Total", ""), m.get("HugePages_Free", "")])
             if isinstance(ps[2], float) and ps[2] > 10 and not high_psi:
                 self.event(f"memory pressure: {ps[2]}% of time fully stalled on memory (avg10)")
             if isinstance(ps[4], float) and ps[4] > 20 and not high_psi:
@@ -390,7 +392,8 @@ class Monitor:
                     if tid in prev_t:
                         pct = 100.0 * (tk - prev_t[tid]) / hz / dt
                         if pct >= 1:
-                            tc.row([ts, tid, rd(f"{tdir}/comm"), pct])
+                            st = rd(f"{tdir}/stat").rsplit(")", 1)[-1].split()
+                            tc.row([ts, tid, rd(f"{tdir}/comm"), pct, st[36] if len(st) > 36 else ""])
                 prev_t = cur_t
 
             # disks

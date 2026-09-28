@@ -335,6 +335,47 @@ learn_reims_budget() {
     echo "Reims couldn't map the Mac's RAM into the GPU ($line) -- next start keeps the Mac under $(( (b - 1024) / 1024 * 1024 )) MB."
 }
 
+# --- Huge pages for the Mac's RAM ----------------------------------------------
+# 2 MB pages instead of 4 KB for the guest RAM (lib/hugepages.sh has the why).
+# Reserved through sudo before each start, sized from VM_RAM_MB; when the pool
+# can't be had (not enough free / fragmented RAM) the Mac starts on normal
+# pages and the log says so. If Reims ever refuses to map a huge-page guest
+# RAM into the GPU, that GPU choice is remembered in $HUGEPAGES_REFUSED and
+# huge pages are skipped for it (Settings > Mac > Resources > Huge pages
+# switched back on forgets it). Off: $STATE_DIR/hugepages = off.
+HUGEPAGES_REFUSED="$STATE_DIR/hugepages-refused"   # "<reims-gpu choice>"
+MEM_HUGE=""
+pick_hugepages() {
+    local out gpu
+    MEM_HUGE=""
+    gpu="$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)"
+    case "$(cat "$STATE_DIR/hugepages" 2>/dev/null)" in
+        off|0|no|false)
+            sudo -n "$KIOSK_DIR/lib/hugepages.sh" release >/dev/null 2>&1
+            echo "Huge pages: off (Settings > Mac > Resources)."; return 0 ;;
+    esac
+    if [ "$_gfx_now" = reims ] && [ "$(cat "$HUGEPAGES_REFUSED" 2>/dev/null)" = "$gpu" ]; then
+        sudo -n "$KIOSK_DIR/lib/hugepages.sh" release >/dev/null 2>&1
+        echo "Huge pages: skipped (Reims couldn't map them into this GPU last time)."; return 0
+    fi
+    if out="$(sudo -n "$KIOSK_DIR/lib/hugepages.sh" reserve "$VM_RAM_MB" 2>&1)"; then
+        MEM_HUGE=",hugetlb=on,hugetlbsize=2M"
+        echo "Huge pages: $out x 2 MB reserved for the Mac's ${VM_RAM_MB} MB."
+    else
+        sudo -n "$KIOSK_DIR/lib/hugepages.sh" release >/dev/null 2>&1
+        echo "Huge pages: not used this time ($out) -- normal pages."
+    fi
+}
+learn_hugepages_refusal() {
+    [ -n "$MEM_HUGE" ] && [ "$_gfx_now" = reims ] || return 0
+    local hit
+    hit="$(tail -c +"$(( ${REIMS_LOG_OFFSET:-0} + 1 ))" "$REIMS_FAIL_LOG" 2>/dev/null \
+        | grep -aoE 'guest_ram_map_(host_refused|no_usable_region|no_backend_import|scattered)' | head -n 1)"
+    [ -n "$hit" ] || return 0
+    printf '%s\n' "$(cat "$STATE_DIR/reims-gpu" 2>/dev/null || echo auto)" > "$HUGEPAGES_REFUSED"
+    echo "Reims couldn't map the huge-page RAM into the GPU ($hit) -- next start uses normal pages."
+}
+
 # --- Disk and network I/O -------------------------------------------------------
 # A big App Store download made the whole Mac (sound, screen) stall. Two
 # host-side costs grew with it, both on QEMU's main loop:
@@ -810,6 +851,7 @@ while true; do
     rm -f "$QMP_SOCK" "$QMP_CTL_SOCK"
     pick_resources   # re-read Settings > Mac > Resources (cpu-cores, cpu-reserve, ram-mb)
     pick_io          # disk cache/aio and the network backend (MAC_DISK_OPTS, NET_ARGS)
+    pick_hugepages   # 2 MB pages for the guest RAM when they can be reserved (MEM_HUGE)
     # Which physical screen shows the Mac (Settings > Displays > Screens): put it
     # at 0,0 as primary and turn off / mirror the others before QEMU opens its
     # window there. No-op when nothing is chosen ("Automatic") or the layout
@@ -851,7 +893,7 @@ while true; do
         # that RAM is a shared memfd mapping. Plain `-m` (what this used to
         # be) leaves the device unable to see guest memory at all.
         -m "${VM_RAM_MB}M"
-        -object "memory-backend-memfd,id=reims-ram,size=${VM_RAM_MB}M,share=on"
+        -object "memory-backend-memfd,id=reims-ram,size=${VM_RAM_MB}M,share=on${MEM_HUGE}"
         -machine q35,memory-backend=reims-ram
         -cpu "${CPU_MODEL},${CPU_FLAGS}"
         -smp "${VM_CORES},sockets=1,cores=${VM_CORES},threads=1"
@@ -960,6 +1002,9 @@ while true; do
     # Ctrl+Alt+F2 VT (which is low-refresh and ghosts on some monitors). With
     # the grab off, Ctrl+Alt+T keeps opening the in-X log terminal while the VM is
     # focused, and macOS still receives every other key through normal focus.
+    # QEMU starts on every CPU (the session may still be on the host set from
+    # the last run's pinning); lib/cpu-pin.py narrows it below.
+    taskset -pc "$(cat /sys/devices/system/cpu/online)" $$ >/dev/null 2>&1
     env "${REIMS_ENV[@]}" SDL_GRAB_KEYBOARD=0 LD_LIBRARY_PATH="$QEMU_LD_LIBRARY_PATH" "$QEMU_BIN" "${QEMU_ARGS[@]}" &
     QEMU_PID=$!
 
@@ -968,7 +1013,8 @@ while true; do
     # (lib/cpu-pin.py; lives until QEMU exits). Settings > Mac > Resources >
     # "Dedicated cores" ($STATE_DIR/cpu-pin = off turns it off).
     case "$(cat "$STATE_DIR/cpu-pin" 2>/dev/null)" in
-        off|0|no|false) echo "CPU pinning: off (Settings > Mac > Resources)." ;;
+        off|0|no|false) echo "CPU pinning: off (Settings > Mac > Resources)."
+                        python3 "$KIOSK_DIR/lib/cpu-pin.py" reset >/dev/null 2>&1 & ;;
         *) python3 "$KIOSK_DIR/lib/cpu-pin.py" apply "$QMP_CTL_SOCK" "$QEMU_PID" "$VM_CORES" & ;;
     esac
 
@@ -996,6 +1042,7 @@ while true; do
     wait "$QEMU_PID" 2>/dev/null
     QEMU_RC=$?
     learn_reims_budget
+    learn_hugepages_refusal
     RAN_FOR=$(( $(date +%s) - LAUNCHED_AT ))
     # How QEMU ended, always logged: >128 = killed by signal (rc-128; 11 =
     # segfault, 6 = abort, 9 = SIGKILL, 15 = SIGTERM). Together with the QMP

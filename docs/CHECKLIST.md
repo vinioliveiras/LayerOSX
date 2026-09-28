@@ -1176,6 +1176,24 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.6b. Huge pages, host tuning, isolation
+
+- `~/mac-vm.log`: "Huge pages: N x 2 MB reserved for the Mac's … MB";
+  `grep HugePages_ /proc/meminfo` while the Mac runs → Total ≈ RAM/2 MB,
+  Free ≈ 0. The Mac boots and the screen/video work (Reims mapped the RAM:
+  no `guest_ram_map_` refusals in /tmp/reims-vgpu-fail.log).
+- Test on the AMD GPU too (Displays › Graphics card): if Reims refuses, the
+  log says "next start uses normal pages" and the Mac still works after a
+  restart.
+- Huge pages off in Settings → next start "Huge pages: off", pool released.
+- `cat /proc/cmdline` has preempt=full nowatchdog split_lock_detect=off
+  transparent_hugepage=madvise; `sysctl vm.swappiness
+  net.ipv4.tcp_congestion_control` → 10, bbr; `swapon --show` → /dev/zram0.
+- `cat /proc/irq/*/smp_affinity_list | sort | uniq -c` → mostly 8-15;
+  `systemctl show system.slice -p AllowedCPUs` → 8-15; `taskset -pc $(pgrep Xorg)` → 8-15.
+- Dedicated cores off → after the Mac restarts, everything back on 0-15.
+- Monitoring mode: threads.csv `on_cpu` column — vCPU threads never move.
+
 ### 5.6a. Dedicated cores
 
 - `~/mac-vm.log` after the Mac starts: "CPU pinning: vCPU 0->cpu1, … 7->cpu0;
