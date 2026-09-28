@@ -1176,6 +1176,15 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.6c. USB: cameras, keyboards, mice, drives
+
+- Mac running: the built-in webcam is on the Mac by itself (Photo Booth /
+  FaceTime see it); Settings › USB Devices shows it switched on.
+- Plug in a USB keyboard and mouse: they go to the Mac; the laptop keyboard
+  and touchpad still work on Linux (Ctrl+Alt+W opens Settings).
+- Plug in a USB stick/HD (not mounted): it appears in the Mac's Finder. The
+  Ventoy/LayerOSX stick stays on Linux ("the LayerOSX install drive").
+
 ### 5.6b. Huge pages, host tuning, isolation
 
 - `~/mac-vm.log`: "Huge pages: N x 2 MB reserved for the Mac's … MB";

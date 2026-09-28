@@ -75,7 +75,7 @@ class FakeMachine(unittest.TestCase):
         dev("1-1", "0781", "5583", "SanDisk", "Ultra Fit", "removable")
         dev("1-2", "0b05", "19b6", "ASUSTek", "N-KEY Device", "fixed", itf=("03", "01"))
         dev("1-3", "05e3", "0610", "Genesys", "USB2.1 Hub", "removable", cls="09")
-        dev("3-1", "3277", "0059", "Shinetech", "HD UVC WebCam", "fixed")
+        dev("3-1", "3277", "0059", "Shinetech", "HD UVC WebCam", "fixed", itf=("0e", "00"))
         write(os.path.join(self.usb, "usb1", "idVendor"), "1d6b\n")
         # lsblk: laptop NVMe (Windows BitLocker, CachyOS root, ESP, DATA ntfs),
         # a USB stick (exfat, not mounted), Ventoy (exfat data + VTOYEFI).
@@ -223,13 +223,43 @@ class TestWifi(FakeMachine):
 
 
 class TestUsb(FakeMachine):
+    def _external_keyboard(self, laptop_keyboard=True):
+        d = os.path.join(self.usb, "1-5")
+        for k, v in (("idVendor", "046d"), ("idProduct", "c31c"), ("manufacturer", "Logitech"),
+                     ("product", "USB Keyboard"), ("removable", "removable"), ("bDeviceClass", "00")):
+            write(os.path.join(d, k), v + "\n")
+        write(os.path.join(d, "1-5:1.0", "bInterfaceClass"), "03\n")
+        write(os.path.join(d, "1-5:1.0", "bInterfaceProtocol"), "01\n")
+        blocks = ['N: Name="Logitech USB Keyboard"\nS: Sysfs=/devices/pci0000:00/usb1/1-5/1-5:1.0/0003:046D:C31C.0001/input/input9\n'
+                  'H: Handlers=sysrq kbd event9 leds\nB: EV=120013\n',
+                  'N: Name="Power Button"\nS: Sysfs=/devices/LNXSYSTM:00/LNXPWRBN:00/input/input1\n'
+                  'H: Handlers=kbd event1\nB: EV=3\n']
+        if laptop_keyboard:
+            blocks.append('N: Name="AT Translated Set 2 keyboard"\nS: Sysfs=/devices/platform/i8042/serio0/input/input0\n'
+                          'H: Handlers=sysrq kbd event0 leds\nB: EV=120013\n')
+        write(os.path.join(self.tmp, "proc", "bus", "input", "devices"), "\n".join(blocks))
+
+    def test_external_keyboard(self):
+        self._external_keyboard()
+        self.vm_up()
+        b = lb.Backend()
+        kb = {d.id: d for d in b.usb_devices()}["046d:c31c"]
+        self.assertEqual((kb.kind, kb.builtin, kb.blocked), ("keyboard", False, ""))
+        self.assertIn("046d:c31c", b.usb_auto_once())
+        # a desktop whose only keyboard is this one: it stays with Linux
+        self._external_keyboard(laptop_keyboard=False)
+        kb = {d.id: d for d in lb.Backend().usb_devices()}["046d:c31c"]
+        self.assertIn("only keyboard", kb.blocked)
+
+
     def test_list_and_blocking(self):
         self.vm_up()
         devs = {d.id: d for d in lb.Backend().usb_devices()}
         self.assertEqual(set(devs), {"0781:5583", "0b05:19b6", "05e3:0610", "3277:0059"})
         self.assertEqual(devs["0781:5583"].blocked, "")
         self.assertTrue(devs["0781:5583"].on_mac)
-        self.assertIn("keyboard", devs["0b05:19b6"].blocked)
+        self.assertIn("built-in keyboard", devs["0b05:19b6"].blocked)
+        self.assertEqual(devs["3277:0059"].kind, "camera")
         self.assertEqual(devs["05e3:0610"].blocked, "hub")
         self.assertTrue(devs["3277:0059"].builtin)
 
@@ -259,13 +289,14 @@ class TestUsb(FakeMachine):
         self.assertTrue(b.usb_auto())                    # on for a new install
         self.assertEqual(b.usb_auto_once(), [])          # Mac not running: nothing
         self.vm_up()
-        # pendrive already on the Mac; keyboard, hub and built-in webcam skipped
-        self.assertEqual(b.usb_auto_once(), ["18d1:4ee7"])
+        # pendrive already on the Mac; built-in keyboard and hub skipped; the
+        # built-in webcam goes (cameras always do)
+        self.assertEqual(sorted(b.usb_auto_once()), ["18d1:4ee7", "3277:0059"])
         self.assertIn("qmp usb-attach 18d1 4ee7", self.calls())
         # switched back to Linux -> automatic USB leaves it there
         self.assertTrue(b.usb_give_to_mac("18d1", "4ee7", False)[0])
         self.assertEqual(b.usb_keep_on_linux(), {"18d1:4ee7"})
-        self.assertEqual(b.usb_auto_once(), [])
+        self.assertNotIn("18d1:4ee7", b.usb_auto_once())
         # switched on again -> forgotten from the keep list
         self.assertTrue(b.usb_give_to_mac("18d1", "4ee7", True)[0])
         self.assertEqual(b.usb_keep_on_linux(), set())

@@ -4350,3 +4350,21 @@ NetworkManager, the LayerOSX units and NVIDIA's — nothing worth trimming.
 Monitoring: system.csv gains hugetlb_total/free, threads.csv the CPU each
 thread last ran on; macdiag shows the pinning, huge pages, cmdline, sysctls
 and swap. Tests: 84.
+
+## USB: cameras, keyboards, mice and drives go to the Mac by default
+
+Automatic USB used to skip every built-in device and every keyboard/mouse.
+Now (Backend.usb_devices / _usb_kind / _usb_blocked):
+
+- **Cameras** (an interface of class 0e, video) go to the Mac automatically,
+  the laptop's built-in webcam included.
+- **External keyboards and mice** go too. Stays on Linux: HID devices whose
+  port isn't reported `removable` (the laptop's own keyboard/touchpad — never
+  grab those: the LayerOSX shortcuts live there), and a keyboard or mouse
+  that would leave Linux with none (/proc/bus/input/devices: keyboards =
+  `kbd` handler with EV_REP, which leaves power/volume buttons out; pointers
+  = a `mouse*` handler, touchpads included).
+- **Drives** already went unless mounted on Linux; the LayerOSX install stick
+  (a Ventoy/VTOYEFI/ARCH* label) now stays — it's where logs are saved.
+- The panel's USB list shows a keyboard/mouse/camera/drive icon from the
+  device's interfaces. Tests: 85.

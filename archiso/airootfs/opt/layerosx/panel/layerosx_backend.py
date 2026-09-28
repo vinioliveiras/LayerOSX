@@ -126,6 +126,7 @@ class UsbDevice:
     blocked: str          # empty = can be passed to the Mac, else why not
     on_mac: bool
     always: bool
+    kind: str = ""        # camera | keyboard | mouse | storage | ""
 
     @property
     def id(self) -> str:
@@ -1016,9 +1017,11 @@ class Backend:
         return rc == 0
 
     # -------------------------------------------------------------------- USB
-    def _usb_blocked(self, d: str) -> str:
-        if _read(os.path.join(d, "bDeviceClass")) == "09":
-            return "hub"
+    @staticmethod
+    def _usb_kind(d: str) -> str:
+        """What a USB device is, from its interfaces: camera (video class),
+        keyboard / mouse (HID boot protocol), storage, or ""."""
+        kinds = set()
         try:
             entries = os.listdir(d)
         except OSError:
@@ -1027,15 +1030,63 @@ class Backend:
             if ":" not in e:
                 continue
             itf = os.path.join(d, e)
-            if _read(os.path.join(itf, "bInterfaceClass")) == "03" and \
-                    _read(os.path.join(itf, "bInterfaceProtocol")) in ("01", "02"):
-                return "keyboard/mouse (already shared with the Mac)"
+            cls = _read(os.path.join(itf, "bInterfaceClass"))
+            if cls == "0e":
+                kinds.add("camera")
+            elif cls == "03":
+                kinds.add({"01": "keyboard", "02": "mouse"}.get(_read(os.path.join(itf, "bInterfaceProtocol")), ""))
+            elif cls == "08":
+                kinds.add("storage")
+        for k in ("camera", "keyboard", "mouse", "storage"):
+            if k in kinds:
+                return k
+        return ""
+
+    def _linux_inputs(self, skip_usb: str) -> Tuple[int, int]:
+        """(keyboards, pointers) Linux has that don't sit on USB device `skip_usb`
+        (e.g. "1-2") -- /proc/bus/input/devices."""
+        kbd = ptr = 0
+        for block in _read(os.path.join(self.proc, "bus", "input", "devices")).split("\n\n"):
+            sysfs = re.search(r"^S: Sysfs=(.*)$", block, re.M)
+            handlers = re.search(r"^H: Handlers=(.*)$", block, re.M)
+            ev = re.search(r"^B: EV=(\w+)$", block, re.M)
+            if not sysfs or not handlers:
+                continue
+            path = sysfs.group(1) + "/"
+            if f"/{skip_usb}/" in path or f"/{skip_usb}:" in path:
+                continue
+            h = handlers.group(1).split()
+            if "kbd" in h and ev and int(ev.group(1), 16) & 0x100000:   # EV_REP: a real keyboard,
+                kbd += 1                                                  # not a power/volume button
+            if any(x.startswith("mouse") for x in h):
+                ptr += 1
+        return kbd, ptr
+
+    def _usb_blocked(self, d: str, builtin: bool = False, kind: str = "") -> str:
+        """Why a device can't go to the Mac ("" = it can)."""
+        if _read(os.path.join(d, "bDeviceClass")) == "09":
+            return "hub"
+        if kind in ("keyboard", "mouse"):
+            if builtin:
+                return "built-in keyboard/touchpad -- stays with Linux for the LayerOSX shortcuts"
+            kbd, ptr = self._linux_inputs(os.path.basename(d))
+            if kind == "keyboard" and kbd == 0:
+                return "your only keyboard -- Linux needs one for the LayerOSX shortcuts"
+            if kind == "mouse" and ptr == 0:
+                return "your only mouse -- Linux needs one for LayerOSX Settings"
         mounts = _read("/proc/mounts")
         for root, dirs, _files in os.walk(d, followlinks=False):
             if os.path.basename(root) == "block":
                 for blk in dirs:
-                    if blk.startswith("sd") and re.search(rf"^/dev/{blk}\d* ", mounts, re.M):
+                    if not blk.startswith("sd"):
+                        continue
+                    if re.search(rf"^/dev/{blk}\d* ", mounts, re.M):
                         return f"mounted on the host (/dev/{blk}) -- unmount it first"
+                    rc, out = self._run(["lsblk", "-J", "-o", "NAME,LABEL", f"/dev/{blk}"],
+                                        changes=False, timeout=5)
+                    labels = re.findall(r'"label":\s*"([^"]*)"', out) if rc == 0 else []
+                    if any(l in ("Ventoy", "VTOYEFI") or l.startswith("ARCH") for l in labels):
+                        return "the LayerOSX install drive -- stays with Linux (it keeps the logs)"
             if root.count(os.sep) - d.count(os.sep) >= 6:
                 dirs[:] = []
         return ""
@@ -1049,9 +1100,11 @@ class Backend:
         return out
 
     # Automatic USB (Settings > USB Devices, on by default): every device
-    # plugged into a port -- not built-in ones (webcam, Bluetooth, fingerprint
-    # reader), not keyboards/mice, not drives mounted on Linux -- goes to the
-    # Mac as soon as it appears (usb-auto-watch, started with the session).
+    # plugged into a port -- external keyboards and mice too, as long as Linux
+    # keeps another one; drives unless mounted on Linux or the install stick --
+    # plus cameras, built-in webcams included, go to the Mac as soon as they
+    # appear (usb-auto-watch, started with the session). Other built-in
+    # devices (keyboard, touchpad, Bluetooth, fingerprint reader) stay.
     # A device the user switches back to Linux is remembered in
     # usb-keep-on-linux and left alone until they switch it on again.
     def usb_auto(self) -> bool:
@@ -1072,7 +1125,8 @@ class Backend:
 
     def usb_auto_candidates(self, devs: List["UsbDevice"]) -> List["UsbDevice"]:
         keep = self.usb_keep_on_linux()
-        return [d for d in devs if not d.builtin and not d.blocked and not d.on_mac and d.id not in keep]
+        return [d for d in devs if (not d.builtin or d.kind == "camera") and not d.blocked
+                and not d.on_mac and d.id not in keep]
 
     def usb_auto_once(self) -> List[str]:
         """Give every eligible plugged-in device to the Mac; returns the ids given."""
@@ -1133,8 +1187,13 @@ class Backend:
             name = " ".join(x for x in (_read(os.path.join(d, "manufacturer")),
                                         _read(os.path.join(d, "product"))) if x) or f"USB device {vid}:{pid}"
             vp = f"{vid}:{pid}"
-            devs.append(UsbDevice(vid, pid, name, _read(os.path.join(d, "removable")) == "fixed",
-                                  self._usb_blocked(d), vp in on_mac, vp in always))
+            # "fixed" = wired inside the machine; keyboards/mice also count as
+            # built-in unless the port says "removable" (never grab the laptop's own).
+            rem = _read(os.path.join(d, "removable"))
+            kind = self._usb_kind(d)
+            builtin = rem == "fixed" or (kind in ("keyboard", "mouse") and rem != "removable")
+            devs.append(UsbDevice(vid, pid, name, builtin, self._usb_blocked(d, builtin, kind),
+                                  vp in on_mac, vp in always, kind))
         return devs
 
     def _check_usb(self, vid: str, pid: str) -> Optional[str]:

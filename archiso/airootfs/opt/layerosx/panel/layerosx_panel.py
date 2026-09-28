@@ -956,8 +956,9 @@ class Settings(Adw.ApplicationWindow):
         auto_g = Adw.PreferencesGroup()
         self.usb_auto_row = Adw.SwitchRow(
             title="Give new devices to the Mac",
-            subtitle="Anything plugged into a USB port goes to the Mac. Built-in devices, "
-                     "keyboards and mice stay on this computer; a device you switch off stays off.")
+            subtitle="Anything plugged into a USB port goes to the Mac, cameras (built-in too), keyboards "
+                     "and mice included. The laptop's own keyboard and touchpad stay here for the "
+                     "shortcuts; a device you switch off stays off.")
         self.usb_auto_row.add_prefix(Gtk.Image.new_from_icon_name("media-removable-symbolic"))
         self.usb_auto_row.set_active(self.b.usb_auto())
         self.usb_auto_row.connect("notify::active", self._on_usb_auto)
@@ -1003,8 +1004,9 @@ class Settings(Adw.ApplicationWindow):
         for d in devs:
             sub = d.id + (" · built-in" if d.builtin else "") + (f" · {d.blocked}" if d.blocked else "")
             r = Adw.ActionRow(title=esc(d.name), subtitle=esc(sub))
-            icon = ("input-keyboard-symbolic" if "keyboard" in d.blocked else
-                    "camera-web-symbolic" if "cam" in d.name.lower() else "media-removable-symbolic")
+            icon = {"keyboard": "input-keyboard-symbolic", "mouse": "input-mouse-symbolic",
+                    "camera": "camera-web-symbolic", "storage": "drive-removable-media-symbolic"}.get(
+                        d.kind, "camera-web-symbolic" if "cam" in d.name.lower() else "media-removable-symbolic")
             r.add_prefix(Gtk.Image.new_from_icon_name(icon))
             star = Gtk.ToggleButton(icon_name="starred-symbolic" if d.always else "non-starred-symbolic",
                                     active=d.always, valign=Gtk.Align.CENTER, css_classes=["flat"],
