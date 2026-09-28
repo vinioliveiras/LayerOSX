@@ -308,24 +308,27 @@ class TestUsb(FakeMachine):
 
 
 class TestMacDisks(FakeMachine):
-    def test_candidates_and_choice(self):
+    def test_on_by_default_and_off(self):
         b = lb.Backend()
         disks = {d.partuuid: d for d in b.mac_disks()}
         self.assertEqual(set(disks), {"aaaa-0003", "aaaa-0007"})    # no ESP, no system root, no USB
         self.assertIn("encrypted", disks["aaaa-0003"].blocked)
-        self.assertEqual((disks["aaaa-0007"].blocked, disks["aaaa-0007"].title), ("", "DATA"))
-        self.assertFalse(b.set_mac_disk("aaaa-0003", True)[0])
-        self.assertFalse(b.set_mac_disk("aaaa-0006", True)[0])
-        self.assertTrue(b.set_mac_disk("AAAA-0007", True)[0])
-        self.assertTrue(lb.Backend().mac_disks()[1].on_mac)
+        self.assertFalse(disks["aaaa-0003"].on_mac)
+        self.assertEqual((disks["aaaa-0007"].title, disks["aaaa-0007"].on_mac), ("DATA", True))
+        self.assertEqual(b.mac_disk_ids(), {"aaaa-0007"})
         # given to the Mac -> never offered for saving logs / backups
         self.assertEqual([t.path for t in b.log_targets()], ["/dev/sda1"])
-        self.assertTrue(b.set_mac_disk("aaaa-0007", False)[0])
-        self.assertFalse(os.path.exists(os.path.join(self.state, "mac-disks")))
+        self.assertFalse(b.set_mac_disk("aaaa-0003", True)[0])
+        self.assertTrue(b.set_mac_disk("AAAA-0007", False)[0])
+        self.assertEqual(lb.Backend().mac_disk_ids(), set())
+        self.assertIn("/dev/nvme0n1p7", [t.path for t in b.log_targets()])
+        self.assertTrue(b.set_mac_disk("aaaa-0007", True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "mac-disks-off")))
 
 
 class TestSaveLogs(FakeMachine):
     def test_targets_exclude_system(self):
+        write(os.path.join(self.state, "mac-disks-off"), "aaaa-0007\n")   # DATA kept on Linux
         t = lb.Backend().log_targets()
         self.assertEqual([x.path for x in t], ["/dev/sda1", "/dev/nvme0n1p7"])  # USB first
         usb, data = t

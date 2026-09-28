@@ -972,9 +972,9 @@ class Settings(Adw.ApplicationWindow):
         self._usb_rows = []
         self.disk_group = Adw.PreferencesGroup(
             title="Drives inside this computer",
-            description="Partitions of this computer's own disks the Mac can use, like an extra drive "
+            description="Partitions of this computer's own disks go to the Mac as extra drives "
                         "(Windows' NTFS is read-only in macOS; exFAT, FAT, APFS and HFS+ read-write). "
-                        "Linux stays away from them while they're given. Applies when the Mac restarts.")
+                        "Linux stays away from them while the Mac has them. Applies when the Mac restarts.")
         page.add(self.disk_group)
         self._disk_rows = []
         run_async(self.b.mac_disks, self._show_disks)

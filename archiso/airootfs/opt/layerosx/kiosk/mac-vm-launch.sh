@@ -377,8 +377,9 @@ learn_hugepages_refusal() {
 }
 
 # --- The computer's own partitions in the Mac -----------------------------------
-# Settings > USB Devices > Drives inside this computer ($STATE_DIR/mac-disks,
-# one PARTUUID per line): each becomes an extra SATA disk on a second AHCI
+# Settings > USB Devices > Drives inside this computer -- on by default:
+# every partition macOS can read, minus those switched off ($STATE_DIR/
+# mac-disks-off; the list comes from `layerosx_backend.py mac-disks-on`). Each becomes an extra SATA disk on a second AHCI
 # controller (6 ports), raw, O_DIRECT. lib/disk-access.sh (sudo) gives this
 # user access for the run and refuses system / mounted partitions; access is
 # taken back when QEMU exits. A partition that's gone or mounted is skipped.
@@ -401,7 +402,7 @@ pick_mac_disks() {
         EXTRA_DISK_DEVS+=("$dev")
         echo "Mac disks: $dev ($u) -> the Mac's SATA disk $n."
         n=$((n + 1))
-    done < <(tr 'A-Z' 'a-z' < "$STATE_DIR/mac-disks" 2>/dev/null)
+    done < <(python3 /opt/layerosx/panel/layerosx_backend.py mac-disks-on 2>/dev/null)
 }
 release_mac_disks() {
     local dev

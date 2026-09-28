@@ -1317,13 +1317,19 @@ class Backend:
     # Internal drives in the Mac (Settings > USB Devices > Drives inside this
     # computer): partitions of the computer's own disks, handed to the Mac as
     # extra SATA disks when it starts (mac-vm-launch.sh + lib/disk-access.sh).
-    # State: mac-disks, one PARTUUID per line. Never the system's own
-    # partitions or the one holding the Mac; USB drives go through USB instead.
+    # On by default: every partition macOS can read goes to the Mac, except
+    # the ones switched off (mac-disks-off, one PARTUUID per line). Never the
+    # system's own partitions, the one holding the Mac, Windows' small
+    # recovery/reserved ones; USB drives go through USB instead.
     MAC_READABLE = {"ntfs": "read-only in macOS", "exfat": "", "vfat": "", "apfs": "", "hfsplus": ""}
 
-    def mac_disk_ids(self) -> set:
-        return {l.strip().lower() for l in _read(os.path.join(self.state_dir, "mac-disks")).splitlines()
+    def mac_disks_off(self) -> set:
+        return {l.strip().lower() for l in _read(os.path.join(self.state_dir, "mac-disks-off")).splitlines()
                 if re.fullmatch(r"[0-9a-fA-F-]{8,36}", l.strip())}
+
+    def mac_disk_ids(self) -> set:
+        """PARTUUIDs the Mac gets on its next start."""
+        return {d.partuuid for d in self.mac_disks() if d.on_mac}
 
     def mac_disks(self) -> List[MacDisk]:
         rc, out = self._run(["lsblk", "-J", "-b", "-o",
@@ -1335,7 +1341,7 @@ class Backend:
             tree = []
         rc, st = self._run(["findmnt", "-nro", "SOURCE", "--target", self.state_dir], changes=False, timeout=5)
         state_src = st.strip().split("[")[0] if rc == 0 else ""
-        chosen = self.mac_disk_ids()
+        off = self.mac_disks_off()
         out_l = []
         for disk in tree:
             if disk.get("type") != "disk" or disk.get("rm") or disk.get("hotplug") or disk.get("tran") == "usb":
@@ -1349,8 +1355,9 @@ class Backend:
                 label = n.get("label") or ""
                 size = int(n.get("size") or 0)
                 if any(m in ("/", "/boot", "/boot/efi", "[SWAP]") or m.startswith("/run/archiso") for m in mps) \
-                        or path == state_src or fs == "swap" or (fs == "vfat" and size < 1 << 30):
-                    continue          # the system itself, swap, EFI/boot partitions
+                        or path == state_src or fs in ("swap", "") \
+                        or (fs in ("vfat", "ntfs") and size < 2 << 30):
+                    continue          # the system itself, swap, EFI/boot, Windows recovery/reserved
                 if fs in ("bitlocker", "crypto_luks"):
                     why = "encrypted -- macOS can't open it"
                 elif fs not in self.MAC_READABLE:
@@ -1361,7 +1368,7 @@ class Backend:
                     why = ""
                 out_l.append(MacDisk(partuuid=n["partuuid"].lower(), path=path, label=label, fstype=fs,
                                      size=size, model=(disk.get("model") or "").strip(), blocked=why,
-                                     on_mac=n["partuuid"].lower() in chosen))
+                                     on_mac=not why and n["partuuid"].lower() not in off))
         return out_l
 
     def set_mac_disk(self, partuuid: str, on: bool) -> Tuple[bool, str]:
@@ -1369,9 +1376,9 @@ class Backend:
         d = next((x for x in self.mac_disks() if x.partuuid == partuuid), None)
         if on and (d is None or d.blocked):
             return False, (d.blocked if d else "that partition isn't available")
-        cur = self.mac_disk_ids()
-        new = (cur | {partuuid}) if on else (cur - {partuuid})
-        return self._write_state("mac-disks", "\n".join(sorted(new)) if new else None)
+        cur = self.mac_disks_off()
+        new = (cur - {partuuid}) if on else (cur | {partuuid})
+        return self._write_state("mac-disks-off", "\n".join(sorted(new)) if new else None)
 
     def log_targets(self) -> List[LogTarget]:
         """Drives the user can save diagnostics to: partitions with a writable
@@ -1746,6 +1753,9 @@ def main(argv: List[str]) -> int:
     elif what == "backup-status":
         j = b.backup_job()
         print(json.dumps(asdict(j) if j else None, indent=2))
+    elif what == "mac-disks-on":
+        # For mac-vm-launch.sh: the PARTUUIDs the Mac gets, one per line.
+        print("\n".join(sorted(b.mac_disk_ids())))
     elif what == "version":
         print(b.version_label())
     elif what == "fps":

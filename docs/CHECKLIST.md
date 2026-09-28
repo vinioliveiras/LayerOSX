@@ -1181,7 +1181,8 @@ allow-list and anything not coming from the guest.)
 - Settings › USB Devices › Drives inside this computer: DATA (NTFS) is
   listed, the Windows C: shows "encrypted" if BitLocker, CachyOS's ext4
   "macOS can't read ext4", LayerOSX's own partition and the ESP not at all.
-- Switch DATA on, restart the Mac: the log says "Mac disks: /dev/nvme0n1pX
+- DATA is on by default (new install); Windows' Recovery partition isn't listed.
+- With DATA on, after a Mac restart: the log says "Mac disks: /dev/nvme0n1pX
   … -> the Mac's SATA disk 0"; Finder shows DATA (read-only). Try an exFAT
   partition if there is one: writable.
 - Save diagnostics / Back Up… no longer offer DATA while it's switched on.

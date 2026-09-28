@@ -4385,3 +4385,10 @@ mounted — and `revoke` takes it back when QEMU exits. A partition given to
 the Mac is never offered by the diagnostics / backup drive pickers (Linux
 mounting it while macOS writes would corrupt it). macOS sees each as a disk
 with the filesystem directly on it; NTFS is read-only there.
+
+Follow-up: internal partitions are **on by default** — every partition macOS
+can read goes to the Mac unless switched off (`mac-disks-off`; the launcher
+asks `layerosx_backend.py mac-disks-on`). Windows' recovery/reserved
+partitions (NTFS/FAT under 2 GB, no filesystem) are left out. Consequence: a
+partition the Mac has isn't offered for saving diagnostics/backups — switch
+it off first.
