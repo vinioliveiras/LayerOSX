@@ -4281,3 +4281,25 @@ Settings › Mac › Backups now does it:
   backup (e.g. no `mac-model`) are removed, so the defaults apply.
 - Tests: 6 new (74), including the real helper end to end with a folder as
   the drive and a fake `qemu-img`; the UI smoke test opens the dialogs.
+
+## Performance pass 1: dedicated cores (vCPU pinning)
+
+First of four steps (then huge pages for the Mac's RAM, host kernel/sysctl,
+trimming Linux). The Mac's vCPUs were free-floating threads: the scheduler
+moved them between cores and put QEMU's main loop, Reims' render/present
+threads, the audio path and Xorg on the same core as a busy vCPU — seen by
+the guest as short random stalls.
+
+`kiosk/lib/cpu-pin.py apply` starts with QEMU: reads the vCPU thread IDs
+from QMP (`query-cpus-fast`), pins vCPU i to the first thread of the i-th
+physical core — fastest cores first (P before E on hybrid Intel), core 0
+last since it takes most IRQs — and puts every other QEMU thread on the
+"host set": spare cores, or the SMT siblings when the Mac uses every core
+(7735HS: vCPUs on cpu1..7,0, the rest on cpu8..15). It re-sweeps every 5 s
+while QEMU runs, because threads Reims creates later inherit their creator's
+CPU. No root needed (own threads). Skipped when there are fewer physical
+cores than vCPUs. Settings › Mac › Resources › **Dedicated cores**
+(`cpu-pin` = off). The guest topology already says 1 thread per core, which
+now matches the host. No real-time priority for the vCPUs: a vCPU spinning
+at SCHED_FIFO starves the kernel threads on its core and can freeze the
+host. Tests: 5 new (79).

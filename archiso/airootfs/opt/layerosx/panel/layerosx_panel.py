@@ -1303,6 +1303,13 @@ class Settings(Adw.ApplicationWindow):
                      "Turn off to give the Mac every thread.")
         self.reserve_row.connect("notify::active", self._on_reserve)
         g.add(self.reserve_row)
+        self.pin_row = Adw.SwitchRow(
+            title="Dedicated cores",
+            subtitle="Each of the Mac's processors gets a physical core of its own; Linux and the graphics "
+                     "work elsewhere. Fewer stutters.")
+        self.pin_row.set_active(self.b.cpu_pin())
+        self.pin_row.connect("notify::active", self._on_pin)
+        g.add(self.pin_row)
         self.ram_row = Adw.ComboRow(title="Memory")
         self.ram_row.add_prefix(Gtk.Image.new_from_icon_name("drive-harddisk-solidstate-symbolic"))
         self.ram_row.connect("notify::selected", self._on_ram)
@@ -1376,6 +1383,11 @@ class Settings(Adw.ApplicationWindow):
         on = row.get_active()
         ok, msg = self.b.set_cpu_reserve(on)
         self._resource_changed(ok, msg, "Keeping 2 threads for Linux" if on else "The Mac gets every thread")
+
+    def _on_pin(self, row, _pspec):
+        on = row.get_active()
+        ok, msg = self.b.set_cpu_pin(on)
+        self._resource_changed(ok, msg, "Dedicated cores on" if on else "Dedicated cores off")
 
     def _on_ram(self, row, _pspec):
         if self._updating:

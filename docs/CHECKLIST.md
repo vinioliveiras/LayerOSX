@@ -1176,6 +1176,16 @@ allow-list and anything not coming from the guest.)
 - Mac › Model → iMac (27-inch, 2019) boots (cache file `...-iMac19_1.qcow2`).
 - `journalctl -b | grep -c 'Portal service'` → 0 after opening Settings.
 
+### 5.6a. Dedicated cores
+
+- `~/mac-vm.log` after the Mac starts: "CPU pinning: vCPU 0->cpu1, … 7->cpu0;
+  QEMU/Reims threads on cpus 8,…,15".
+- `for t in /proc/$(pgrep -f qemu-system)/task/*; do taskset -pc ${t##*/}; done`
+  — 8 threads with one CPU each, the rest on 8-15 (also a minute later).
+- Monitoring mode session with Dedicated cores on vs off (Settings › Mac ›
+  Resources, restart the Mac): compare stutters in YouTube/Spotify/App Store.
+- `python3 /opt/layerosx/kiosk/lib/cpu-pin.py plan 8` prints the layout.
+
 ### 5.5n. Backups
 
 - Settings › Mac › Backups shows "macOS <version> · uses N GB".

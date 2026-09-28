@@ -1028,6 +1028,14 @@ class TestBackups(FakeMachine):
         os.environ.pop("LAYEROSX_BACKUP_STATUS", None)
         super().tearDown()
 
+    def test_cpu_pin_toggle(self):
+        b = lb.Backend()
+        self.assertTrue(b.cpu_pin())
+        self.assertTrue(b.set_cpu_pin(False)[0])
+        self.assertFalse(lb.Backend().cpu_pin())
+        self.assertTrue(b.set_cpu_pin(True)[0])
+        self.assertFalse(os.path.exists(os.path.join(self.state, "cpu-pin")))
+
     def test_targets_skip_fat32(self):
         b = lb.Backend()
         fat = lb.LogTarget("/dev/sdc1", "STICK", "", 8 << 30, "vfat", True, "")

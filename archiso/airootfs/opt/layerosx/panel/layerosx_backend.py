@@ -510,6 +510,13 @@ class Backend:
     def set_cpu_reserve(self, on: bool) -> Tuple[bool, str]:
         return self._write_state("cpu-reserve", None if on else "off")
 
+    def cpu_pin(self) -> bool:
+        """Dedicated cores (kiosk/lib/cpu-pin.py): on unless cpu-pin = off."""
+        return _read(os.path.join(self.state_dir, "cpu-pin")).lower() not in ("off", "0", "no", "false")
+
+    def set_cpu_pin(self, on: bool) -> Tuple[bool, str]:
+        return self._write_state("cpu-pin", None if on else "off")
+
     def set_ram(self, value) -> Tuple[bool, str]:
         """'auto'/0 or a size in MB (>= 2048, leaving Linux at least 2 GB)."""
         if value in ("auto", 0, "0", None):

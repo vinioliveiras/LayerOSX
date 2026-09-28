@@ -23,6 +23,9 @@
   vendored from OSX-KVM / OpenCore's macrecovery), picking a board-id whose
   last supported macOS is that version, and checks the version it got —
   trying another board if Apple served a different one.
+- **`lib/cpu-pin.py`** — started next to QEMU: pins each vCPU thread to a
+  physical core of its own and keeps QEMU's other threads (Reims, audio,
+  I/O) on the remaining threads. `cpu-pin.py plan <vcpus>` shows the layout.
 - **`lib/mac-backup.sh`** — Settings › Mac › Backups (run through sudo):
   back the Mac up to a drive, list / restore backups, or remove the Mac so
   the first-run setup opens again. Holds the Mac stopped through

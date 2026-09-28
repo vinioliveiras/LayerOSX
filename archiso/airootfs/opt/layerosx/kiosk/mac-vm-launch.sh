@@ -964,6 +964,13 @@ while true; do
     QEMU_PID=$!
 
     for _ in $(seq 1 50); do [ -S "$QMP_SOCK" ] && break; sleep 0.2; done
+    # One physical core per vCPU, QEMU/Reims' other threads off those cores
+    # (lib/cpu-pin.py; lives until QEMU exits). Settings > Mac > Resources >
+    # "Dedicated cores" ($STATE_DIR/cpu-pin = off turns it off).
+    case "$(cat "$STATE_DIR/cpu-pin" 2>/dev/null)" in
+        off|0|no|false) echo "CPU pinning: off (Settings > Mac > Resources)." ;;
+        *) python3 "$KIOSK_DIR/lib/cpu-pin.py" apply "$QMP_CTL_SOCK" "$QEMU_PID" "$VM_CORES" & ;;
+    esac
 
     ACTION=$(python3 "$KIOSK_DIR/qmp-watch.py" "$QMP_SOCK")
     # QEMU normally exits within a couple of seconds of its SHUTDOWN event
